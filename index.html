@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Mastery Tracker — Cinematic Storytelling × 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400;1,9..144,600&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="kicker">Year One · Joinspire</span>
+      <h1>The Mastery <em>Tracker</em></h1>
+      <span class="sub">Cinematic Storytelling × 3D — good → world-class, one year.</span>
+    </div>
+    <div id="auth"></div>
+    <div class="startbar"><span>Started</span><input type="date" id="startDate" /><span id="suggest"></span></div>
+    <div class="overall">
+      <div class="ring">
+        <svg width="56" height="56">
+          <circle cx="28" cy="28" r="23" fill="none" stroke="rgba(239,231,216,0.1)" stroke-width="5"/>
+          <circle id="ringFg" cx="28" cy="28" r="23" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="144.5"/>
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b1a2b"/><stop offset="1" stop-color="#c9a24b"/></linearGradient></defs>
+        </svg>
+        <div class="pct" id="ringPct">0%</div>
+      </div>
+      <div class="meta"><b id="doneCount">0</b> done<br><span id="weekCount"></span></div>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="week">This Week</button>
+    <button class="tab" data-tab="map">12-Month Map</button>
+    <button class="tab" data-tab="ladders">Craft Ladders</button>
+    <button class="tab" data-tab="drills">Drill Library</button>
+    <button class="tab" data-tab="res">Resources</button>
+    <button class="tab" data-tab="log">Render Log <span class="dot" id="logDot"></span></button>
+  </nav>
+  <div id="content"></div>
+</div>
+<div class="saved" id="saved">Saved ✓</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
