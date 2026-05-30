@@ -93,9 +93,35 @@ That's it — sign in with Google and your progress follows you across devices.
 
 ---
 
-## Where this goes next (Ideate)
+## Troubleshooting Google sign-in
 
-When you wire up Ideate's video analysis, add `GEMINI_API_KEY` / `YOUTUBE_API_KEY`
-as **server-only** env vars in Vercel and call them from `/api/*` functions
-(pattern shown in `api/analyze.js`). The browser calls your function; your
-function calls Google with the secret key. The key never reaches the client.
+Sign-in now shows the exact reason in the popup if it fails, and automatically
+falls back from a popup to a full-page redirect when the browser blocks popups
+or third-party storage. Order to check:
+
+1. **`auth/operation-not-allowed`** → enable Google: Authentication → Sign-in method.
+2. **`auth/unauthorized-domain`** → add your domain: Authentication → Settings → Authorized domains.
+3. **Popup/cookie errors** → the app auto-retries with a redirect. If that also
+   fails, it's Chrome blocking third-party storage for the cross-domain auth
+   handler. Use the same-origin proxy below.
+
+### Same-origin auth proxy (definitive fix for cookie/storage blocking)
+
+`vercel.json` already proxies `/__/auth/*` and `/__/firebase/*` to your Firebase
+auth handler. To activate it, make the auth handler run on YOUR domain:
+
+1. In Vercel → Environment Variables, change **`VITE_FIREBASE_AUTH_DOMAIN`** from
+   `learn-path-tracker.firebaseapp.com` to your app domain `learn-path-tracker.vercel.app`.
+2. Redeploy.
+
+Now the OAuth handler is same-origin, so no third-party cookies are involved and
+sign-in works even with strict browser privacy settings. (If you change your
+Vercel domain later, update both the `vercel.json` destinations and that env var.)
+
+## Where this goes next (later)
+
+If you ever need server-side API calls with a secret key, add it as a
+**server-only** env var in Vercel (no `VITE_` prefix) and call it from an
+`/api/*` function (pattern shown in `api/analyze.js`). The browser calls your
+function; your function calls the third-party API with the secret key. The key
+never reaches the client.

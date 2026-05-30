@@ -17,11 +17,33 @@ let currentUser = null;
 const cloud = { get user(){ return currentUser; } };
 function configPresent(){ return fb.present; }
 function cloudActive(){ return fb.ready && !!currentUser; }
-function initFirebase(){ if(fb.ready) fb.onAuthStateChanged(fb.auth, onAuth); return fb.ready; }
+function initFirebase(){
+  if(fb.ready){
+    fb.onAuthStateChanged(fb.auth, onAuth);
+    // Completes the flow when we return from a full-page redirect; surfaces errors.
+    fb.getRedirectResult(fb.auth).catch(e => console.warn('redirect result:', e && e.code, e));
+  }
+  return fb.ready;
+}
 async function signIn(){
-  if(!fb.ready){ alert("Cloud sync isn't configured. Add your Firebase env vars (see README)."); return; }
-  try{ await fb.signInWithPopup(fb.auth, new fb.GoogleAuthProvider()); }
-  catch(e){ console.warn(e); alert("Sign-in didn't complete. (On localhost add it to Firebase Authorized domains; it works on your deployed Vercel domain.)"); }
+  if(!fb.ready){ alert("Cloud sync isn't configured — add your Firebase env vars (see README)."); return; }
+  const provider = new fb.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try{
+    await fb.signInWithPopup(fb.auth, provider);
+  }catch(e){
+    const code = (e && e.code) ? e.code : String(e);
+    console.warn('sign-in error:', code, e);
+    if(code === 'auth/operation-not-allowed'){ alert("Google sign-in isn't enabled. Firebase → Authentication → Sign-in method → enable Google."); return; }
+    if(code === 'auth/unauthorized-domain'){ alert("This domain isn't authorized. Firebase → Authentication → Settings → Authorized domains."); return; }
+    // Popup blocked/closed, or browser is blocking third-party storage → use a full-page redirect instead.
+    if(['auth/popup-blocked','auth/popup-closed-by-user','auth/cancelled-popup-request','auth/operation-not-supported-in-this-environment','auth/web-storage-unsupported','auth/internal-error'].includes(code)){
+      try{ await fb.signInWithRedirect(fb.auth, provider); }
+      catch(e2){ alert('Redirect sign-in also failed: ' + ((e2 && e2.code) || e2) + '\n\nIf this is a cookie/storage block, see README → "Same-origin auth proxy".'); }
+      return;
+    }
+    alert('Sign-in failed: ' + code);
+  }
 }
 async function doSignOut(){ try{ await fb.signOut(fb.auth); }catch(e){ console.warn(e); } }
 async function onAuth(user){ currentUser = user || null; setAuthUI(); if(user){ await onSignIn(); } else { await loadAndRender(); } }
