@@ -1,13 +1,18 @@
-# The Mastery Tracker — Cinematic Storytelling × 3D
+# Learn Path Tracker
 
-A 12-month deliberate-practice tracker: a daily checkable schedule, all 48 weeks
-mapped to courses, a drill library, two always-on craft ladders (Composition in
-AE + Blender, and Sound Design), and a render-log catalogue. Built with **Vite**,
-data synced with **Firebase** (Google sign-in + Firestore), and deployable to
-**Vercel** with serverless functions for any secret-key work.
+A multi-skill deliberate-practice platform. The home screen is a **catalog of
+skill paths**; opening one gives you a daily checkable weekly plan, always-on
+craft ladders, a drill library, curated resources, and a render-log catalogue —
+with progress tracked separately per path. Built with **Vite**, data synced with
+**Firebase** (Google sign-in + Firestore), deployable to **Vercel** with
+serverless functions for any secret-key work.
+
+The first published path is **Cinematic Storytelling × 3D** (a 12-month program).
+Add more paths by appending an object to the `SKILLS` array in `src/data.js`.
 
 It runs in **local mode** out of the box (progress saved in the browser). Add a
-Firebase config to turn on Google login + cross-device sync.
+Firebase config to turn on Google login + cross-device sync. When signed in, the
+header greets each user by their own Google name — no names are shown by default.
 
 ---
 

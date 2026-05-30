@@ -8,12 +8,16 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
-    background:
-      radial-gradient(1200px 600px at 80% -10%, rgba(139,26,43,0.18), transparent 60%),
-      radial-gradient(900px 500px at -10% 110%, rgba(201,162,75,0.10), transparent 60%),
-      var(--ink);
+    background: var(--ink);
+    overflow-x:hidden;
     color:var(--cream);font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.55;
     -webkit-font-smoothing:antialiased;min-height:100vh;
+  }
+  body::before{
+    content:"";position:fixed;inset:-12%;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(140% 90% at 50% -25%, rgba(139,26,43,0.13), transparent 72%),
+      radial-gradient(120% 70% at 50% 125%, rgba(201,162,75,0.07), transparent 72%);
   }
   body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.06;mix-blend-mode:overlay;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
@@ -187,3 +191,26 @@
   .setup ol b{color:var(--cream)}
   .setup code{font-family:ui-monospace,monospace;background:var(--ink2);border:1px solid var(--line2);border-radius:6px;padding:2px 6px;font-size:12px;color:var(--gold-soft)}
   .setup pre{background:var(--ink2);border:1px solid var(--line2);border-radius:10px;padding:14px;overflow:auto;font-size:12px;color:var(--cream);margin-top:10px;line-height:1.5}
+
+/* ---- skill catalog ---- */
+.cat-intro{margin-bottom:24px}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.skill-card{text-align:left;border:1px solid var(--line2);border-radius:18px;background:linear-gradient(180deg,var(--panel),var(--ink2));box-shadow:var(--shadow);padding:24px 22px;cursor:pointer;transition:.18s;display:flex;flex-direction:column;gap:10px;min-height:210px;color:inherit;font-family:inherit}
+.skill-card:hover{border-color:var(--gold);transform:translateY(-3px)}
+.skill-card .sc-top{font-family:'Fraunces',serif;font-weight:900;font-size:23px;line-height:1.05;color:var(--cream);letter-spacing:-.01em}
+.skill-card .sc-tag{font-family:'Fraunces',serif;font-style:italic;font-size:14px;color:var(--gold-soft)}
+.skill-card .sc-blurb{font-size:13.5px;color:var(--sand);line-height:1.5;flex:1}
+.skill-card .sc-foot{display:flex;align-items:center;gap:12px;margin-top:6px}
+.skill-card .sc-pct{font-size:12px;font-weight:700;color:var(--gold);min-width:38px;text-align:right}
+.skill-card .sc-cta{font-family:'DM Sans';font-weight:700;font-size:13px;letter-spacing:.03em;color:var(--ink);background:var(--gold);align-self:flex-start;padding:8px 16px;border-radius:999px;transition:.16s}
+.skill-card:hover .sc-cta{background:var(--gold-soft)}
+.skill-card.soon{cursor:default;opacity:.62;border-style:dashed}
+.skill-card.soon:hover{transform:none;border-color:var(--line2)}
+.skill-card.soon .sc-top{color:var(--sand)}
+
+/* ---- "back to skills" tab ---- */
+.tab.back{background:transparent;border-color:transparent;color:var(--gold-soft);padding-left:4px}
+.tab.back:hover{color:var(--gold);border-color:transparent;background:transparent;text-decoration:underline}
+
+/* header wraps collapse cleanly on catalog */
+#startWrap,#overallWrap{transition:opacity .2s}

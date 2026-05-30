@@ -8,10 +8,17 @@ export const R = {
   bguru:{l:'Blender Guru - lighting, camera & composition in Blender', u:'https://www.youtube.com/@blenderguru'},
   efap:{l:'Every Frame a Painting - composition & visual storytelling', u:'https://www.youtube.com/@everyframeapainting'},
   epi:{l:'Epidemic Sound - music & SFX library (+ their tutorials)', u:'https://www.epidemicsound.com'},
+  swc:{l:'SoundWorks Collection - how pro films are sound-designed (study the masters)', u:'https://www.soundworkscollection.com'},
+  filmsound:{l:'FilmSound.org - the craft & theory of sound in film', u:'http://filmsound.org'},
+  mmcgee:{l:'Marshall McGee (YouTube) - clear, practical sound-design technique', u:'https://www.youtube.com/channel/UCIoNgwHpavUi2UnC68cKgbw'},
+  asfx:{l:'A Sound Effect - deep-dive articles, interviews & SFX', u:'https://www.asoundeffect.com'},
+  pse:{l:'Pro Sound Effects - Learn (sound editing guides)', u:'https://blog.prosoundeffects.com'},
+  csound:{l:'Coursera - Sound Design courses (structured, Berklee et al.)', u:'https://www.coursera.org/courses?query=sound%20design'},
+  freesound:{l:'Freesound - free SFX to build libraries & practice', u:'https://freesound.org'},
   jh:{l:'Study: Johnny Harris channel (visual anchors, structure)', u:'https://www.youtube.com/@johnnyharris'},
   fern:{l:'Study: Fern channel (armchair documentaries)', u:'https://www.youtube.com/@fern-tv'},
   yarn:{l:'Study: Yarnhub channel (3D historical animation)', u:'https://www.youtube.com/@Yarnhub'},
-  k20:{l:'The First 20 Hours - Josh Kaufman (rapid skill method)', u:'https://joshkaufman.net/the-first-20-hours/'},
+  k20:{l:'The First 20 Hours - Josh Kaufman (rapid skill method)', u:'https://youtu.be/5MgBikgcWnY'},
   peak:{l:'Peak - Anders Ericsson (deliberate practice, the source)', u:'https://www.goodreads.com/book/show/26312997-peak'},
   blender:{l:'Blender - official + manual', u:'https://www.blender.org'},
   casc:{l:'Cascadeur - physics-based AI posing', u:'https://cascadeur.com'},
@@ -38,7 +45,7 @@ export const WEEKS = [
   {w:7,q:1,focus:'Colour & mood - palettes that carry emotion.',res:[R.jh,R.fern]},
   {w:8,q:1,focus:'Camera language - moves, motivation, easing.',res:[R.efap,R.jh]},
   {w:9,q:1,focus:'Pacing & rhythm - cutting to the beat.',res:[R.ssm,R.efap]},
-  {w:10,q:1,focus:'Sound design layer - build a full bed from scratch (ambience, FX, music).',res:[R.ssm,R.epi]},
+  {w:10,q:1,focus:'Sound design layer - build a full bed from scratch (ambience, FX, music).',res:[R.swc,R.mmcgee,R.epi]},
   {w:11,q:1,focus:'Packaging mastery - title, thumbnail, and paying off the promise.',res:[R.hiw,R.jh]},
   {w:12,q:1,focus:'Milestone week - consolidate Q1 into one finished original.',res:[R.fern,R.jh],ms:'SHIP: a 60-90s original cinematic short. Hook must land in under 6s.'},
   {w:13,q:2,focus:'Blender cinematic cameras - lensing, depth of field, motivated moves.',wed:'Cinematic cameras in Blender',res:[R.blender,R.bguru]},
@@ -62,7 +69,7 @@ export const WEEKS = [
   {w:31,q:3,focus:'Animation pass across the piece.',res:[R.casc]},
   {w:32,q:3,focus:'Lighting & render pass.',res:[R.blender,R.bguru]},
   {w:33,q:3,focus:'Edit assembly - story first, then b-roll.',res:[R.bt]},
-  {w:34,q:3,focus:'Sound design + music - full mix to broadcast.',res:[R.ssm,R.epi]},
+  {w:34,q:3,focus:'Sound design + music - full mix to broadcast.',res:[R.filmsound,R.epi]},
   {w:35,q:3,focus:'Colour grade & final polish.',res:[R.blender]},
   {w:36,q:3,focus:'Milestone week - finish and run the blind test.',res:[R.fern,R.yarn],ms:'SHIP: a 3-minute original cinematic documentary. Run the blind test against a Fern/Yarnhub clip.'},
   {w:37,q:4,focus:'Visual voice audit - define your palette and motion language.',res:[R.fern,R.jh]},
@@ -156,8 +163,28 @@ export const DRILLS = [
 export const RES_GROUPS = [
   {g:'Storytelling (assigned across Q1)',items:[R.bt,R.hiw,R.ss5,R.ssm]},
   {g:'Composition - After Effects + Blender',items:[R.efap,R.som,R.bguru]},
-  {g:'Sound design',items:[R.epi]},
+  {g:'Sound design - learn & study',items:[R.swc,R.mmcgee,R.filmsound,R.asfx,R.pse,R.csound,R.freesound,R.epi]},
   {g:'Study these masters (frame-by-frame, daily)',items:[R.jh,R.fern,R.yarn]},
   {g:'3D craft & the 2026 tool stack',items:[R.blender,R.casc,R.plask,R.deep,R.meshy,R.tripo,R.real,R.yarn80]},
   {g:'The science (so you trust the method)',items:[R.k20,R.peak]},
+];
+
+
+/* ── SKILLS catalog ── add a new object here to publish another learning path. ── */
+export const SKILLS = [
+  {
+    id: 'cinematic',
+    title: 'Cinematic Storytelling \u00d7 3D',
+    tagline: 'Good \u2192 world-class in one year',
+    blurb: 'Master visual storytelling with 3D as your signature weapon \u2014 story, composition, 3D craft, motion graphics, and sound.',
+    quarters: QDEF,
+    plan: WEEKS,
+    days: DAY_TPL,
+    ladders: [
+      { key: 'comp',  title: 'Composition (AE + Blender)', cap: 'Frame everything with intent, in both tools', rungs: COMP_LADDER },
+      { key: 'sound', title: 'Sound Design', cap: 'From layered beds to a broadcast-ready emotional mix', rungs: SOUND_LADDER },
+    ],
+    drills: DRILLS,
+    resources: RES_GROUPS,
+  },
 ];
