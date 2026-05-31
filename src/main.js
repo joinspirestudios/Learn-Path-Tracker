@@ -107,8 +107,21 @@ function totalsFor(id){
   return { done, total };
 }
 function allTotals(){ return totalsFor(state.current); }
+/* owner overrides (Phase A: rename + goal) */
+function pathTitle(id){ const sk=state.skills[id]; return (sk && sk.meta && sk.meta.title) || skillDef(id).title; }
+function pathGoal(id){ const sk=state.skills[id]; const g=sk && sk.meta && sk.meta.goal; return (g!=null && g!=='') ? g : skillDef(id).tagline; }
+/* dates + streak */
+function dstr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function todayKey(){ const order=['mon','tue','wed','thu','fri','sat','sun']; return order[(new Date().getDay()+6)%7]; }
+function computeStreak(){
+  const a=(curState().meta.activity)||{}; let n=0; let d=new Date();
+  if(!a[dstr(d)]){ d=addDays(d,-1); if(!a[dstr(d)]) return 0; } // today not yet done? count from yesterday
+  while(a[dstr(d)]){ n++; d=addDays(d,-1); }
+  return n;
+}
 function flash(){ const s=$('saved'); if(!s)return; s.textContent = cloudActive() ? 'Synced ✓' : 'Saved ✓'; s.classList.add('show'); clearTimeout(flash._t); flash._t=setTimeout(()=>s.classList.remove('show'),1100); }
-async function toggle(id,val){ const p=P(); if(val)p[id]=true; else delete p[id]; updateOverall(); await dbSaveState(); }
+async function toggle(id,val){ const p=P(); if(val){ p[id]=true; const m=curState().meta; (m.activity=m.activity||{})[dstr(new Date())]=true; } else delete p[id]; updateOverall(); await dbSaveState(); }
 
 function updateOverall(){
   if(!state.current) return;
@@ -130,10 +143,11 @@ function firstName(){
 function applyHeader(){
   const k=$('kicker'), sub=$('brandSub'), inSkill=!!state.current;
   k.textContent = currentUser ? ('WELCOME, ' + firstName().toUpperCase()) : 'LEARN · PRACTICE · TRACK';
-  sub.textContent = inSkill ? curDef().tagline : 'Pick a skill. Practice deliberately. Track your climb.';
+  sub.textContent = inSkill ? pathTitle(state.current) : 'Pick a skill. Practice deliberately. Track your climb.';
   $('startWrap').style.display = inSkill ? '' : 'none';
   $('overallWrap').style.display = inSkill ? '' : 'none';
   $('tabs').style.display = inSkill ? '' : 'none';
+  const ep=$('editPathBtn'); if(ep) ep.style.display = (inSkill && currentUser) ? '' : 'none';
   setAuthUI();
 }
 function setAuthUI(){
@@ -161,8 +175,8 @@ function renderCatalog(){
     const t=totalsFor(s.id); const pct=t.total?Math.round(t.done/t.total*100):0;
     const started=!!(state.skills[s.id] && Object.keys(state.skills[s.id].progress||{}).length);
     h+='<button class="skill-card" data-id="'+esc(s.id)+'">'
-      +'<div class="sc-top">'+esc(s.title)+'</div>'
-      +'<div class="sc-tag">'+esc(s.tagline)+'</div>'
+      +'<div class="sc-top">'+esc(pathTitle(s.id))+'</div>'
+      +'<div class="sc-tag">'+esc(pathGoal(s.id))+'</div>'
       +'<div class="sc-blurb">'+esc(s.blurb)+'</div>'
       +'<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:'+pct+'%"></div></div><span class="sc-pct">'+pct+'%</span></div>'
       +'<div class="sc-cta">'+(started?'Continue':'Start')+' →</div></button>';
@@ -203,11 +217,74 @@ function showInfo(title, bodyHtml){
   o.querySelector('.modal-x').onclick=close;
 }
 function openSkill(id){
-  state.current=id; ensureSkill(id); currentWeek=curState().meta.lastWeek||1; activeTab='week';
-  dbSaveState(); applyHeader(); refreshSuggest(); updateOverall(); switchTab('week');
+  state.current=id; ensureSkill(id); currentWeek=curState().meta.lastWeek||1; activeTab='today';
+  dbSaveState(); applyHeader(); refreshSuggest(); updateOverall(); switchTab('today');
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goCatalog(){ state.current=null; dbSaveState(); applyHeader(); renderCatalog(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+/* ---------- RENDER: TODAY ---------- */
+function renderToday(){
+  const def=curDef(), cs=curState();
+  const wkNum = cs.meta.startDate ? currentWeekFromStart() : currentWeek;
+  const wk=weekObj(wkNum), q=quarters()[wk.q];
+  const tk=todayKey(), dayDef=def.days.find(d=>d.k===tk)||def.days[0];
+  const bid='w'+wk.w+'.'+dayDef.k, tid=bid+'.t';
+  const streak=computeStreak(), wp=weekProg(wk), wpct=wp.total?Math.round(wp.done/wp.total*100):0;
+  const dayNames={mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday',sat:'Saturday',sun:'Sunday'};
+  let h='<div class="today-grid">';
+  // left: today's session
+  h+='<div class="panel card today-main">';
+  h+='<div class="goal-line">'+esc(pathGoal(state.current))+'</div>';
+  h+='<div class="today-kicker">'+esc(dayNames[tk]||'Today')+' · Week '+wk.w+' of '+def.plan.length+'</div>';
+  if(!cs.meta.startDate) h+='<div class="hint" style="margin:10px 0">Set a <b>start date</b> in the header to lock your weekly schedule. Showing Week 1 for now.</div>';
+  h+='<div class="today-task '+(P()[bid]?'done':'')+'"><input type="checkbox" class="ck" data-id="'+bid+'" '+(P()[bid]?'checked':'')+'/>'
+    +'<div><div class="tt-title">'+esc(dayLabel(wk,dayDef))+'</div><div class="tt-sub">'+esc(dayDef.s)+'</div></div></div>';
+  h+='<label class="taste today-taste"><input type="checkbox" class="ck sm ox" data-id="'+tid+'" '+(P()[tid]?'checked':'')+'/> Taste 15m (a quick rep, even on a busy day)</label>';
+  if(dayDef.ship) h+='<div class="ship-note">★ Shipping day. Finish and publish one piece. Shipping is the skill.</div>';
+  h+='<div class="lad-strip-today"><div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">Always-on ladders</div>';
+  ladders().forEach(l=>{ h+=ladderRowHTML(l); });
+  h+='</div>';
+  h+='<div class="today-actions"><button class="btn" id="openWeek">Open full week →</button></div>';
+  h+='</div>';
+  // right: momentum
+  h+='<div class="panel card today-side">';
+  h+='<div class="stat-big"><div class="sb-num">'+streak+'</div><div class="sb-lab">day streak</div></div>';
+  h+='<div class="stat-row"><span>This week</span><b>'+wpct+'%</b></div><div class="progress-bar"><div style="width:'+wpct+'%"></div></div>';
+  const tot=allTotals(), tpct=tot.total?Math.round(tot.done/tot.total*100):0;
+  h+='<div class="stat-row" style="margin-top:14px"><span>Whole path</span><b>'+tpct+'%</b></div><div class="progress-bar"><div style="width:'+tpct+'%"></div></div>';
+  h+='<div class="muted" style="font-size:12px;margin-top:16px;line-height:1.5">Tick any task to extend your streak. Consistency is the engine: a short rep every day beats a long block once a week.</div>';
+  h+='</div></div>';
+  $('content').innerHTML=h;
+  wireChecks();
+  const ow=$('openWeek'); if(ow)ow.onclick=()=>{ currentWeek=wk.w; curState().meta.lastWeek=wk.w; switchTab('week'); };
+  $('content').querySelectorAll('input.ck').forEach(cb=>cb.addEventListener('change',()=>setTimeout(renderToday,60)));
+}
+
+/* ---------- EDIT PATH (owner) ---------- */
+function editPath(){
+  if(!state.current) return;
+  const id=state.current, cur=pathTitle(id), goal=(state.skills[id].meta.goal!=null?state.skills[id].meta.goal:'');
+  const o=document.createElement('div'); o.className='modal-overlay';
+  o.innerHTML='<div class="modal-box"><div class="modal-head"><h3>Edit path</h3><button class="modal-x">×</button></div>'
+    +'<div class="modal-body">'
+    +'<div class="field"><label>Path name</label><input type="text" id="epTitle" value="'+esc(cur)+'" maxlength="80"/></div>'
+    +'<div class="field" style="margin-top:12px"><label>Your goal / description</label><textarea id="epGoal" placeholder="What does world-class look like for you? Why this path?">'+esc(goal)+'</textarea></div>'
+    +'<div class="field" style="margin-top:8px"><div class="muted" style="font-size:12px">Editing weeks, tasks, resources, branding images, and custom tabs is the next step of this batch.</div></div>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="epCancel">Cancel</button><button class="btn gold" id="epSave">Save</button></div>'
+    +'</div></div>';
+  document.body.appendChild(o);
+  const close=()=>o.remove();
+  o.addEventListener('click',e=>{ if(e.target===o)close(); });
+  o.querySelector('.modal-x').onclick=close;
+  o.querySelector('#epCancel').onclick=close;
+  o.querySelector('#epSave').onclick=()=>{
+    const t=o.querySelector('#epTitle').value.trim(), g=o.querySelector('#epGoal').value.trim();
+    const m=state.skills[id].meta; m.title=t||undefined; m.goal=g||undefined;
+    dbSaveState(); applyHeader(); close();
+    if(activeTab==='today')renderToday(); else if(activeTab==='week')renderWeek();
+  };
+}
 
 /* ---------- RENDER: WEEK ---------- */
 function nextRungIdx(key,rungs){ const p=P(); for(let i=0;i<rungs.length;i++){ if(!p['L'+key+i]) return i; } return -1; }
@@ -394,7 +471,7 @@ function refreshSuggest(){ const el=$('suggest'),di=$('startDate'); if(!el||!di)
 
 /* ---------- TABS / LOAD / INIT ---------- */
 function switchTab(t){ activeTab=t; if(state.current){ curState().meta.lastTab=t; dbSaveState(); } document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  if(t==='week')renderWeek();else if(t==='map')renderMap();else if(t==='ladders')renderLadders();else if(t==='drills')renderDrills();else if(t==='res')renderRes();else if(t==='log')renderLog();
+  if(t==='today')renderToday();else if(t==='week')renderWeek();else if(t==='map')renderMap();else if(t==='ladders')renderLadders();else if(t==='drills')renderDrills();else if(t==='res')renderRes();else if(t==='log')renderLog();
   window.scrollTo({top:0,behavior:'smooth'}); }
 function finishLoad(){
   authResolved=true;
@@ -428,6 +505,7 @@ async function init(){
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
   const bt=$('brandTitle'); if(bt)bt.onclick=goCatalog;
   const ac=$('allSkills'); if(ac)ac.onclick=goCatalog;
+  const ep=$('editPathBtn'); if(ep)ep.onclick=editPath;
   $('startDate').addEventListener('change',e=>{ if(!state.current)return; curState().meta.startDate=e.target.value||null; dbSaveState(); refreshSuggest(); if(activeTab==='week')renderWeek(); });
   applyHeader();
   if(fb.present){
