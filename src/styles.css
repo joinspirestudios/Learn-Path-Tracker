@@ -214,3 +214,19 @@
 
 /* header wraps collapse cleanly on catalog */
 #startWrap,#overallWrap{transition:opacity .2s}
+
+/* ---- create-path card ---- */
+.skill-card.create{align-items:flex-start;border-style:dashed;border-color:var(--line2);background:linear-gradient(180deg,rgba(201,162,75,0.05),var(--ink2))}
+.skill-card.create:hover{border-color:var(--gold);border-style:solid}
+.skill-card .sc-plus{font-size:30px;line-height:1;color:var(--gold);font-weight:400}
+
+/* ---- modal ---- */
+.modal-overlay{position:fixed;inset:0;z-index:60;background:rgba(8,7,6,0.66);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px;animation:fade .15s ease}
+.modal-box{width:min(480px,92vw);background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line2);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.55);overflow:hidden}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line)}
+.modal-head h3{margin:0;font-family:'Fraunces',serif;font-weight:900;font-size:19px;color:var(--cream)}
+.modal-x{background:none;border:none;color:var(--sand);font-size:24px;line-height:1;cursor:pointer;padding:0 4px}
+.modal-x:hover{color:var(--cream)}
+.modal-body{padding:20px;font-size:14px;color:var(--sand);line-height:1.6}
+.modal-body li{margin:3px 0}
+@keyframes fade{from{opacity:0}to{opacity:1}}

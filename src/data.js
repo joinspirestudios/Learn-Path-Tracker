@@ -176,7 +176,7 @@ export const SKILLS = [
     id: 'cinematic',
     title: 'Cinematic Storytelling \u00d7 3D',
     tagline: 'Good \u2192 world-class in one year',
-    blurb: 'Master visual storytelling with 3D as your signature weapon \u2014 story, composition, 3D craft, motion graphics, and sound.',
+    blurb: 'Master visual storytelling with 3D as your signature weapon - story, composition, 3D craft, motion graphics, and sound.',
     quarters: QDEF,
     plan: WEEKS,
     days: DAY_TPL,

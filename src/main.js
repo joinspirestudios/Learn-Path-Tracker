@@ -1,4 +1,4 @@
-// ── Learn Path Tracker — app logic (multi-skill) ──────────────────────────
+// ── Learn Path Tracker - app logic (multi-skill) ──────────────────────────
 import './styles.css';
 import { SKILLS } from './data.js';
 import { fb } from './firebase.js';
@@ -26,7 +26,7 @@ function initFirebase(){
   return fb.ready;
 }
 async function signIn(){
-  if(!fb.ready){ alert("Cloud sync isn't configured — add your Firebase env vars (see README)."); return; }
+  if(!fb.ready){ alert("Cloud sync isn't configured - add your Firebase env vars (see README)."); return; }
   const provider = new fb.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   try{
@@ -154,8 +154,8 @@ function setAuthUI(){
 
 /* ---------- CATALOG ---------- */
 function renderCatalog(){
-  let h='<div class="cat-intro"><div class="section-title">Choose a <em>skill path</em></div>'
-    +'<div class="muted" style="max-width:640px">Each path is a full deliberate-practice program — a weekly plan, craft ladders, a drill library, curated resources, and a render log. Pick one to start learning and tracking your progress.</div></div>';
+  let h='<div class="cat-intro"><div class="section-title">Discover <em>learning paths</em></div>'
+    +'<div class="muted" style="max-width:640px">Each path is a full deliberate-practice program: a weekly plan, craft ladders, a drill library, curated resources, and a render log. Open one to start learning and tracking your progress, or build your own.</div></div>';
   h+='<div class="cat-grid">';
   SKILLS.forEach(s=>{
     const t=totalsFor(s.id); const pct=t.total?Math.round(t.done/t.total*100):0;
@@ -167,10 +167,40 @@ function renderCatalog(){
       +'<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:'+pct+'%"></div></div><span class="sc-pct">'+pct+'%</span></div>'
       +'<div class="sc-cta">'+(started?'Continue':'Start')+' →</div></button>';
   });
-  h+='<div class="skill-card soon"><div class="sc-top">More paths soon</div><div class="sc-blurb">New skill paths can be published here as updates — anyone who opens the site can pick one and start tracking.</div></div>';
+  if(currentUser){
+    h+='<button class="skill-card create" id="createCard"><div class="sc-plus">＋</div>'
+      +'<div class="sc-top">Create your own path</div>'
+      +'<div class="sc-blurb">Build a learning path you own and control: your weekly plan, ladders, resources, and branding. Track it privately or publish it.</div>'
+      +'<div class="sc-cta">New path →</div></button>';
+  } else if(configPresent()){
+    h+='<button class="skill-card create" id="signinCard"><div class="sc-plus">＋</div>'
+      +'<div class="sc-top">Build your own path</div>'
+      +'<div class="sc-blurb">Sign in with Google to create and track your own learning paths, synced across your devices.</div>'
+      +'<div class="sc-cta">Sign in to start →</div></button>';
+  }
   h+='</div>';
   $('content').innerHTML=h;
   $('content').querySelectorAll('.skill-card[data-id]').forEach(c=>c.onclick=()=>openSkill(c.dataset.id));
+  const cc=$('createCard'); if(cc)cc.onclick=promptCreatePath;
+  const sc=$('signinCard'); if(sc)sc.onclick=signIn;
+}
+function promptCreatePath(){
+  showInfo('Create your own path',
+    '<p style="margin:0 0 12px">Custom path creation is the next update. You will be able to:</p>'
+    +'<ul style="margin:0 0 14px;padding-left:18px;line-height:1.7">'
+    +'<li>Start from a template for a popular skill, or from a blank path</li>'
+    +'<li>Edit everything: weeks, tasks, ladders, drills, resources, and tabs</li>'
+    +'<li>Rename and brand it (profile picture, cover, goal description)</li>'
+    +'<li>Keep it private, share it with chosen people, or publish it publicly</li>'
+    +'</ul><p style="margin:0;color:var(--sand-dim);font-size:13px">It is in the build queue right now.</p>');
+}
+function showInfo(title, bodyHtml){
+  const o=document.createElement('div'); o.className='modal-overlay';
+  o.innerHTML='<div class="modal-box"><div class="modal-head"><h3>'+esc(title)+'</h3><button class="modal-x">×</button></div><div class="modal-body">'+bodyHtml+'</div></div>';
+  document.body.appendChild(o);
+  const close=()=>o.remove();
+  o.addEventListener('click',e=>{ if(e.target===o)close(); });
+  o.querySelector('.modal-x').onclick=close;
 }
 function openSkill(id){
   state.current=id; ensureSkill(id); currentWeek=curState().meta.lastWeek||1; activeTab='week';
@@ -363,12 +393,13 @@ function refreshSuggest(){ const el=$('suggest'),di=$('startDate'); if(!el||!di)
   if(m&&m.startDate){ di.value=m.startDate; const cw=currentWeekFromStart(); el.innerHTML='→ Week <b style="color:var(--gold)">'+cw+'</b>'; } else { di.value=''; el.textContent=''; } }
 
 /* ---------- TABS / LOAD / INIT ---------- */
-function switchTab(t){ activeTab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+function switchTab(t){ activeTab=t; if(state.current){ curState().meta.lastTab=t; dbSaveState(); } document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
   if(t==='week')renderWeek();else if(t==='map')renderMap();else if(t==='ladders')renderLadders();else if(t==='drills')renderDrills();else if(t==='res')renderRes();else if(t==='log')renderLog();
   window.scrollTo({top:0,behavior:'smooth'}); }
 function finishLoad(){
+  authResolved=true;
   applyHeader(); updateLogDot();
-  if(state.current && skillDef(state.current)){ ensureSkill(state.current); currentWeek=curState().meta.lastWeek||1; refreshSuggest(); updateOverall(); switchTab(activeTab||'week'); }
+  if(state.current && skillDef(state.current)){ ensureSkill(state.current); currentWeek=curState().meta.lastWeek||1; activeTab=curState().meta.lastTab||'week'; refreshSuggest(); updateOverall(); switchTab(activeTab); }
   else { state.current=null; renderCatalog(); }
 }
 async function loadAndRender(){
@@ -392,13 +423,21 @@ async function onSignIn(){
   } else catalogue=cloudRenders;
   finishLoad();
 }
+let authResolved=false;
 async function init(){
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
   const bt=$('brandTitle'); if(bt)bt.onclick=goCatalog;
   const ac=$('allSkills'); if(ac)ac.onclick=goCatalog;
   $('startDate').addEventListener('change',e=>{ if(!state.current)return; curState().meta.startDate=e.target.value||null; dbSaveState(); refreshSuggest(); if(activeTab==='week')renderWeek(); });
   applyHeader();
-  await loadAndRender();
-  initFirebase();
+  if(fb.present){
+    // Wait for Firebase to report auth state, then render once so we restore the
+    // open path/tab instead of flashing the homepage. onAuth drives the render.
+    $('content').innerHTML='<div class="empty"><div class="big">⏳</div>Loading your paths…</div>';
+    initFirebase();
+    setTimeout(()=>{ if(!authResolved) loadAndRender(); }, 3500); // fallback if auth never fires
+  } else {
+    await loadAndRender();
+  }
 }
 init();
