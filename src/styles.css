@@ -255,3 +255,18 @@
 .modal-body .field input,.modal-body .field textarea{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:inherit;font-size:14px;padding:10px 12px;box-sizing:border-box}
 .modal-body .field textarea{min-height:84px;resize:vertical}
 @media(max-width:720px){.today-grid{grid-template-columns:1fr}.today-side{position:static}.tab.edit{margin-left:0}}
+
+/* ---- auth modal ---- */
+.auth-pill.pending{opacity:.6}
+.auth-pill.pending .d{background:var(--gold);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+.auth-modal .modal-body{padding:22px}
+.am-err{display:none;background:rgba(139,26,43,0.12);border:1px solid rgba(139,26,43,0.4);color:#e8b9bf;font-size:13px;border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.am-forgot{font-size:12px}
+.am-primary{font-size:14px}
+.am-or{display:flex;align-items:center;text-align:center;color:var(--sand-dim);font-size:12px;margin:16px 0;gap:12px}
+.am-or::before,.am-or::after{content:"";flex:1;height:1px;background:var(--line)}
+.am-google{background:var(--ink2)!important;color:var(--cream)!important;border:1px solid var(--line2)!important}
+.am-google:hover{border-color:var(--gold)!important;background:var(--ink2)!important}
+.am-google .gg{color:var(--gold)}
+.am-toggle{text-align:center;font-size:13px;color:var(--sand);margin-top:16px}

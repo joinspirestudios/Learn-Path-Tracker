@@ -44,8 +44,37 @@ async function signIn(){
     alert('Sign-in failed: ' + code);
   }
 }
+function authMsg(code){
+  return ({
+    'auth/email-already-in-use':'That email already has an account. Try logging in instead.',
+    'auth/invalid-email':'That email address looks invalid.',
+    'auth/weak-password':'Password is too weak (use at least 6 characters).',
+    'auth/wrong-password':'Wrong password. Try again or reset it.',
+    'auth/user-not-found':'No account with that email. Create one instead.',
+    'auth/invalid-credential':'Email or password is incorrect.',
+    'auth/operation-not-allowed':'Email sign-in is not enabled yet. Firebase → Authentication → Sign-in method → enable Email/Password.',
+    'auth/too-many-requests':'Too many attempts. Wait a moment and try again.'
+  })[code] || ('Could not continue: ' + code);
+}
+async function emailSignup(name,email,pw){
+  const cred = await fb.createUserWithEmailAndPassword(fb.auth, email, pw);
+  if(name){ try{ await fb.updateProfile(cred.user, { displayName: name }); }catch(e){} }
+}
+async function emailLogin(email,pw){ await fb.signInWithEmailAndPassword(fb.auth, email, pw); }
 async function doSignOut(){ try{ await fb.signOut(fb.auth); }catch(e){ console.warn(e); } }
-async function onAuth(user){ currentUser = user || null; if(user){ await onSignIn(); } else { await loadAndRender(); } }
+
+/* cache the last signed-in label so refreshes don't flash the sign-in button */
+function cacheAuthLabel(u){ try{ localStorage.setItem('lpt_auth', u.displayName || u.email || '1'); }catch(e){} }
+function clearAuthLabel(){ try{ localStorage.removeItem('lpt_auth'); }catch(e){} }
+function cachedAuthLabel(){ try{ return localStorage.getItem('lpt_auth'); }catch(e){ return null; } }
+
+let authChecked = false;
+async function onAuth(user){
+  authChecked = true;
+  currentUser = user || null;
+  if(user){ cacheAuthLabel(user); await onSignIn(); }
+  else { clearAuthLabel(); applyHeader(); } // local view already rendered; just fix the header
+}
 
 /* ---------- STATE ---------- */
 let state = { current:null, skills:{} };   // skills[id] = { progress, notes, meta:{startDate,lastWeek} }
@@ -66,8 +95,10 @@ async function dbLoadState(){
   return {};
 }
 async function dbSaveState(){
-  if(cloudActive()){ try{ const ref=fb.doc(fb.db,'users',currentUser.uid,'state','main'); await fb.setDoc(ref,{bundle:state},{merge:true}); flash(); }catch(e){ console.warn(e); } return; }
-  await Store.set(STATE_KEY, JSON.stringify(state)); flash();
+  // Always mirror locally first so a refresh restores instantly (local-first).
+  try{ localStorage.setItem(STATE_KEY, JSON.stringify(state)); }catch(e){}
+  if(cloudActive()){ try{ const ref=fb.doc(fb.db,'users',currentUser.uid,'state','main'); await fb.setDoc(ref,{bundle:state},{merge:true}); }catch(e){ console.warn(e); } }
+  flash();
 }
 async function dbLoadRenders(){
   if(cloudActive()){ try{ const col=fb.collection(fb.db,'users',currentUser.uid,'renders'); const snap=await fb.getDocs(col); const arr=[]; snap.forEach(d=>arr.push(d.data())); return arr; }catch(e){ console.warn(e); return []; } }
@@ -136,18 +167,19 @@ function updateOverall(){
 
 /* ---------- HEADER / PERSONALIZATION ---------- */
 function firstName(){
-  if(!currentUser) return '';
-  const n = currentUser.displayName || (currentUser.email||'').split('@')[0] || '';
-  return String(n).split(' ')[0];
+  const n = currentUser ? (currentUser.displayName || (currentUser.email||'').split('@')[0]) : (!authChecked ? cachedAuthLabel() : '');
+  return n ? String(n).split(' ')[0] : '';
 }
 function applyHeader(){
   const k=$('kicker'), sub=$('brandSub'), inSkill=!!state.current;
-  k.textContent = currentUser ? ('WELCOME, ' + firstName().toUpperCase()) : 'LEARN · PRACTICE · TRACK';
+  const fn=firstName();
+  k.textContent = fn ? ('WELCOME, ' + fn.toUpperCase()) : 'LEARN · PRACTICE · TRACK';
   sub.textContent = inSkill ? pathTitle(state.current) : 'Pick a skill. Practice deliberately. Track your climb.';
   $('startWrap').style.display = inSkill ? '' : 'none';
   $('overallWrap').style.display = inSkill ? '' : 'none';
   $('tabs').style.display = inSkill ? '' : 'none';
-  const ep=$('editPathBtn'); if(ep) ep.style.display = (inSkill && currentUser) ? '' : 'none';
+  const signedInish = !!currentUser || (!authChecked && !!cachedAuthLabel());
+  const ep=$('editPathBtn'); if(ep) ep.style.display = (inSkill && signedInish) ? '' : 'none';
   setAuthUI();
 }
 function setAuthUI(){
@@ -160,10 +192,73 @@ function setAuthUI(){
     const label = currentUser.displayName || currentUser.email || 'signed in';
     el.innerHTML='<span class="auth-pill on"><span class="d"></span> '+esc(label.length>22?label.slice(0,20)+'…':label)+'</span><button class="linklike" id="soBtn">sign out</button>';
     const b=$('soBtn'); if(b)b.onclick=doSignOut;
+  } else if(!authChecked && cachedAuthLabel()){
+    // optimistic: we believe a session exists; show a quiet pill instead of flashing the button
+    const label=cachedAuthLabel();
+    el.innerHTML='<span class="auth-pill on pending"><span class="d"></span> '+esc(label.length>22?label.slice(0,20)+'…':label)+'</span>';
   } else {
-    el.innerHTML='<button class="gbtn" id="siBtn"><span class="gg">G</span> Sign in with Google</button>';
-    const b=$('siBtn'); if(b)b.onclick=signIn;
+    el.innerHTML='<button class="gbtn" id="siBtn">Sign up</button><button class="linklike" id="liBtn">log in</button>';
+    const b=$('siBtn'); if(b)b.onclick=()=>openAuthModal('signup');
+    const l=$('liBtn'); if(l)l.onclick=()=>openAuthModal('login');
   }
+}
+
+/* ---------- AUTH MODAL (email/password + Google) ---------- */
+function openAuthModal(mode){
+  if(!fb.ready){ alert("Cloud sync isn't configured - add your Firebase env vars (see README)."); return; }
+  const o=document.createElement('div'); o.className='modal-overlay';
+  o.innerHTML='<div class="modal-box auth-modal"><div class="modal-head"><h3 id="amTitle"></h3><button class="modal-x">×</button></div>'
+    +'<div class="modal-body">'
+    +'<div class="am-err" id="amErr"></div>'
+    +'<div class="field" id="amNameField"><label>Name</label><input type="text" id="amName" placeholder="What should we call you?" autocomplete="name"/></div>'
+    +'<div class="field" style="margin-top:10px"><label>Email</label><input type="email" id="amEmail" placeholder="you@email.com" autocomplete="email"/></div>'
+    +'<div class="field" style="margin-top:10px"><label>Password</label><input type="password" id="amPass" placeholder="At least 6 characters" autocomplete="current-password"/></div>'
+    +'<button class="linklike am-forgot" id="amForgot" style="margin-top:8px">Forgot password?</button>'
+    +'<button class="btn gold am-primary" id="amPrimary" style="width:100%;margin-top:14px"></button>'
+    +'<div class="am-or"><span>or</span></div>'
+    +'<button class="gbtn am-google" id="amGoogle" style="width:100%;justify-content:center"><span class="gg">G</span> Continue with Google</button>'
+    +'<div class="am-toggle" id="amToggle"></div>'
+    +'</div></div>';
+  document.body.appendChild(o);
+  const close=()=>o.remove();
+  o.addEventListener('click',e=>{ if(e.target===o)close(); });
+  o.querySelector('.modal-x').onclick=close;
+  const err=o.querySelector('#amErr');
+  const showErr=m=>{ err.textContent=m; err.style.display=m?'block':'none'; };
+
+  function paint(){
+    const signup = mode==='signup';
+    o.querySelector('#amTitle').textContent = signup ? 'Create your account' : 'Welcome back';
+    o.querySelector('#amNameField').style.display = signup ? '' : 'none';
+    o.querySelector('#amForgot').style.display = signup ? 'none' : '';
+    o.querySelector('#amPrimary').textContent = signup ? 'Create account' : 'Log in';
+    o.querySelector('#amPass').setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
+    o.querySelector('#amToggle').innerHTML = signup
+      ? 'Already have an account? <button class="linklike" id="amSwap">Log in</button>'
+      : 'New here? <button class="linklike" id="amSwap">Create an account</button>';
+    o.querySelector('#amSwap').onclick=()=>{ mode = signup ? 'login' : 'signup'; showErr(''); paint(); };
+    showErr('');
+  }
+  paint();
+
+  o.querySelector('#amGoogle').onclick=()=>{ close(); signIn(); };
+  o.querySelector('#amForgot').onclick=async()=>{
+    const email=o.querySelector('#amEmail').value.trim();
+    if(!email){ showErr('Enter your email above first, then tap reset.'); return; }
+    try{ await fb.sendPasswordResetEmail(fb.auth, email); showErr('Reset link sent. Check your inbox.'); }
+    catch(e){ showErr(authMsg(e&&e.code)); }
+  };
+  o.querySelector('#amPrimary').onclick=async()=>{
+    const name=o.querySelector('#amName').value.trim();
+    const email=o.querySelector('#amEmail').value.trim();
+    const pw=o.querySelector('#amPass').value;
+    if(!email || !pw){ showErr('Enter your email and password.'); return; }
+    const btn=o.querySelector('#amPrimary'); btn.disabled=true; btn.textContent='Working...';
+    try{
+      if(mode==='signup') await emailSignup(name,email,pw); else await emailLogin(email,pw);
+      close(); // onAuthStateChanged restores the rest
+    }catch(e){ showErr(authMsg(e&&e.code)); btn.disabled=false; paint(); }
+  };
 }
 
 /* ---------- CATALOG ---------- */
@@ -474,10 +569,23 @@ function switchTab(t){ activeTab=t; if(state.current){ curState().meta.lastTab=t
   if(t==='today')renderToday();else if(t==='week')renderWeek();else if(t==='map')renderMap();else if(t==='ladders')renderLadders();else if(t==='drills')renderDrills();else if(t==='res')renderRes();else if(t==='log')renderLog();
   window.scrollTo({top:0,behavior:'smooth'}); }
 function finishLoad(){
-  authResolved=true;
   applyHeader(); updateLogDot();
-  if(state.current && skillDef(state.current)){ ensureSkill(state.current); currentWeek=curState().meta.lastWeek||1; activeTab=curState().meta.lastTab||'week'; refreshSuggest(); updateOverall(); switchTab(activeTab); }
+  if(state.current && skillDef(state.current)){ ensureSkill(state.current); currentWeek=curState().meta.lastWeek||1; activeTab=curState().meta.lastTab||'today'; refreshSuggest(); updateOverall(); switchTab(activeTab); }
   else { state.current=null; renderCatalog(); }
+}
+function loadLocalState(){
+  const raw=localStorage.getItem(STATE_KEY); let b={};
+  if(raw){ try{ b=JSON.parse(raw); }catch(e){} }
+  if(!b.skills){ // legacy single-skill format
+    const old=localStorage.getItem('dp_state');
+    if(old){ try{ const o=JSON.parse(old); b={ current:null, skills:{ cinematic:{ progress:o.progress||{}, notes:o.notes||{}, meta:o.meta||{startDate:null,lastWeek:1} } } }; }catch(e){} }
+  }
+  return { current:b.current||null, skills:b.skills||{} };
+}
+async function loadLocalAndRender(){
+  state=loadLocalState();
+  catalogue=await dbLoadRenders();   // local renders (signed-out path)
+  finishLoad();
 }
 async function loadAndRender(){
   const b=await dbLoadState();
@@ -490,32 +598,25 @@ async function onSignIn(){
   const cloudRenders=await dbLoadRenders();
   const cloudEmpty=!cloudState || !cloudState.skills || Object.keys(cloudState.skills||{}).length===0;
   if(cloudEmpty){
-    let lraw=await Store.get(STATE_KEY),local=null; if(lraw){try{local=JSON.parse(lraw);}catch(e){}}
+    const local=loadLocalState();
     if(local && local.skills && Object.keys(local.skills).length){ state=local; await dbSaveState(); }
     else { state={ current:cloudState.current||null, skills:cloudState.skills||{} }; }
   } else { state={ current:cloudState.current||null, skills:cloudState.skills||{} }; }
   if(cloudRenders.length===0){
     const lkeys=await Store.list(CAT_PREFIX);
-    if(lkeys.length){ const arr=[]; for(const k of lkeys){ try{ const v=await Store.get(k); if(v){ const e=JSON.parse(v); arr.push(e); await dbSaveRender(e); } }catch(e){} } catalogue=arr; } else catalogue=[];
+    if(lkeys.length){ const arr=[]; for(const k of lkeys){ try{ const v=await Store.get(k); if(v){ const e=JSON.parse(v); arr.push(e); await dbSaveRender(e); } }catch(e){} } catalogue=arr; }
   } else catalogue=cloudRenders;
   finishLoad();
 }
-let authResolved=false;
 async function init(){
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
   const bt=$('brandTitle'); if(bt)bt.onclick=goCatalog;
   const ac=$('allSkills'); if(ac)ac.onclick=goCatalog;
   const ep=$('editPathBtn'); if(ep)ep.onclick=editPath;
   $('startDate').addEventListener('change',e=>{ if(!state.current)return; curState().meta.startDate=e.target.value||null; dbSaveState(); refreshSuggest(); if(activeTab==='week')renderWeek(); });
-  applyHeader();
-  if(fb.present){
-    // Wait for Firebase to report auth state, then render once so we restore the
-    // open path/tab instead of flashing the homepage. onAuth drives the render.
-    $('content').innerHTML='<div class="empty"><div class="big">⏳</div>Loading your paths…</div>';
-    initFirebase();
-    setTimeout(()=>{ if(!authResolved) loadAndRender(); }, 3500); // fallback if auth never fires
-  } else {
-    await loadAndRender();
-  }
+  // Local-first: render instantly from the local mirror so a refresh never waits
+  // or loses your place. If signed in, the cloud reconciles in the background.
+  await loadLocalAndRender();
+  if(fb.present) initFirebase();
 }
 init();

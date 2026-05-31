@@ -7,7 +7,7 @@
 // VITE_ prefix and must NOT be imported here - keep them server-side in /api.
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 
 const cfg = {
@@ -24,6 +24,8 @@ if (present) {
     const app = initializeApp(cfg);
     auth = getAuth(app);
     db = getFirestore(app);
+    // Keep the user signed in across refreshes (localStorage-backed).
+    setPersistence(auth, browserLocalPersistence).catch(e => console.warn('persistence:', e));
   } catch (e) {
     console.warn('Firebase init failed - running in local mode.', e);
   }
@@ -34,5 +36,6 @@ export const fb = {
   ready: !!auth,
   auth, db,
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail,
   doc, getDoc, setDoc, collection, getDocs, deleteDoc,
 };
