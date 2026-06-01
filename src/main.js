@@ -77,7 +77,7 @@ async function onAuth(user){
 }
 
 /* ---------- STATE ---------- */
-let state = { current:null, skills:{} };   // skills[id] = { progress, notes, meta:{startDate,lastWeek} }
+let state = { current:null, skills:{}, userPaths:{} };   // skills[id]=progress/meta; userPaths[id]=owner-created path def
 let catalogue = [];                        // every render entry, each carries .skill
 let activeTab = 'week', currentWeek = 1, noteTimer = null;
 
@@ -132,15 +132,28 @@ function weekTaskIds(wk){ const ids=[]; days().forEach(d=>{ ids.push('w'+wk.w+'.
 function weekProg(wk){ const p=P(); const ids=weekTaskIds(wk); return { done: ids.filter(id=>p[id]).length, total: ids.length }; }
 function ladderCount(key,rungs){ const p=P(); let d=0; rungs.forEach((_,i)=>{ if(p['L'+key+i]) d++; }); return d; }
 function totalsFor(id){
-  const def=skillDef(id); const p=(state.skills[id]&&state.skills[id].progress)||{}; let done=0,total=0;
+  const p=(state.skills[id]&&state.skills[id].progress)||{}; let done=0,total=0;
+  if(isUserPath(id)){
+    (state.userPaths[id].weeks||[]).forEach((wk,wi)=>{
+      (wk.tasks||[]).forEach((_,ti)=>{ total++; if(p[id+':w'+wi+':t'+ti])done++; });
+      (wk.resources||[]).forEach((_,ri)=>{ total++; if(p[id+':w'+wi+':r'+ri])done++; });
+    });
+    return { done, total };
+  }
+  const def=skillDef(id);
   def.plan.forEach(wk=>{ const ids=[]; def.days.forEach(d=>{ ids.push('w'+wk.w+'.'+d.k); ids.push('w'+wk.w+'.'+d.k+'.t'); }); (wk.res||[]).forEach((_,i)=>ids.push('w'+wk.w+'.r'+i)); ids.forEach(i=>{ total++; if(p[i])done++; }); });
   def.ladders.forEach(l=>{ l.rungs.forEach((_,i)=>{ total++; if(p['L'+l.key+i])done++; }); });
   return { done, total };
 }
 function allTotals(){ return totalsFor(state.current); }
-/* owner overrides (Phase A: rename + goal) */
-function pathTitle(id){ const sk=state.skills[id]; return (sk && sk.meta && sk.meta.title) || skillDef(id).title; }
-function pathGoal(id){ const sk=state.skills[id]; const g=sk && sk.meta && sk.meta.goal; return (g!=null && g!=='') ? g : skillDef(id).tagline; }
+/* user-created paths */
+function isUserPath(id){ return !!(state.userPaths && state.userPaths[id]); }
+function userDef(id){ return state.userPaths[id]; }
+function curUser(){ return state.current && isUserPath(state.current) ? state.userPaths[state.current] : null; }
+/* title + goal work for built-in (with owner override) and user paths */
+function pathTitle(id){ if(isUserPath(id)) return state.userPaths[id].title || 'Untitled path'; const sk=state.skills[id]; return (sk && sk.meta && sk.meta.title) || skillDef(id).title; }
+function pathGoal(id){ if(isUserPath(id)){ return state.userPaths[id].goal || ''; } const sk=state.skills[id]; const g=sk && sk.meta && sk.meta.goal; return (g!=null && g!=='') ? g : skillDef(id).tagline; }
+function allPathIds(){ return SKILLS.map(s=>s.id).concat(Object.keys(state.userPaths||{})); }
 /* dates + streak */
 function dstr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
@@ -162,7 +175,7 @@ function updateOverall(){
   $('doneCount').textContent=done;
   $('weekCount').textContent='of '+total;
   const wb=$('weekBar');
-  if(wb){ const p=weekProg(weekObj(currentWeek)); wb.style.width=(p.total?p.done/p.total*100:0)+'%'; const wt=$('weekBarTxt'); if(wt)wt.textContent=p.done+'/'+p.total; }
+  if(wb && !isUserPath(state.current)){ const p=weekProg(weekObj(currentWeek)); wb.style.width=(p.total?p.done/p.total*100:0)+'%'; const wt=$('weekBarTxt'); if(wt)wt.textContent=p.done+'/'+p.total; }
 }
 
 /* ---------- HEADER / PERSONALIZATION ---------- */
@@ -172,14 +185,17 @@ function firstName(){
 }
 function applyHeader(){
   const k=$('kicker'), sub=$('brandSub'), inSkill=!!state.current;
+  const user = inSkill && isUserPath(state.current);
   const fn=firstName();
   k.textContent = fn ? ('WELCOME, ' + fn.toUpperCase()) : 'LEARN · PRACTICE · TRACK';
   sub.textContent = inSkill ? pathTitle(state.current) : 'Pick a skill. Practice deliberately. Track your climb.';
-  $('startWrap').style.display = inSkill ? '' : 'none';
+  $('startWrap').style.display = (inSkill && !user) ? '' : 'none';
   $('overallWrap').style.display = inSkill ? '' : 'none';
   $('tabs').style.display = inSkill ? '' : 'none';
+  document.querySelectorAll('.tab-cine').forEach(b=>b.style.display = (inSkill && !user) ? '' : 'none');
+  document.querySelectorAll('.tab-user').forEach(b=>b.style.display = user ? '' : 'none');
   const signedInish = !!currentUser || (!authChecked && !!cachedAuthLabel());
-  const ep=$('editPathBtn'); if(ep) ep.style.display = (inSkill && signedInish) ? '' : 'none';
+  const ep=$('editPathBtn'); if(ep) ep.style.display = (inSkill && !user && signedInish) ? '' : 'none';
   setAuthUI();
 }
 function setAuthUI(){
@@ -276,32 +292,58 @@ function renderCatalog(){
       +'<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:'+pct+'%"></div></div><span class="sc-pct">'+pct+'%</span></div>'
       +'<div class="sc-cta">'+(started?'Continue':'Start')+' →</div></button>';
   });
+  Object.keys(state.userPaths||{}).forEach(id=>{
+    const t=totalsFor(id); const pct=t.total?Math.round(t.done/t.total*100):0;
+    const goal=pathGoal(id);
+    h+='<button class="skill-card" data-id="'+esc(id)+'">'
+      +'<div class="sc-badge">Your path</div>'
+      +'<div class="sc-top">'+esc(pathTitle(id))+'</div>'
+      +(goal?('<div class="sc-tag">'+esc(goal)+'</div>'):'')
+      +'<div class="sc-blurb">'+ (t.total? (t.total+' tasks across '+(state.userPaths[id].weeks||[]).length+' weeks') : 'Empty path. Open it to add weeks and tasks.') +'</div>'
+      +'<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:'+pct+'%"></div></div><span class="sc-pct">'+pct+'%</span></div>'
+      +'<div class="sc-cta">Open →</div></button>';
+  });
   if(currentUser){
     h+='<button class="skill-card create" id="createCard"><div class="sc-plus">＋</div>'
       +'<div class="sc-top">Create your own path</div>'
-      +'<div class="sc-blurb">Build a learning path you own and control: your weekly plan, ladders, resources, and branding. Track it privately or publish it.</div>'
+      +'<div class="sc-blurb">Build a learning path you own and control: your own weeks, tasks, and resources. Edit it anytime.</div>'
       +'<div class="sc-cta">New path →</div></button>';
   } else if(configPresent()){
     h+='<button class="skill-card create" id="signinCard"><div class="sc-plus">＋</div>'
       +'<div class="sc-top">Build your own path</div>'
-      +'<div class="sc-blurb">Sign in with Google to create and track your own learning paths, synced across your devices.</div>'
+      +'<div class="sc-blurb">Sign in to create and track your own learning paths, synced across your devices.</div>'
       +'<div class="sc-cta">Sign in to start →</div></button>';
   }
   h+='</div>';
   $('content').innerHTML=h;
   $('content').querySelectorAll('.skill-card[data-id]').forEach(c=>c.onclick=()=>openSkill(c.dataset.id));
-  const cc=$('createCard'); if(cc)cc.onclick=promptCreatePath;
-  const sc=$('signinCard'); if(sc)sc.onclick=signIn;
+  const cc=$('createCard'); if(cc)cc.onclick=createPath;
+  const sc=$('signinCard'); if(sc)sc.onclick=()=>openAuthModal('signup');
 }
-function promptCreatePath(){
-  showInfo('Create your own path',
-    '<p style="margin:0 0 12px">Custom path creation is the next update. You will be able to:</p>'
-    +'<ul style="margin:0 0 14px;padding-left:18px;line-height:1.7">'
-    +'<li>Start from a template for a popular skill, or from a blank path</li>'
-    +'<li>Edit everything: weeks, tasks, ladders, drills, resources, and tabs</li>'
-    +'<li>Rename and brand it (profile picture, cover, goal description)</li>'
-    +'<li>Keep it private, share it with chosen people, or publish it publicly</li>'
-    +'</ul><p style="margin:0;color:var(--sand-dim);font-size:13px">It is in the build queue right now.</p>');
+function createPath(){
+  const o=document.createElement('div'); o.className='modal-overlay';
+  o.innerHTML='<div class="modal-box"><div class="modal-head"><h3>Create a new path</h3><button class="modal-x">×</button></div>'
+    +'<div class="modal-body">'
+    +'<div class="field"><label>Path name</label><input type="text" id="npTitle" placeholder="e.g. Learn 3D Motion Design" maxlength="80"/></div>'
+    +'<div class="field" style="margin-top:12px"><label>Your goal (optional)</label><textarea id="npGoal" placeholder="What does finishing this path look like?"></textarea></div>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="npCancel">Cancel</button><button class="btn gold" id="npCreate">Create path</button></div>'
+    +'</div></div>';
+  document.body.appendChild(o);
+  const close=()=>o.remove();
+  o.addEventListener('click',e=>{ if(e.target===o)close(); });
+  o.querySelector('.modal-x').onclick=close;
+  o.querySelector('#npCancel').onclick=close;
+  o.querySelector('#npCreate').onclick=()=>{
+    const title=o.querySelector('#npTitle').value.trim();
+    if(!title){ o.querySelector('#npTitle').focus(); return; }
+    const goal=o.querySelector('#npGoal').value.trim();
+    const id='up_'+Date.now().toString(36)+Math.floor(Math.random()*999).toString(36);
+    state.userPaths[id]={ title, goal, created:Date.now(), weeks:[
+      { title:'Week 1 - Foundations', tasks:[{text:'Define what good looks like for this skill'},{text:'Find 3 references or examples to study'}], resources:[] }
+    ]};
+    ensureSkill(id);
+    close(); dbSaveState(); openSkill(id); editMode=true; switchTab('plan');
+  };
 }
 function showInfo(title, bodyHtml){
   const o=document.createElement('div'); o.className='modal-overlay';
@@ -312,11 +354,98 @@ function showInfo(title, bodyHtml){
   o.querySelector('.modal-x').onclick=close;
 }
 function openSkill(id){
-  state.current=id; ensureSkill(id); currentWeek=curState().meta.lastWeek||1; activeTab='today';
-  dbSaveState(); applyHeader(); refreshSuggest(); updateOverall(); switchTab('today');
+  state.current=id; ensureSkill(id); editMode=false;
+  const def=(state.skills[id]&&state.skills[id].meta)||{}; currentWeek=def.lastWeek||1;
+  const startTab = isUserPath(id) ? 'plan' : 'today';
+  activeTab=startTab;
+  dbSaveState(); applyHeader(); if(!isUserPath(id)) refreshSuggest(); updateOverall(); switchTab(startTab);
   window.scrollTo({top:0,behavior:'smooth'});
 }
-function goCatalog(){ state.current=null; dbSaveState(); applyHeader(); renderCatalog(); window.scrollTo({top:0,behavior:'smooth'}); }
+function goCatalog(){ state.current=null; editMode=false; dbSaveState(); applyHeader(); renderCatalog(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+/* ---------- USER-CREATED PATH (Plan view + inline editor) ---------- */
+let editMode=false;
+function upSave(){ dbSaveState(); }
+function upSaveSoft(){ clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); }
+function renderPlan(){
+  const id=state.current, def=curUser(); if(!def){ renderCatalog(); return; }
+  const p=P(); const t=totalsFor(id); const pct=t.total?Math.round(t.done/t.total*100):0;
+  let h='<div class="plan-head"><div><div class="chip" style="margin-bottom:8px">Your path</div>'
+    +'<div class="section-title" style="margin:0">'+esc(pathTitle(id))+'</div>'
+    +(pathGoal(id)?('<div class="muted" style="margin-top:6px;max-width:640px">'+esc(pathGoal(id))+'</div>'):'')
+    +'</div><div style="text-align:right"><button class="btn '+(editMode?'gold':'')+'" id="planEdit">'+(editMode?'Done editing':'✎ Edit')+'</button>'
+    +'<div class="muted" style="font-size:12px;margin-top:10px">'+t.done+' / '+t.total+' done · '+pct+'%</div>'
+    +'<div class="progress-bar" style="width:220px;max-width:60vw;margin-left:auto"><div style="width:'+pct+'%"></div></div></div></div>';
+
+  if(editMode){
+    h+='<div class="panel card edit-meta"><div class="field"><label>Path name</label><input type="text" id="pmTitle" value="'+esc(def.title)+'" maxlength="80"/></div>'
+      +'<div class="field" style="margin-top:10px"><label>Goal</label><textarea id="pmGoal" placeholder="What does finishing look like?">'+esc(def.goal||'')+'</textarea></div></div>';
+  }
+
+  (def.weeks||[]).forEach((wk,wi)=>{
+    h+='<div class="panel card week-block" data-wi="'+wi+'">';
+    if(editMode){
+      h+='<div class="wb-head"><input type="text" class="wb-title-input" data-wi="'+wi+'" value="'+esc(wk.title||('Week '+(wi+1)))+'" placeholder="Week title"/>'
+        +'<button class="icon-btn danger" data-act="delWeek" data-wi="'+wi+'" title="Delete week">🗑</button></div>';
+    } else {
+      h+='<div class="wb-head"><h3 style="margin:0">'+esc(wk.title||('Week '+(wi+1)))+'</h3></div>';
+    }
+    (wk.tasks||[]).forEach((tk,ti)=>{
+      const tid=id+':w'+wi+':t'+ti;
+      if(editMode){
+        h+='<div class="row-edit"><input type="text" class="task-input" data-wi="'+wi+'" data-ti="'+ti+'" value="'+esc(tk.text||'')+'" placeholder="Task"/>'
+          +'<button class="icon-btn danger" data-act="delTask" data-wi="'+wi+'" data-ti="'+ti+'" title="Remove">×</button></div>';
+      } else {
+        h+='<label class="task-row '+(p[tid]?'done':'')+'"><input type="checkbox" class="ck" data-id="'+tid+'" '+(p[tid]?'checked':'')+'/><span>'+esc(tk.text||'')+'</span></label>';
+      }
+    });
+    if(editMode) h+='<button class="add-link" data-act="addTask" data-wi="'+wi+'">+ Add task</button>';
+    // resources
+    (wk.resources||[]).forEach((r,ri)=>{
+      const rid=id+':w'+wi+':r'+ri;
+      if(editMode){
+        h+='<div class="row-edit res"><input type="text" class="res-label" data-wi="'+wi+'" data-ri="'+ri+'" value="'+esc(r.label||'')+'" placeholder="Resource name"/>'
+          +'<input type="text" class="res-url" data-wi="'+wi+'" data-ri="'+ri+'" value="'+esc(r.url||'')+'" placeholder="https://..."/>'
+          +'<button class="icon-btn danger" data-act="delRes" data-wi="'+wi+'" data-ri="'+ri+'" title="Remove">×</button></div>';
+      } else if(r.url || r.label){
+        h+='<div class="res-item"><input type="checkbox" class="ck sm" data-id="'+rid+'" '+(p[rid]?'checked':'')+'/><div class="rl"><a href="'+esc(r.url||'#')+'" target="_blank" rel="noopener">'+esc(r.label||r.url)+'</a></div><a class="ext" href="'+esc(r.url||'#')+'" target="_blank" rel="noopener">open ↗</a></div>';
+      }
+    });
+    if(editMode) h+='<button class="add-link" data-act="addRes" data-wi="'+wi+'">+ Add resource</button>';
+    h+='</div>';
+  });
+
+  if(editMode){
+    h+='<button class="btn add-week" data-act="addWeek">+ Add week</button>';
+    h+='<div class="danger-zone"><button class="linklike danger" data-act="delPath">Delete this path</button></div>';
+  }
+  $('content').innerHTML=h;
+
+  // view-mode checkboxes
+  $('content').querySelectorAll('input.ck').forEach(cb=>cb.addEventListener('change',async e=>{ await toggle(e.target.dataset.id,e.target.checked); const r=e.target.closest('.task-row'); if(r)r.classList.toggle('done',e.target.checked); }));
+  // edit button
+  $('planEdit').onclick=()=>{ editMode=!editMode; renderPlan(); };
+  if(!editMode) return;
+
+  // edit-mode wiring
+  const pm=$('pmTitle'); if(pm)pm.addEventListener('input',e=>{ def.title=e.target.value; applyHeader(); upSaveSoft(); });
+  const pg=$('pmGoal'); if(pg)pg.addEventListener('input',e=>{ def.goal=e.target.value; upSaveSoft(); });
+  $('content').querySelectorAll('.wb-title-input').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].title=e.target.value; upSaveSoft(); }));
+  $('content').querySelectorAll('.task-input').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti].text=e.target.value; upSaveSoft(); }));
+  $('content').querySelectorAll('.res-label').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].label=e.target.value; upSaveSoft(); }));
+  $('content').querySelectorAll('.res-url').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url=e.target.value; upSaveSoft(); }));
+  $('content').querySelectorAll('[data-act]').forEach(btn=>btn.onclick=()=>{
+    const act=btn.dataset.act, wi=+btn.dataset.wi, ti=+btn.dataset.ti, ri=+btn.dataset.ri;
+    if(act==='addTask'){ (def.weeks[wi].tasks=def.weeks[wi].tasks||[]).push({text:''}); }
+    else if(act==='delTask'){ def.weeks[wi].tasks.splice(ti,1); }
+    else if(act==='addRes'){ (def.weeks[wi].resources=def.weeks[wi].resources||[]).push({label:'',url:''}); }
+    else if(act==='delRes'){ def.weeks[wi].resources.splice(ri,1); }
+    else if(act==='addWeek'){ def.weeks.push({title:'Week '+(def.weeks.length+1),tasks:[{text:''}],resources:[]}); }
+    else if(act==='delWeek'){ if(confirm('Delete this week and its tasks?')) def.weeks.splice(wi,1); else return; }
+    else if(act==='delPath'){ if(confirm('Delete this entire path? This cannot be undone.')){ delete state.userPaths[id]; delete state.skills[id]; dbSaveState(); goCatalog(); return; } else return; }
+    upSave(); renderPlan();
+  });
+}
 
 /* ---------- RENDER: TODAY ---------- */
 function renderToday(){
@@ -519,10 +648,11 @@ async function handleFile(file){pendingThumb=null;pendingKind=null;pendingName=f
   if(fn)fn.textContent=file.name+(pendingThumb?' · thumbnail ready ✓':' · saved as note');}
 function renderLog(){
   const def=logPrefillWeek||currentWeek;logPrefillWeek=null;
+  const maxWk = isUserPath(state.current) ? Math.max(1,(curUser().weeks||[]).length) : curDef().plan.length;
   let h='<div class="section-title" style="margin-bottom:6px">Render <em>Log</em> & progress catalogue</div>'
     +'<div class="muted" style="margin-bottom:18px;max-width:660px">Document what you ship. Upload an image or video and a thumbnail snapshot is saved + '+(cloudActive()?'synced to your account':'kept in this browser')+'. For the full-res file, paste a link (Drive / Vercel / YouTube).</div>'
     +'<div class="panel card"><div class="log-form">'
-    +'<div class="field"><label>Week</label><input type="number" id="lWeek" min="1" max="'+curDef().plan.length+'" value="'+def+'"/></div>'
+    +'<div class="field"><label>Week</label><input type="number" id="lWeek" min="1" max="'+maxWk+'" value="'+def+'"/></div>'
     +'<div class="field"><label>Title of the piece</label><input type="text" id="lTitle" placeholder="e.g. Week 06 - One-frame lighting study"/></div>'
     +'<div class="field" style="grid-column:1 / -1"><label>What I learned / notes</label><textarea id="lNote" placeholder="The technique, what broke, the breakthrough..."></textarea></div>'
     +'<div class="field" style="grid-column:1 / -1"><label>Upload render (image / video) - optional</label><div class="filebox"><span class="btn filebtn">Choose file<input type="file" id="lFile" accept="image/*,video/*"/></span><span class="fname" id="fname">no file chosen</span></div></div>'
@@ -565,13 +695,20 @@ function refreshSuggest(){ const el=$('suggest'),di=$('startDate'); if(!el||!di)
   if(m&&m.startDate){ di.value=m.startDate; const cw=currentWeekFromStart(); el.innerHTML='→ Week <b style="color:var(--gold)">'+cw+'</b>'; } else { di.value=''; el.textContent=''; } }
 
 /* ---------- TABS / LOAD / INIT ---------- */
-function switchTab(t){ activeTab=t; if(state.current){ curState().meta.lastTab=t; dbSaveState(); } document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  if(t==='today')renderToday();else if(t==='week')renderWeek();else if(t==='map')renderMap();else if(t==='ladders')renderLadders();else if(t==='drills')renderDrills();else if(t==='res')renderRes();else if(t==='log')renderLog();
+function switchTab(t){
+  if(state.current && isUserPath(state.current) && t!=='plan' && t!=='log') t='plan';
+  activeTab=t; if(state.current){ curState().meta.lastTab=t; dbSaveState(); } document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+  if(t==='plan')renderPlan();else if(t==='today')renderToday();else if(t==='week')renderWeek();else if(t==='map')renderMap();else if(t==='ladders')renderLadders();else if(t==='drills')renderDrills();else if(t==='res')renderRes();else if(t==='log')renderLog();
   window.scrollTo({top:0,behavior:'smooth'}); }
 function finishLoad(){
   applyHeader(); updateLogDot();
-  if(state.current && skillDef(state.current)){ ensureSkill(state.current); currentWeek=curState().meta.lastWeek||1; activeTab=curState().meta.lastTab||'today'; refreshSuggest(); updateOverall(); switchTab(activeTab); }
-  else { state.current=null; renderCatalog(); }
+  if(state.current && (skillDef(state.current) || isUserPath(state.current))){
+    ensureSkill(state.current);
+    currentWeek=curState().meta.lastWeek||1;
+    activeTab=curState().meta.lastTab || (isUserPath(state.current)?'plan':'today');
+    if(!isUserPath(state.current)) refreshSuggest();
+    updateOverall(); switchTab(activeTab);
+  } else { state.current=null; renderCatalog(); }
 }
 function loadLocalState(){
   const raw=localStorage.getItem(STATE_KEY); let b={};
@@ -580,7 +717,7 @@ function loadLocalState(){
     const old=localStorage.getItem('dp_state');
     if(old){ try{ const o=JSON.parse(old); b={ current:null, skills:{ cinematic:{ progress:o.progress||{}, notes:o.notes||{}, meta:o.meta||{startDate:null,lastWeek:1} } } }; }catch(e){} }
   }
-  return { current:b.current||null, skills:b.skills||{} };
+  return { current:b.current||null, skills:b.skills||{}, userPaths:b.userPaths||{} };
 }
 async function loadLocalAndRender(){
   state=loadLocalState();
@@ -589,7 +726,7 @@ async function loadLocalAndRender(){
 }
 async function loadAndRender(){
   const b=await dbLoadState();
-  state={ current:b.current||null, skills:b.skills||{} };
+  state={ current:b.current||null, skills:b.skills||{}, userPaths:b.userPaths||{} };
   catalogue=await dbLoadRenders();
   finishLoad();
 }
@@ -600,8 +737,8 @@ async function onSignIn(){
   if(cloudEmpty){
     const local=loadLocalState();
     if(local && local.skills && Object.keys(local.skills).length){ state=local; await dbSaveState(); }
-    else { state={ current:cloudState.current||null, skills:cloudState.skills||{} }; }
-  } else { state={ current:cloudState.current||null, skills:cloudState.skills||{} }; }
+    else { state={ current:cloudState.current||null, skills:cloudState.skills||{}, userPaths:cloudState.userPaths||{} }; }
+  } else { state={ current:cloudState.current||null, skills:cloudState.skills||{}, userPaths:cloudState.userPaths||{} }; }
   if(cloudRenders.length===0){
     const lkeys=await Store.list(CAT_PREFIX);
     if(lkeys.length){ const arr=[]; for(const k of lkeys){ try{ const v=await Store.get(k); if(v){ const e=JSON.parse(v); arr.push(e); await dbSaveRender(e); } }catch(e){} } catalogue=arr; }

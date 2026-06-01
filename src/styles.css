@@ -270,3 +270,32 @@
 .am-google:hover{border-color:var(--gold)!important;background:var(--ink2)!important}
 .am-google .gg{color:var(--gold)}
 .am-toggle{text-align:center;font-size:13px;color:var(--sand);margin-top:16px}
+
+/* ---- user path: catalog badge ---- */
+.skill-card{position:relative}
+.sc-badge{position:absolute;top:14px;right:14px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);background:rgba(201,162,75,0.12);border:1px solid rgba(201,162,75,0.3);border-radius:999px;padding:3px 8px}
+
+/* ---- user path: plan view + editor ---- */
+.plan-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:22px;flex-wrap:wrap}
+.week-block{margin-bottom:16px}
+.wb-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.wb-title-input{flex:1;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'Fraunces',serif;font-size:17px;font-weight:600;padding:8px 12px}
+.task-row{display:flex;gap:12px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.task-row:last-of-type{border-bottom:none}
+.task-row span{flex:1;font-size:14.5px;color:var(--cream)}
+.task-row.done span{color:var(--sand-dim);text-decoration:line-through}
+.row-edit{display:flex;gap:8px;align-items:center;margin:6px 0}
+.row-edit.res{flex-wrap:wrap}
+.task-input,.res-label,.res-url{flex:1;min-width:160px;background:var(--ink);border:1px solid var(--line2);border-radius:9px;color:var(--cream);font-family:inherit;font-size:14px;padding:8px 11px}
+.res-label{flex:0 0 38%}
+.icon-btn{background:var(--ink2);border:1px solid var(--line2);border-radius:8px;color:var(--sand);width:34px;height:34px;cursor:pointer;font-size:16px;line-height:1;flex:0 0 auto}
+.icon-btn.danger:hover{border-color:var(--oxblood-light);color:#e8b9bf}
+.add-link{background:none;border:none;color:var(--gold-soft);font-family:'DM Sans';font-size:13px;font-weight:600;cursor:pointer;padding:8px 4px;margin-top:4px}
+.add-link:hover{color:var(--gold);text-decoration:underline}
+.btn.add-week{margin:6px 0 18px}
+.edit-meta{margin-bottom:18px}
+.edit-meta .field label{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--sand-dim);margin-bottom:6px}
+.edit-meta .field input,.edit-meta .field textarea{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:inherit;font-size:14px;padding:10px 12px;box-sizing:border-box}
+.danger-zone{margin-top:10px;padding-top:16px;border-top:1px solid var(--line)}
+.linklike.danger{color:#cf7884}
+.linklike.danger:hover{color:#e8b9bf}
