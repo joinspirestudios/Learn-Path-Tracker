@@ -494,7 +494,7 @@ function editPath(){
     +'<div class="modal-body">'
     +'<div class="field"><label>Path name</label><input type="text" id="epTitle" value="'+esc(cur)+'" maxlength="80"/></div>'
     +'<div class="field" style="margin-top:12px"><label>Your goal / description</label><textarea id="epGoal" placeholder="What does world-class look like for you? Why this path?">'+esc(goal)+'</textarea></div>'
-    +'<div class="field" style="margin-top:8px"><div class="muted" style="font-size:12px">Editing weeks, tasks, resources, branding images, and custom tabs is the next step of this batch.</div></div>'
+    +'<div class="field" style="margin-top:8px"><div class="muted" style="font-size:12px">This is the curated built-in path, so only its name and goal are editable here. For fully editable weeks, tasks, and resources, use "Create your own path" on the home screen.</div></div>'
     +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="epCancel">Cancel</button><button class="btn gold" id="epSave">Save</button></div>'
     +'</div></div>';
   document.body.appendChild(o);
