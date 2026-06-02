@@ -299,3 +299,11 @@
 .danger-zone{margin-top:10px;padding-top:16px;border-top:1px solid var(--line)}
 .linklike.danger{color:#cf7884}
 .linklike.danger:hover{color:#e8b9bf}
+
+/* ---- built-in path edit mode ---- */
+.week-focus-edit{width:100%;box-sizing:border-box;background:var(--ink);border:1px solid var(--line2);border-radius:12px;color:var(--cream);font-family:'Fraunces',serif;font-size:21px;line-height:1.35;font-style:italic;padding:12px 14px;min-height:84px;resize:vertical}
+.week-edit-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.cres-l,.cres-u{min-width:150px;background:var(--ink);border:1px solid var(--line2);border-radius:9px;color:var(--cream);font-family:inherit;font-size:14px;padding:8px 11px}
+.cres-l{flex:0 0 36%}
+.cres-u{flex:1}
+.tab.edit.editing{color:var(--gold);border-color:rgba(201,162,75,0.5)}

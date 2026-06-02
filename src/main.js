@@ -122,11 +122,27 @@ function P(){ return curState().progress; }
 function quarters(){ return curDef().quarters; }
 function days(){ return curDef().days; }
 function ladders(){ return curDef().ladders; }
+/* ---- built-in path overlay (Option A: editable focus/resources + add/remove weeks) ---- */
+function weekEdits(id){ const sk=ensureSkill(id||state.current); sk.edits=sk.edits||{focus:{},res:{},added:[],removed:[],seq:0}; sk.edits.focus=sk.edits.focus||{}; sk.edits.res=sk.edits.res||{}; sk.edits.added=sk.edits.added||[]; sk.edits.removed=sk.edits.removed||[]; return sk.edits; }
+function effPlanFor(id){
+  const def=skillDef(id); if(!def) return [];
+  const e=(state.skills[id]&&state.skills[id].edits)||{};
+  const removed=new Set(e.removed||[]); const fo=e.focus||{}, ro=e.res||{};
+  const weeks=def.plan.filter(wk=>!removed.has(wk.w)).map(wk=>{ const o={...wk}; if(fo[wk.w]!=null)o.focus=fo[wk.w]; if(ro[wk.w]!=null)o.res=ro[wk.w]; return o; });
+  (e.added||[]).forEach(a=>{ if(!removed.has(a.w)) weeks.push({...a, _added:true}); });
+  return weeks;
+}
+function effPlan(){ return effPlanFor(state.current); }
+function isAddedWeek(w){ const e=weekEdits(); return (e.added||[]).some(a=>a.w===w); }
+function setWeekFocus(w,val){ const e=weekEdits(); if(isAddedWeek(w)){ const a=e.added.find(x=>x.w===w); a.focus=val; } else { e.focus[w]=val; } }
+function weekResArr(w){ const e=weekEdits(); if(isAddedWeek(w)){ const a=e.added.find(x=>x.w===w); a.res=a.res||[]; return a.res; } if(e.res[w]==null){ const wk=skillDef(state.current).plan.find(x=>x.w===w); e.res[w]=(wk&&wk.res)?wk.res.map(r=>({l:r.l,u:r.u})):[]; } return e.res[w]; }
+function addCineWeek(q){ const e=weekEdits(); e.seq=(e.seq||0)+1; const w=1000+e.seq; e.added.push({w, q:q||1, focus:'New week - set your focus', res:[]}); return w; }
+function removeCineWeek(w){ const e=weekEdits(); if(!e.removed.includes(w)) e.removed.push(w); }
 
 /* ---------- HELPERS ---------- */
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function weekObj(w){ return curDef().plan.find(x => x.w === w); }
-function wedLabel(wk){ return wk.wed || quarters()[wk.q].wed; }
+function weekObj(w){ return effPlan().find(x => x.w === w); }
+function wedLabel(wk){ const q=quarters()[wk.q]; return wk.wed || (q&&q.wed) || 'Reference study / catch-up'; }
 function dayLabel(wk,d){ return d.k === 'wed' ? wedLabel(wk) : d.l; }
 function weekTaskIds(wk){ const ids=[]; days().forEach(d=>{ ids.push('w'+wk.w+'.'+d.k); ids.push('w'+wk.w+'.'+d.k+'.t'); }); (wk.res||[]).forEach((_,i)=>ids.push('w'+wk.w+'.r'+i)); return ids; }
 function weekProg(wk){ const p=P(); const ids=weekTaskIds(wk); return { done: ids.filter(id=>p[id]).length, total: ids.length }; }
@@ -141,7 +157,7 @@ function totalsFor(id){
     return { done, total };
   }
   const def=skillDef(id);
-  def.plan.forEach(wk=>{ const ids=[]; def.days.forEach(d=>{ ids.push('w'+wk.w+'.'+d.k); ids.push('w'+wk.w+'.'+d.k+'.t'); }); (wk.res||[]).forEach((_,i)=>ids.push('w'+wk.w+'.r'+i)); ids.forEach(i=>{ total++; if(p[i])done++; }); });
+  effPlanFor(id).forEach(wk=>{ const ids=[]; def.days.forEach(d=>{ ids.push('w'+wk.w+'.'+d.k); ids.push('w'+wk.w+'.'+d.k+'.t'); }); (wk.res||[]).forEach((_,i)=>ids.push('w'+wk.w+'.r'+i)); ids.forEach(i=>{ total++; if(p[i])done++; }); });
   def.ladders.forEach(l=>{ l.rungs.forEach((_,i)=>{ total++; if(p['L'+l.key+i])done++; }); });
   return { done, total };
 }
@@ -195,7 +211,7 @@ function applyHeader(){
   document.querySelectorAll('.tab-cine').forEach(b=>b.style.display = (inSkill && !user) ? '' : 'none');
   document.querySelectorAll('.tab-user').forEach(b=>b.style.display = user ? '' : 'none');
   const signedInish = !!currentUser || (!authChecked && !!cachedAuthLabel());
-  const ep=$('editPathBtn'); if(ep) ep.style.display = (inSkill && !user && signedInish) ? '' : 'none';
+  const ep=$('editPathBtn'); if(ep){ ep.style.display = (inSkill && !user && signedInish) ? '' : 'none'; ep.textContent = editMode ? 'Done editing ✓' : '✎ Edit path'; ep.classList.toggle('editing', editMode); }
   setAuthUI();
 }
 function setAuthUI(){
@@ -450,8 +466,11 @@ function renderPlan(){
 /* ---------- RENDER: TODAY ---------- */
 function renderToday(){
   const def=curDef(), cs=curState();
-  const wkNum = cs.meta.startDate ? currentWeekFromStart() : currentWeek;
-  const wk=weekObj(wkNum), q=quarters()[wk.q];
+  const ep=effPlan();
+  let wkNum = cs.meta.startDate ? currentWeekFromStart() : currentWeek;
+  let wk=weekObj(wkNum); if(!wk){ wk=ep[0]; wkNum=wk?wk.w:1; }
+  const q=quarters()[wk.q]||{name:'Custom'};
+  const tdPos=(ep.findIndex(x=>x.w===wk.w)+1)||1, tdTotal=ep.length;
   const tk=todayKey(), dayDef=def.days.find(d=>d.k===tk)||def.days[0];
   const bid='w'+wk.w+'.'+dayDef.k, tid=bid+'.t';
   const streak=computeStreak(), wp=weekProg(wk), wpct=wp.total?Math.round(wp.done/wp.total*100):0;
@@ -460,7 +479,7 @@ function renderToday(){
   // left: today's session
   h+='<div class="panel card today-main">';
   h+='<div class="goal-line">'+esc(pathGoal(state.current))+'</div>';
-  h+='<div class="today-kicker">'+esc(dayNames[tk]||'Today')+' · Week '+wk.w+' of '+def.plan.length+'</div>';
+  h+='<div class="today-kicker">'+esc(dayNames[tk]||'Today')+' · Week '+tdPos+' of '+tdTotal+'</div>';
   if(!cs.meta.startDate) h+='<div class="hint" style="margin:10px 0">Set a <b>start date</b> in the header to lock your weekly schedule. Showing Week 1 for now.</div>';
   h+='<div class="today-task '+(P()[bid]?'done':'')+'"><input type="checkbox" class="ck" data-id="'+bid+'" '+(P()[bid]?'checked':'')+'/>'
     +'<div><div class="tt-title">'+esc(dayLabel(wk,dayDef))+'</div><div class="tt-sub">'+esc(dayDef.s)+'</div></div></div>';
@@ -487,27 +506,11 @@ function renderToday(){
 
 /* ---------- EDIT PATH (owner) ---------- */
 function editPath(){
-  if(!state.current) return;
-  const id=state.current, cur=pathTitle(id), goal=(state.skills[id].meta.goal!=null?state.skills[id].meta.goal:'');
-  const o=document.createElement('div'); o.className='modal-overlay';
-  o.innerHTML='<div class="modal-box"><div class="modal-head"><h3>Edit path</h3><button class="modal-x">×</button></div>'
-    +'<div class="modal-body">'
-    +'<div class="field"><label>Path name</label><input type="text" id="epTitle" value="'+esc(cur)+'" maxlength="80"/></div>'
-    +'<div class="field" style="margin-top:12px"><label>Your goal / description</label><textarea id="epGoal" placeholder="What does world-class look like for you? Why this path?">'+esc(goal)+'</textarea></div>'
-    +'<div class="field" style="margin-top:8px"><div class="muted" style="font-size:12px">This is the curated built-in path, so only its name and goal are editable here. For fully editable weeks, tasks, and resources, use "Create your own path" on the home screen.</div></div>'
-    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="epCancel">Cancel</button><button class="btn gold" id="epSave">Save</button></div>'
-    +'</div></div>';
-  document.body.appendChild(o);
-  const close=()=>o.remove();
-  o.addEventListener('click',e=>{ if(e.target===o)close(); });
-  o.querySelector('.modal-x').onclick=close;
-  o.querySelector('#epCancel').onclick=close;
-  o.querySelector('#epSave').onclick=()=>{
-    const t=o.querySelector('#epTitle').value.trim(), g=o.querySelector('#epGoal').value.trim();
-    const m=state.skills[id].meta; m.title=t||undefined; m.goal=g||undefined;
-    dbSaveState(); applyHeader(); close();
-    if(activeTab==='today')renderToday(); else if(activeTab==='week')renderWeek();
-  };
+  if(!state.current || isUserPath(state.current)) return;
+  editMode=!editMode;
+  applyHeader();
+  if(editMode){ if(activeTab!=='week') switchTab('week'); else renderWeek(); }
+  else { switchTab(activeTab); }
 }
 
 /* ---------- RENDER: WEEK ---------- */
@@ -520,17 +523,29 @@ function ladderRowHTML(l){
   return '<div class="lad-row"><div class="lad-head"><b>'+esc(l.title)+'</b><span class="lad-count">'+done+'/'+l.rungs.length+'</span></div>'+next+'</div>';
 }
 function renderWeek(){
-  const wk=weekObj(currentWeek),p=weekProg(wk),q=quarters()[wk.q],cw=curState().meta.startDate?currentWeekFromStart():null;
+  const ep=effPlan(); if(!ep.length){ $('content').innerHTML='<div class="empty">No weeks. Add one in edit mode.</div>'; return; }
+  let idx=ep.findIndex(x=>x.w===currentWeek); if(idx<0){ idx=0; currentWeek=ep[0].w; }
+  const wk=ep[idx], p=weekProg(wk), q=quarters()[wk.q]||{name:'Custom'}, cw=curState().meta.startDate?currentWeekFromStart():null;
+  const num=idx+1, total=ep.length;
   let h='';
-  h+='<div class="week-head"><div><div class="chip" style="margin-bottom:10px">'+esc(q.name)+'</div>'
-    +'<div class="week-num">'+String(wk.w).padStart(2,'0')+'<span> / '+curDef().plan.length+'</span></div>'
-    +'<div class="week-focus">'+esc(wk.focus)+'</div></div>'
+  const focusHtml = editMode
+    ? '<textarea class="week-focus-edit" id="focusEdit" placeholder="What is this week about?">'+esc(wk.focus||'')+'</textarea>'
+    : '<div class="week-focus">'+esc(wk.focus)+'</div>';
+  h+='<div class="week-head"><div><div class="chip" style="margin-bottom:10px">'+esc(q.name)+(wk._added?' · added':'')+'</div>'
+    +'<div class="week-num">'+String(num).padStart(2,'0')+'<span> / '+total+'</span></div>'
+    +focusHtml+'</div>'
     +'<div style="text-align:right"><div class="nav-btns">'
-    +'<button class="btn" id="prevW" '+(wk.w===1?'disabled':'')+'>← Prev</button>'
-    +((cw&&cw!==wk.w)?('<button class="btn gold" id="jumpCur">Jump to Week '+cw+'</button>'):'')
-    +'<button class="btn" id="nextW" '+(wk.w===curDef().plan.length?'disabled':'')+'>Next →</button></div>'
+    +'<button class="btn" id="prevW" '+(idx===0?'disabled':'')+'>← Prev</button>'
+    +((cw&&cw!==wk.w)?('<button class="btn gold" id="jumpCur">Jump to current</button>'):'')
+    +'<button class="btn" id="nextW" '+(idx===total-1?'disabled':'')+'>Next →</button></div>'
     +'<div style="margin-top:14px"><div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;display:flex;justify-content:space-between"><span>Week progress</span><span id="weekBarTxt">'+p.done+'/'+p.total+'</span></div>'
     +'<div class="progress-bar" style="width:240px;max-width:60vw"><div id="weekBar" style="width:'+(p.total?p.done/p.total*100:0)+'%"></div></div></div></div></div>';
+  if(editMode){
+    h+='<div class="panel card edit-meta"><div class="field"><label>Path name</label><input type="text" id="cmTitle" value="'+esc(pathTitle(state.current))+'" maxlength="80"/></div>'
+      +'<div class="field" style="margin-top:10px"><label>Goal / description</label><textarea id="cmGoal" placeholder="Your goal">'+esc(curState().meta.goal!=null?curState().meta.goal:'')+'</textarea></div>'
+      +'<div class="muted" style="font-size:12px;margin-top:8px">Edit each week\u2019s focus and resources below, and add or remove weeks. The daily rhythm, ladders, and drills stay fixed as the program\u2019s engine.</div>'
+      +'<div class="week-edit-actions"><button class="btn" id="addWeekBtn">+ Add a week</button><button class="linklike danger" id="rmWeekBtn">Remove this week</button></div></div>';
+  }
   if(wk.ms) h+='<div class="milestone"><div class="star">★</div><div><b>Milestone</b>'+esc(wk.ms)+'</div></div>';
   h+='<div class="days">';
   days().forEach(d=>{ const bid='w'+wk.w+'.'+d.k, tid=bid+'.t', bDone=!!P()[bid];
@@ -551,7 +566,13 @@ function renderWeek(){
     +'<li><b>10 min · Log + queue.</b> One line in your log. Write tomorrows target.</li>'
     +'</ol><p style="margin-top:10px;color:var(--sand-dim)">Protect this block like an invoice - schedule it <b>before</b> client work.</p></div></details>';
   h+='<div class="twocol"><div class="panel card"><h3>📚 This weeks courses & resources</h3>';
-  if((wk.res||[]).length){ wk.res.forEach((r,i)=>{ const rid='w'+wk.w+'.r'+i;
+  if(editMode){
+    const arr=weekResArr(wk.w);
+    arr.forEach((r,i)=>{ h+='<div class="row-edit res"><input type="text" class="cres-l" data-i="'+i+'" value="'+esc(r.l||'')+'" placeholder="Resource name"/>'
+      +'<input type="text" class="cres-u" data-i="'+i+'" value="'+esc(r.u||'')+'" placeholder="https://..."/>'
+      +'<button class="icon-btn danger" data-cact="delRes" data-i="'+i+'" title="Remove">×</button></div>'; });
+    h+='<button class="add-link" data-cact="addRes">+ Add resource</button>';
+  } else if((wk.res||[]).length){ wk.res.forEach((r,i)=>{ const rid='w'+wk.w+'.r'+i;
     h+='<div class="res-item"><input type="checkbox" class="ck sm" data-id="'+rid+'" '+(P()[rid]?'checked':'')+'/>'
       +'<div class="rl"><a href="'+esc(r.u)+'" target="_blank" rel="noopener">'+esc(r.l)+'</a></div>'
       +'<a class="ext" href="'+esc(r.u)+'" target="_blank" rel="noopener">open ↗</a></div>'; }); }
@@ -562,13 +583,28 @@ function renderWeek(){
     +'<button class="btn ox" id="goLog" style="margin-top:12px">＋ Log this weeks render →</button></div></div>';
   $('content').innerHTML=h;
   wireChecks();
-  const pv=$('prevW'); if(pv)pv.onclick=()=>goWeek(currentWeek-1);
-  const nx=$('nextW'); if(nx)nx.onclick=()=>goWeek(currentWeek+1);
-  const jc=$('jumpCur'); if(jc)jc.onclick=()=>goWeek(currentWeekFromStart());
+  const pv=$('prevW'); if(pv)pv.onclick=()=>{ if(idx>0) goWeek(ep[idx-1].w); };
+  const nx=$('nextW'); if(nx)nx.onclick=()=>{ if(idx<total-1) goWeek(ep[idx+1].w); };
+  const jc=$('jumpCur'); if(jc)jc.onclick=()=>{ const c=currentWeekFromStart(); if(c)goWeek(c); };
   const ll=$('ladLink'); if(ll)ll.onclick=()=>switchTab('ladders');
   const note=$('weekNote');
   note.addEventListener('input',e=>{ curState().notes['w'+wk.w]=e.target.value; clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); });
-  $('goLog').onclick=()=>{ logPrefillWeek=wk.w; switchTab('log'); };
+  $('goLog').onclick=()=>{ logPrefillWeek=num; switchTab('log'); };
+  if(editMode){
+    const ti=$('cmTitle'); if(ti)ti.addEventListener('input',e=>{ curState().meta.title=e.target.value||undefined; applyHeader(); clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); });
+    const go=$('cmGoal'); if(go)go.addEventListener('input',e=>{ curState().meta.goal=e.target.value||undefined; clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); });
+    const fe=$('focusEdit'); if(fe)fe.addEventListener('input',e=>{ setWeekFocus(wk.w, e.target.value); clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); });
+    $('content').querySelectorAll('.cres-l').forEach(inp=>inp.addEventListener('input',e=>{ weekResArr(wk.w)[+e.target.dataset.i].l=e.target.value; clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); }));
+    $('content').querySelectorAll('.cres-u').forEach(inp=>inp.addEventListener('input',e=>{ weekResArr(wk.w)[+e.target.dataset.i].u=e.target.value; clearTimeout(noteTimer); noteTimer=setTimeout(dbSaveState,650); }));
+    $('content').querySelectorAll('[data-cact]').forEach(btn=>btn.onclick=()=>{
+      const act=btn.dataset.cact;
+      if(act==='addRes'){ weekResArr(wk.w).push({l:'',u:''}); }
+      else if(act==='delRes'){ weekResArr(wk.w).splice(+btn.dataset.i,1); }
+      dbSaveState(); renderWeek();
+    });
+    const aw=$('addWeekBtn'); if(aw)aw.onclick=()=>{ const nw=addCineWeek(wk.q); dbSaveState(); goWeek(nw); };
+    const rw=$('rmWeekBtn'); if(rw)rw.onclick=()=>{ if(!confirm('Remove this week? Its tasks and progress will be hidden.'))return; const back=idx>0?ep[idx-1].w:(ep[1]?ep[1].w:null); removeCineWeek(wk.w); dbSaveState(); const np=effPlan(); goWeek(back && np.some(x=>x.w===back)?back:(np[0]?np[0].w:1)); };
+  }
 }
 function wireChecks(){
   $('content').querySelectorAll('input.ck').forEach(cb=>{
@@ -580,17 +616,18 @@ function wireChecks(){
     });
   });
 }
-function goWeek(w){ const max=curDef().plan.length; w=Math.max(1,Math.min(max,w)); currentWeek=w; curState().meta.lastWeek=w; dbSaveState(); renderWeek(); window.scrollTo({top:0,behavior:'smooth'}); }
+function goWeek(w){ const ep=effPlan(); if(!ep.some(x=>x.w===w)) w=ep[0]?ep[0].w:1; currentWeek=w; curState().meta.lastWeek=w; dbSaveState(); renderWeek(); window.scrollTo({top:0,behavior:'smooth'}); }
 
 /* ---------- RENDER: MAP ---------- */
 function renderMap(){
-  const qmap={}; curDef().plan.forEach(wk=>{ (qmap[wk.q]=qmap[wk.q]||[]).push(wk); });
+  const plan=effPlan(); const pos={}; plan.forEach((wk,i)=>{ pos[wk.w]=i+1; });
+  const qmap={}; plan.forEach(wk=>{ (qmap[wk.q]=qmap[wk.q]||[]).push(wk); });
   let h='<div class="section-title" style="margin-bottom:16px">The full <em>arc</em> - click any week to jump in.</div>';
-  Object.keys(qmap).forEach(q=>{ const def=quarters()[q],wks=qmap[q]; let qd=0,qt=0; wks.forEach(wk=>{const p=weekProg(wk);qd+=p.done;qt+=p.total;}); const qpct=qt?Math.round(qd/qt*100):0;
-    h+='<div class="quarter"><div class="qhead"><div><div class="qname">'+esc(def.name)+'</div><div class="muted" style="font-size:13px">'+esc(def.sub)+'</div></div><div class="chip">'+qpct+'% complete</div></div><div class="wgrid">';
+  Object.keys(qmap).forEach(q=>{ const def=quarters()[q]||{name:'Custom',sub:'Added weeks'},wks=qmap[q]; let qd=0,qt=0; wks.forEach(wk=>{const p=weekProg(wk);qd+=p.done;qt+=p.total;}); const qpct=qt?Math.round(qd/qt*100):0;
+    h+='<div class="quarter"><div class="qhead"><div><div class="qname">'+esc(def.name)+'</div><div class="muted" style="font-size:13px">'+esc(def.sub||'')+'</div></div><div class="chip">'+qpct+'% complete</div></div><div class="wgrid">';
     wks.forEach(wk=>{ const p=weekProg(wk),pct=p.total?p.done/p.total*100:0,full=pct>=100;
       h+='<button class="wcell '+(wk.ms?'ms':'')+' '+(wk.w===currentWeek?'cur':'')+' '+(full?'full':'')+'" data-w="'+wk.w+'">'
-        +'<div class="wn">Week '+String(wk.w).padStart(2,'0')+'</div>'
+        +'<div class="wn">Week '+String(pos[wk.w]).padStart(2,'0')+(wk._added?' +':'')+'</div>'
         +'<div class="wf">'+esc(wk.focus.length>72?wk.focus.slice(0,70)+'…':wk.focus)+'</div>'
         +'<div class="wbar"><div style="width:'+pct+'%"></div></div></button>'; });
     h+='</div></div>'; });
@@ -648,7 +685,7 @@ async function handleFile(file){pendingThumb=null;pendingKind=null;pendingName=f
   if(fn)fn.textContent=file.name+(pendingThumb?' · thumbnail ready ✓':' · saved as note');}
 function renderLog(){
   const def=logPrefillWeek||currentWeek;logPrefillWeek=null;
-  const maxWk = isUserPath(state.current) ? Math.max(1,(curUser().weeks||[]).length) : curDef().plan.length;
+  const maxWk = isUserPath(state.current) ? Math.max(1,(curUser().weeks||[]).length) : Math.max(1,effPlan().length);
   let h='<div class="section-title" style="margin-bottom:6px">Render <em>Log</em> & progress catalogue</div>'
     +'<div class="muted" style="margin-bottom:18px;max-width:660px">Document what you ship. Upload an image or video and a thumbnail snapshot is saved + '+(cloudActive()?'synced to your account':'kept in this browser')+'. For the full-res file, paste a link (Drive / Vercel / YouTube).</div>'
     +'<div class="panel card"><div class="log-form">'
@@ -690,9 +727,9 @@ async function delEntry(id){catalogue=catalogue.filter(e=>e.id!==id);await dbDel
 function updateLogDot(){const dd=$('logDot');if(dd)dd.textContent=(state.current && skillRenders().length)?('('+skillRenders().length+')'):'';}
 
 /* ---------- START DATE ---------- */
-function currentWeekFromStart(){ const m=curState().meta; if(!m.startDate)return null; const days_=Math.floor((new Date()-new Date(m.startDate))/86400000); return Math.max(1,Math.min(curDef().plan.length,Math.floor(days_/7)+1)); }
+function currentWeekFromStart(){ const m=curState().meta; if(!m.startDate)return null; const ep=effPlan(); if(!ep.length)return null; const days_=Math.floor((new Date()-new Date(m.startDate))/86400000); const pos=Math.max(1,Math.min(ep.length,Math.floor(days_/7)+1)); return ep[pos-1]?ep[pos-1].w:null; }
 function refreshSuggest(){ const el=$('suggest'),di=$('startDate'); if(!el||!di)return; const m=curState()?curState().meta:null;
-  if(m&&m.startDate){ di.value=m.startDate; const cw=currentWeekFromStart(); el.innerHTML='→ Week <b style="color:var(--gold)">'+cw+'</b>'; } else { di.value=''; el.textContent=''; } }
+  if(m&&m.startDate){ di.value=m.startDate; const cw=currentWeekFromStart(); const ep=effPlan(); const pos=(ep.findIndex(x=>x.w===cw)+1)||1; el.innerHTML='→ Week <b style="color:var(--gold)">'+pos+'</b>'; } else { di.value=''; el.textContent=''; } }
 
 /* ---------- TABS / LOAD / INIT ---------- */
 function switchTab(t){
