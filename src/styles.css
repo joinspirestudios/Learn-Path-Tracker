@@ -317,3 +317,35 @@
 .tpl-row.sel{background:rgba(201,162,75,0.1);border-color:rgba(201,162,75,0.45)}
 .tpl-name{color:var(--cream);font-size:14.5px;font-weight:600}
 .tpl-meta{color:var(--sand-dim);font-size:12px;margin-top:2px;line-height:1.35}
+
+/* ---- undo toast (J1) ---- */
+.undo-toast{
+  position:fixed; left:50%; bottom:24px; transform:translate(-50%,18px);
+  display:flex; align-items:center; gap:12px;
+  background:linear-gradient(180deg,var(--panel),var(--ink2));
+  border:1px solid var(--line); border-radius:14px;
+  padding:11px 10px 11px 18px; box-shadow:var(--shadow);
+  color:var(--cream); font:13px 'DM Sans',sans-serif;
+  z-index:1000; opacity:0; pointer-events:none;
+  transition:opacity .22s ease, transform .22s ease;
+  max-width:calc(100vw - 32px); min-width:280px;
+}
+.undo-toast.show{ opacity:1; transform:translate(-50%,0); pointer-events:auto; }
+.undo-toast .ut-msg{ flex:1; min-width:0; }
+.undo-toast .ut-btn{
+  background:var(--gold); color:var(--ink); border:none;
+  font:700 12.5px 'DM Sans',sans-serif; letter-spacing:.02em;
+  padding:7px 14px; border-radius:999px; cursor:pointer;
+  transition:.15s; min-height:32px;
+}
+.undo-toast .ut-btn:hover{ background:var(--gold-soft); }
+.undo-toast .ut-x{
+  background:none; border:none; color:var(--sand-dim);
+  font-size:20px; line-height:1; cursor:pointer;
+  padding:4px 8px; min-height:32px; min-width:32px;
+}
+.undo-toast .ut-x:hover{ color:var(--cream); }
+@media (max-width:480px){
+  .undo-toast{ left:16px; right:16px; bottom:16px; transform:translateY(18px); max-width:none; min-width:0; }
+  .undo-toast.show{ transform:translateY(0); }
+}

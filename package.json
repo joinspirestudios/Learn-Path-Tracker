@@ -1,7 +1,7 @@
 {
   "name": "mastery-tracker",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Cinematic Storytelling x 3D — 12-month mastery tracker (Vite + Firebase, Vercel-ready).",
   "scripts": {

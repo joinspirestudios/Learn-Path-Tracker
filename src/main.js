@@ -7,7 +7,26 @@ import { fb } from './firebase.js';
 const $ = (id) => document.getElementById(id);
 
 /* ---------- LOCAL STORE (fallback when not signed in / no config) ---------- */
-const STATE_KEY = 'lpt_state', CAT_PREFIX = 'lpt_cat:';
+const STATE_KEY = 'lpt_state', CAT_PREFIX = 'lpt_cat:', LEGACY_KEY = 'dp_state';
+
+/* ---------- SCHEMA VERSION + MIGRATIONS ----------
+   Bump SCHEMA_VERSION and add a numbered migration block below whenever the
+   stored shape changes. Migrations run once per load on both local and cloud
+   bundles, so deployed users do not silently break when data.js evolves. */
+const SCHEMA_VERSION = 2;
+function migrateState(s){
+  s = s && typeof s === 'object' ? s : {};
+  // Treat any pre-versioning bundle as v1.
+  const startedAt = s.version || 1;
+  // v1 → v2: bring forward into the versioned shape. (No structural changes yet
+  // — this is the first version write so future migrations have a known floor.)
+  // Future migrations slot in here, gated on `if(startedAt < N)`.
+  s.skills    = s.skills    || {};
+  s.userPaths = s.userPaths || {};
+  s.current   = s.current   || null;
+  s.version   = SCHEMA_VERSION;
+  return s;
+}
 const Store = {
   async get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
   async set(k,v){ try{ localStorage.setItem(k,v); return true; }catch(e){ return false; } },
@@ -64,8 +83,15 @@ async function emailSignup(name,email,pw){
 async function emailLogin(email,pw){ await fb.signInWithEmailAndPassword(fb.auth, email, pw); }
 async function doSignOut(){ try{ await fb.signOut(fb.auth); }catch(e){ console.warn(e); } }
 
-/* cache the last signed-in label so refreshes don't flash the sign-in button */
-function cacheAuthLabel(u){ try{ localStorage.setItem('lpt_auth', u.displayName || u.email || '1'); }catch(e){} }
+/* cache the last signed-in label so refreshes don't flash the sign-in button.
+   We store only a first name (never the full email) so the kicker never briefly
+   reads "WELCOME, NAME@DOMAIN.COM" before onAuthStateChanged resolves. */
+function cacheAuthLabel(u){
+  try{
+    const name = ((u.displayName||'').split(' ')[0]) || ((u.email||'').split('@')[0]) || '';
+    if(name) localStorage.setItem('lpt_auth', name);
+  }catch(e){}
+}
 function clearAuthLabel(){ try{ localStorage.removeItem('lpt_auth'); }catch(e){} }
 function cachedAuthLabel(){ try{ return localStorage.getItem('lpt_auth'); }catch(e){ return null; } }
 
@@ -83,23 +109,33 @@ let catalogue = [];                        // every render entry, each carries .
 let activeTab = 'week', currentWeek = 1, noteTimer = null;
 
 /* ---------- DB LAYER ---------- */
+let _cloudSaveTimer = null;
 async function dbLoadState(){
   if(cloudActive()){
-    try{ const ref=fb.doc(fb.db,'users',currentUser.uid,'state','main'); const snap=await fb.getDoc(ref); if(snap.exists()) return snap.data().bundle||{}; }catch(e){ console.warn(e); }
-    return {};
+    try{
+      const ref=fb.doc(fb.db,'users',currentUser.uid,'state','main');
+      const snap=await fb.getDoc(ref);
+      if(snap.exists()) return migrateState(snap.data().bundle||{});
+    }catch(e){ console.warn(e); }
+    return migrateState({});
   }
-  const raw=await Store.get(STATE_KEY);
-  if(raw){ try{ return JSON.parse(raw); }catch(e){} }
-  // legacy single-skill format → wrap as the cinematic skill
-  const old=await Store.get('dp_state');
-  if(old){ try{ const o=JSON.parse(old); return { current:null, skills:{ cinematic:{ progress:o.progress||{}, notes:o.notes||{}, meta:o.meta||{startDate:null,lastWeek:1} } } }; }catch(e){} }
-  return {};
+  return loadLocalState();
 }
 async function dbSaveState(){
-  // Always mirror locally first so a refresh restores instantly (local-first).
+  // Local mirror is instant (local-first) — a refresh never waits on the network.
   try{ localStorage.setItem(STATE_KEY, JSON.stringify(state)); }catch(e){}
-  if(cloudActive()){ try{ const ref=fb.doc(fb.db,'users',currentUser.uid,'state','main'); await fb.setDoc(ref,{bundle:state},{merge:true}); }catch(e){ console.warn(e); } }
-  flash();
+  flash('Saved ✓');
+  // Cloud write is debounced so a burst of toggles collapses into one Firestore write.
+  if(cloudActive()){
+    clearTimeout(_cloudSaveTimer);
+    _cloudSaveTimer = setTimeout(async ()=>{
+      try{
+        const ref=fb.doc(fb.db,'users',currentUser.uid,'state','main');
+        await fb.setDoc(ref,{bundle:state},{merge:true});
+        flash('Synced ✓');
+      }catch(e){ console.warn('cloud sync:', e); }
+    }, 500);
+  }
 }
 async function dbLoadRenders(){
   if(cloudActive()){ try{ const col=fb.collection(fb.db,'users',currentUser.uid,'renders'); const snap=await fb.getDocs(col); const arr=[]; snap.forEach(d=>arr.push(d.data())); return arr; }catch(e){ console.warn(e); return []; } }
@@ -181,7 +217,25 @@ function computeStreak(){
   while(a[dstr(d)]){ n++; d=addDays(d,-1); }
   return n;
 }
-function flash(){ const s=$('saved'); if(!s)return; s.textContent = cloudActive() ? 'Synced ✓' : 'Saved ✓'; s.classList.add('show'); clearTimeout(flash._t); flash._t=setTimeout(()=>s.classList.remove('show'),1100); }
+function flash(text){ const s=$('saved'); if(!s)return; s.textContent = text || (cloudActive() ? 'Synced ✓' : 'Saved ✓'); s.classList.add('show'); clearTimeout(flash._t); flash._t=setTimeout(()=>s.classList.remove('show'),1100); }
+
+/* Undo toast — destructive actions (path/week delete) apply immediately and
+   surface a 6s window to reverse. Single instance: opening a new toast
+   replaces any previous one (Gmail pattern, keeps mobile clean). */
+function undoToast(message, onUndo, timeoutMs = 6000){
+  const old = document.getElementById('undo-toast'); if(old) old.remove();
+  const t = document.createElement('div');
+  t.id = 'undo-toast'; t.className = 'undo-toast';
+  t.innerHTML = '<span class="ut-msg"></span><button class="ut-btn" type="button">Undo</button><button class="ut-x" type="button" aria-label="Dismiss">×</button>';
+  t.querySelector('.ut-msg').textContent = message;
+  document.body.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  let timer;
+  const dismiss = ()=>{ clearTimeout(timer); t.classList.remove('show'); setTimeout(()=>t.remove(), 220); };
+  timer = setTimeout(dismiss, timeoutMs);
+  t.querySelector('.ut-btn').onclick = ()=>{ dismiss(); try{ onUndo(); }catch(e){ console.warn('undo failed:', e); } };
+  t.querySelector('.ut-x').onclick = dismiss;
+}
 async function toggle(id,val){ const p=P(); if(val){ p[id]=true; const m=curState().meta; (m.activity=m.activity||{})[dstr(new Date())]=true; } else delete p[id]; updateOverall(); await dbSaveState(); }
 
 function updateOverall(){
@@ -474,15 +528,45 @@ function renderPlan(){
   $('content').querySelectorAll('.task-input').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti].text=e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.res-label').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].label=e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.res-url').forEach(inp=>inp.addEventListener('input',e=>{ def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url=e.target.value; upSaveSoft(); }));
-  $('content').querySelectorAll('[data-act]').forEach(btn=>btn.onclick=()=>{
+  $('content').querySelectorAll('[data-act]').forEach(btn=>btn.onclick=async ()=>{
     const act=btn.dataset.act, wi=+btn.dataset.wi, ti=+btn.dataset.ti, ri=+btn.dataset.ri;
     if(act==='addTask'){ (def.weeks[wi].tasks=def.weeks[wi].tasks||[]).push({text:''}); }
     else if(act==='delTask'){ def.weeks[wi].tasks.splice(ti,1); }
     else if(act==='addRes'){ (def.weeks[wi].resources=def.weeks[wi].resources||[]).push({label:'',url:''}); }
     else if(act==='delRes'){ def.weeks[wi].resources.splice(ri,1); }
     else if(act==='addWeek'){ def.weeks.push({title:'Week '+(def.weeks.length+1),tasks:[{text:''}],resources:[]}); }
-    else if(act==='delWeek'){ if(confirm('Delete this week and its tasks?')) def.weeks.splice(wi,1); else return; }
-    else if(act==='delPath'){ if(confirm('Delete this entire path? This cannot be undone.')){ delete state.userPaths[id]; delete state.skills[id]; dbSaveState(); goCatalog(); return; } else return; }
+    else if(act==='delWeek'){
+      // Snapshot the week so Undo can reinsert it at the same index.
+      const snap = JSON.parse(JSON.stringify(def.weeks[wi]));
+      def.weeks.splice(wi,1);
+      upSave(); renderPlan();
+      undoToast('Week removed', ()=>{ def.weeks.splice(wi, 0, snap); upSave(); renderPlan(); });
+      return;
+    }
+    else if(act==='delPath'){
+      // Snapshot path definition, progress state, and all render entries for this skill.
+      const snap = {
+        userPath: state.userPaths[id] ? JSON.parse(JSON.stringify(state.userPaths[id])) : null,
+        skill:    state.skills[id]    ? JSON.parse(JSON.stringify(state.skills[id]))    : null,
+        renders:  catalogue.filter(e => (e.skill||'cinematic') === id).map(e => JSON.parse(JSON.stringify(e))),
+      };
+      const title = snap.userPath ? (snap.userPath.title || 'path') : 'path';
+      // Apply cascade delete.
+      catalogue = catalogue.filter(e => (e.skill||'cinematic') !== id);
+      delete state.userPaths[id];
+      delete state.skills[id];
+      await Promise.all(snap.renders.map(r => dbDelRender(r.id).catch(()=>{})));
+      await dbSaveState();
+      goCatalog();
+      undoToast('Deleted "'+title+'"', async ()=>{
+        if(snap.userPath) state.userPaths[id] = snap.userPath;
+        if(snap.skill)    state.skills[id]    = snap.skill;
+        for(const r of snap.renders){ catalogue.push(r); try{ await dbSaveRender(r); }catch(e){} }
+        await dbSaveState();
+        renderCatalog();
+      });
+      return;
+    }
     upSave(); renderPlan();
   });
 }
@@ -627,7 +711,20 @@ function renderWeek(){
       dbSaveState(); renderWeek();
     });
     const aw=$('addWeekBtn'); if(aw)aw.onclick=()=>{ const nw=addCineWeek(wk.q); dbSaveState(); goWeek(nw); };
-    const rw=$('rmWeekBtn'); if(rw)rw.onclick=()=>{ if(!confirm('Remove this week? Its tasks and progress will be hidden.'))return; const back=idx>0?ep[idx-1].w:(ep[1]?ep[1].w:null); removeCineWeek(wk.w); dbSaveState(); const np=effPlan(); goWeek(back && np.some(x=>x.w===back)?back:(np[0]?np[0].w:1)); };
+    const rw=$('rmWeekBtn'); if(rw)rw.onclick=()=>{
+      const back = idx>0 ? ep[idx-1].w : (ep[1]?ep[1].w:null);
+      const w = wk.w;
+      removeCineWeek(w);
+      dbSaveState();
+      const np = effPlan();
+      goWeek(back && np.some(x=>x.w===back) ? back : (np[0]?np[0].w:1));
+      undoToast('Week '+w+' hidden', ()=>{
+        const e = weekEdits();
+        e.removed = (e.removed||[]).filter(x => x !== w);
+        dbSaveState();
+        goWeek(w);
+      });
+    };
   }
 }
 function wireChecks(){
@@ -747,7 +844,19 @@ async function addEntry(){
   $('lTitle').value='';$('lNote').value='';$('lLink').value='';
   const fn=$('fname');if(fn)fn.textContent='no file chosen';const lf=$('lFile');if(lf)lf.value='';renderGallery();
 }
-async function delEntry(id){catalogue=catalogue.filter(e=>e.id!==id);await dbDelRender(id);flash();updateLogDot();renderGallery();}
+async function delEntry(id){
+  const snap = catalogue.find(e=>e.id===id);
+  if(!snap) return;
+  const copy = JSON.parse(JSON.stringify(snap));
+  catalogue = catalogue.filter(e=>e.id!==id);
+  await dbDelRender(id);
+  flash(); updateLogDot(); renderGallery();
+  undoToast('Render removed', async ()=>{
+    catalogue.push(copy);
+    try{ await dbSaveRender(copy); }catch(e){}
+    updateLogDot(); renderGallery();
+  });
+}
 function updateLogDot(){const dd=$('logDot');if(dd)dd.textContent=(state.current && skillRenders().length)?('('+skillRenders().length+')'):'';}
 
 /* ---------- START DATE ---------- */
@@ -772,37 +881,54 @@ function finishLoad(){
   } else { state.current=null; renderCatalog(); }
 }
 function loadLocalState(){
-  const raw=localStorage.getItem(STATE_KEY); let b={};
-  if(raw){ try{ b=JSON.parse(raw); }catch(e){} }
-  if(!b.skills){ // legacy single-skill format
-    const old=localStorage.getItem('dp_state');
-    if(old){ try{ const o=JSON.parse(old); b={ current:null, skills:{ cinematic:{ progress:o.progress||{}, notes:o.notes||{}, meta:o.meta||{startDate:null,lastWeek:1} } } }; }catch(e){} }
+  // Versioned state present? Migrate it forward and return.
+  const raw = localStorage.getItem(STATE_KEY);
+  if(raw){ try{ return migrateState(JSON.parse(raw)); }catch(e){} }
+  // Otherwise look for the legacy single-skill bundle, migrate ONCE, persist, and clear it.
+  const old = localStorage.getItem(LEGACY_KEY);
+  if(old){
+    try{
+      const o = JSON.parse(old);
+      const migrated = migrateState({
+        current: null,
+        skills: { cinematic: { progress: o.progress||{}, notes: o.notes||{}, meta: o.meta||{startDate:null,lastWeek:1} } },
+        userPaths: {},
+      });
+      localStorage.setItem(STATE_KEY, JSON.stringify(migrated));
+      localStorage.removeItem(LEGACY_KEY); // never read this key again
+      return migrated;
+    }catch(e){}
   }
-  return { current:b.current||null, skills:b.skills||{}, userPaths:b.userPaths||{} };
+  return migrateState({});
 }
 async function loadLocalAndRender(){
-  state=loadLocalState();
-  catalogue=await dbLoadRenders();   // local renders (signed-out path)
+  state = loadLocalState();          // already migrated
+  catalogue = await dbLoadRenders(); // local renders (signed-out path)
   finishLoad();
 }
 async function loadAndRender(){
-  const b=await dbLoadState();
-  state={ current:b.current||null, skills:b.skills||{}, userPaths:b.userPaths||{} };
-  catalogue=await dbLoadRenders();
+  state = await dbLoadState();       // already migrated
+  catalogue = await dbLoadRenders();
   finishLoad();
 }
 async function onSignIn(){
-  const cloudState=await dbLoadState();
-  const cloudRenders=await dbLoadRenders();
-  const cloudEmpty=!cloudState || !cloudState.skills || Object.keys(cloudState.skills||{}).length===0;
+  const cloudState   = await dbLoadState();    // already migrated
+  const cloudRenders = await dbLoadRenders();
+  const cloudEmpty = !cloudState.skills || Object.keys(cloudState.skills).length === 0;
   if(cloudEmpty){
-    const local=loadLocalState();
-    if(local && local.skills && Object.keys(local.skills).length){ state=local; await dbSaveState(); }
-    else { state={ current:cloudState.current||null, skills:cloudState.skills||{}, userPaths:cloudState.userPaths||{} }; }
-  } else { state={ current:cloudState.current||null, skills:cloudState.skills||{}, userPaths:cloudState.userPaths||{} }; }
+    const local = loadLocalState();            // already migrated
+    if(Object.keys(local.skills||{}).length){ state = local; await dbSaveState(); }
+    else { state = cloudState; }
+  } else {
+    state = cloudState;
+  }
   if(cloudRenders.length===0){
     const lkeys=await Store.list(CAT_PREFIX);
-    if(lkeys.length){ const arr=[]; for(const k of lkeys){ try{ const v=await Store.get(k); if(v){ const e=JSON.parse(v); arr.push(e); await dbSaveRender(e); } }catch(e){} } catalogue=arr; }
+    if(lkeys.length){
+      const arr=[];
+      for(const k of lkeys){ try{ const v=await Store.get(k); if(v){ const e=JSON.parse(v); arr.push(e); await dbSaveRender(e); } }catch(e){} }
+      catalogue=arr;
+    }
   } else catalogue=cloudRenders;
   finishLoad();
 }
