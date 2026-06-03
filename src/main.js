@@ -1,6 +1,7 @@
 // ── Learn Path Tracker - app logic (multi-skill) ──────────────────────────
 import './styles.css';
 import { SKILLS } from './data.js';
+import { TEMPLATES } from './templates.js';
 import { fb } from './firebase.js';
 
 const $ = (id) => document.getElementById(id);
@@ -337,11 +338,19 @@ function renderCatalog(){
   const sc=$('signinCard'); if(sc)sc.onclick=()=>openAuthModal('signup');
 }
 function createPath(){
+  const bySkill={}; TEMPLATES.forEach(t=>{ (bySkill[t.skill]=bySkill[t.skill]||[]).push(t); });
+  let list='<button class="tpl-row sel" data-tpl="blank"><div class="tpl-name">Blank path</div><div class="tpl-meta">Start empty and build every week yourself</div></button>';
+  Object.keys(bySkill).forEach(skill=>{
+    list+='<div class="tpl-skill">'+esc(skill)+'</div>';
+    bySkill[skill].forEach(t=>{ list+='<button class="tpl-row" data-tpl="'+esc(t.id)+'"><div class="tpl-name">'+esc(t.title)+'</div><div class="tpl-meta">'+t.weeks.length+' weeks · '+esc(t.goal)+'</div></button>'; });
+  });
   const o=document.createElement('div'); o.className='modal-overlay';
-  o.innerHTML='<div class="modal-box"><div class="modal-head"><h3>Create a new path</h3><button class="modal-x">×</button></div>'
+  o.innerHTML='<div class="modal-box wide"><div class="modal-head"><h3>Create a new path</h3><button class="modal-x">×</button></div>'
     +'<div class="modal-body">'
-    +'<div class="field"><label>Path name</label><input type="text" id="npTitle" placeholder="e.g. Learn 3D Motion Design" maxlength="80"/></div>'
-    +'<div class="field" style="margin-top:12px"><label>Your goal (optional)</label><textarea id="npGoal" placeholder="What does finishing this path look like?"></textarea></div>'
+    +'<div class="muted" style="font-size:12px;margin-bottom:10px">Start from a template or blank. Everything stays fully editable after you create it.</div>'
+    +'<div class="tpl-list">'+list+'</div>'
+    +'<div class="field" style="margin-top:14px"><label>Path name</label><input type="text" id="npTitle" placeholder="Name your path" maxlength="80"/></div>'
+    +'<div class="field" style="margin-top:10px"><label>Your goal (optional)</label><textarea id="npGoal" placeholder="What does finishing this path look like?"></textarea></div>'
     +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="npCancel">Cancel</button><button class="btn gold" id="npCreate">Create path</button></div>'
     +'</div></div>';
   document.body.appendChild(o);
@@ -349,16 +358,31 @@ function createPath(){
   o.addEventListener('click',e=>{ if(e.target===o)close(); });
   o.querySelector('.modal-x').onclick=close;
   o.querySelector('#npCancel').onclick=close;
+  let pick='blank';
+  const titleIn=o.querySelector('#npTitle'), goalIn=o.querySelector('#npGoal');
+  o.querySelectorAll('.tpl-row').forEach(row=>row.onclick=()=>{
+    o.querySelectorAll('.tpl-row').forEach(r=>r.classList.remove('sel')); row.classList.add('sel');
+    pick=row.dataset.tpl;
+    if(pick==='blank'){ titleIn.value=''; goalIn.value=''; titleIn.placeholder='Name your path'; }
+    else { const t=TEMPLATES.find(x=>x.id===pick); if(t){ titleIn.value=t.title; goalIn.value=t.goal; } }
+  });
   o.querySelector('#npCreate').onclick=()=>{
-    const title=o.querySelector('#npTitle').value.trim();
-    if(!title){ o.querySelector('#npTitle').focus(); return; }
-    const goal=o.querySelector('#npGoal').value.trim();
+    let title=titleIn.value.trim(); const goal=goalIn.value.trim();
+    let weeks;
+    if(pick==='blank'){
+      if(!title){ titleIn.focus(); return; }
+      weeks=[{ title:'Week 1 - Foundations', tasks:[{text:'Define what good looks like for this skill'},{text:'Find 3 references or examples to study'}], resources:[] }];
+    } else {
+      const t=TEMPLATES.find(x=>x.id===pick); if(!t){ return; }
+      if(!title) title=t.title;
+      weeks=t.weeks.map(w=>({ title:w.title, tasks:(w.tasks||[]).map(tk=>({text:tk.text})), resources:(w.resources||[]).map(r=>({label:r.label,url:r.url})) }));
+    }
     const id='up_'+Date.now().toString(36)+Math.floor(Math.random()*999).toString(36);
-    state.userPaths[id]={ title, goal, created:Date.now(), weeks:[
-      { title:'Week 1 - Foundations', tasks:[{text:'Define what good looks like for this skill'},{text:'Find 3 references or examples to study'}], resources:[] }
-    ]};
+    state.userPaths[id]={ title, goal, created:Date.now(), weeks };
     ensureSkill(id);
-    close(); dbSaveState(); openSkill(id); editMode=true; switchTab('plan');
+    close(); dbSaveState(); openSkill(id);
+    if(pick==='blank'){ editMode=true; }
+    switchTab('plan');
   };
 }
 function showInfo(title, bodyHtml){

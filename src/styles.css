@@ -307,3 +307,13 @@
 .cres-l{flex:0 0 36%}
 .cres-u{flex:1}
 .tab.edit.editing{color:var(--gold);border-color:rgba(201,162,75,0.5)}
+
+/* ---- template picker (B2) ---- */
+.modal-box.wide{max-width:560px}
+.tpl-list{max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:6px;background:var(--ink)}
+.tpl-skill{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--sand-dim);padding:12px 8px 5px}
+.tpl-row{display:block;width:100%;text-align:left;background:transparent;border:1px solid transparent;border-radius:9px;padding:9px 10px;cursor:pointer;margin:2px 0}
+.tpl-row:hover{background:var(--ink2)}
+.tpl-row.sel{background:rgba(201,162,75,0.1);border-color:rgba(201,162,75,0.45)}
+.tpl-name{color:var(--cream);font-size:14.5px;font-weight:600}
+.tpl-meta{color:var(--sand-dim);font-size:12px;margin-top:2px;line-height:1.35}
