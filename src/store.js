@@ -1,0 +1,49 @@
+// ── store.js ──────────────────────────────────────────────────────────────
+// Single source of truth for shared mutable state. Every module that needs
+// to read or write the live state imports `store` from here.
+//
+// Why an object (not individual lets)? With `let` exports, modules can read
+// but can't reassign across module boundaries. Wrapping everything in `store`
+// lets modules do `store.catalogue = store.catalogue.filter(...)` cleanly.
+
+export const STATE_KEY  = 'lpt_state';
+export const CAT_PREFIX = 'lpt_cat:';
+export const LEGACY_KEY = 'dp_state';
+
+/* ---------- SCHEMA VERSION + MIGRATIONS ----------
+   Bump SCHEMA_VERSION and add a numbered migration block below whenever the
+   stored shape changes. Migrations run once per load on both local and cloud
+   bundles, so deployed users do not silently break when data.js evolves. */
+export const SCHEMA_VERSION = 2;
+export function migrateState(s){
+  s = s && typeof s === 'object' ? s : {};
+  // Treat any pre-versioning bundle as v1.
+  const startedAt = s.version || 1;
+  // v1 → v2: bring forward into the versioned shape. (No structural changes
+  // yet — this is the first version write so future migrations have a floor.)
+  // Future migrations slot in here, gated on `if(startedAt < N)`.
+  s.skills    = s.skills    || {};
+  s.userPaths = s.userPaths || {};
+  s.current   = s.current   || null;
+  s.version   = SCHEMA_VERSION;
+  return s;
+}
+
+/* The live shared state. Modules read/write through `store.*` references. */
+export const store = {
+  state:           { current:null, skills:{}, userPaths:{}, version:0 },
+  catalogue:       [],     // every render entry, each carries .skill
+  currentUser:     null,
+  authChecked:     false,
+  activeTab:       'week',
+  currentWeek:     1,
+  editMode:        false,
+  /* Navigation handlers — main.js assigns these on init so views.js can
+     trigger routing without importing main (which would be circular). */
+  nav: {
+    switchTab:  null,  // (tabName) => void
+    goCatalog:  null,  // () => void
+    goWeek:     null,  // (weekNumber) => void
+    openSkill:  null,  // (skillId) => void
+  },
+};
