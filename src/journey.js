@@ -1,5 +1,6 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const OPEN_STATUSES = ['active', 'completed', 'missed', 'frozen'];
+const SCHEDULE_TYPES = ['once', 'daily'];
 
 export function localDateString(date = new Date()){
   const d = date instanceof Date ? date : new Date(date);
@@ -40,15 +41,77 @@ export function dateForJourneyDay(startDate, dayNumber){
   return addDaysToDateString(startDate, Math.max(0, Number(dayNumber || 1) - 1));
 }
 
-export function getPathTasks(pathOrTasks, pathId = 'path'){
-  if(Array.isArray(pathOrTasks)){
-    return pathOrTasks.map((task, index) => ({
+export function inferDurationDays(label){
+  const text = String(label || '').toLowerCase();
+  const days = text.match(/(\d+)\s*days?/);
+  if(days) return Number(days[1]);
+  const weeks = text.match(/(\d+)\s*weeks?/);
+  if(weeks) return Number(weeks[1]) * 7;
+  const months = text.match(/(\d+)\s*months?/);
+  if(months) return Number(months[1]) === 12 ? 365 : Number(months[1]) * 30;
+  const years = text.match(/(\d+)\s*years?/);
+  if(years) return Number(years[1]) * 365;
+  if(text.includes('1 year') || text.includes('one year')) return 365;
+  return null;
+}
+
+export function normalizeDurationDays(value, label = ''){
+  const n = Number(value);
+  if(Number.isFinite(n) && n > 0) return Math.round(n);
+  return inferDurationDays(label);
+}
+
+function cleanScheduleType(task){
+  if(SCHEDULE_TYPES.includes(task.scheduleType)) return task.scheduleType;
+  if(task.unlockDay != null || task.startDay != null) return 'once';
+  return null;
+}
+
+function normalizeDay(value){
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
+function normalizeTaskSchedule(task, fallbackDay, durationDays){
+  const scheduleType = cleanScheduleType(task);
+  const unlockDay = normalizeDay(task.unlockDay);
+  const startDay = normalizeDay(task.startDay);
+  const endDay = normalizeDay(task.endDay);
+  if(scheduleType === 'daily'){
+    const start = startDay || unlockDay || 1;
+    return {
       ...task,
-      id: task.id || `${pathId}:task:${index}`,
-      title: task.title || task.text || `Task ${index + 1}`,
-      unlockDay: task.unlockDay == null ? (task.assignedDay || 1) : Number(task.unlockDay),
-      order: task.order == null ? index : task.order,
-    }));
+      scheduleType: 'daily',
+      startDay: start,
+      endDay: endDay || durationDays || start,
+      unlockDay: unlockDay || start,
+    };
+  }
+  const onceDay = unlockDay || startDay || fallbackDay || 1;
+  return {
+    ...task,
+    scheduleType: scheduleType || 'once',
+    startDay: startDay || onceDay,
+    endDay: endDay,
+    unlockDay: onceDay,
+  };
+}
+
+export function getPathTasks(pathOrTasks, pathId = 'path'){
+  const durationDays = Array.isArray(pathOrTasks)
+    ? null
+    : normalizeDurationDays(pathOrTasks?.durationDays, pathOrTasks?.durationLabel);
+  if(Array.isArray(pathOrTasks)){
+    const hasSchedule = pathOrTasks.some(task => task.scheduleType || task.unlockDay != null || task.startDay != null);
+    return pathOrTasks.map((task, index) => normalizeTaskSchedule({
+        ...task,
+        id: task.id || `${pathId}:task:${index}`,
+        title: task.title || task.text || `Task ${index + 1}`,
+        order: task.order == null ? index : task.order,
+      },
+      hasSchedule ? 1 : index + 1,
+      null
+    ));
   }
   const raw = [];
   (pathOrTasks?.weeks || []).forEach((week, wi) => {
@@ -64,27 +127,38 @@ export function getPathTasks(pathOrTasks, pathId = 'path'){
       });
     });
   });
-  const hasUnlockDays = raw.some(task => task.unlockDay != null && Number(task.unlockDay) > 0);
+  const hasSchedule = raw.some(task => task.scheduleType || task.unlockDay != null || task.startDay != null);
   return raw.map((task, index) => ({
-    ...task,
-    unlockDay: task.unlockDay != null && Number(task.unlockDay) > 0
-      ? Number(task.unlockDay)
-      : (hasUnlockDays ? 1 : index + 1),
-  }));
+    ...normalizeTaskSchedule(task, hasSchedule ? 1 : index + 1, durationDays),
+    order: task.order == null ? index : task.order,
+  })).filter(task => task.kind !== 'resource');
 }
 
 export function getTasksForDay(pathTasks, dayNumber){
   const day = Number(dayNumber || 1);
-  return getPathTasks(pathTasks).filter(task => Number(task.unlockDay || 1) === day);
+  return getPathTasks(pathTasks).filter(task => {
+    if(task.scheduleType === 'daily'){
+      const start = Number(task.startDay || task.unlockDay || 1);
+      const end = Number(task.endDay || start);
+      return day >= start && day <= end;
+    }
+    return Number(task.unlockDay || task.startDay || 1) === day;
+  });
 }
 
-export function getMaxRoadmapDay(pathTasks, enrollment){
-  const tasks = getPathTasks(pathTasks);
-  const maxTaskDay = tasks.reduce((max, task) => Math.max(max, Number(task.unlockDay || 1)), 1);
+export function getMaxRoadmapDay(pathOrTasks, enrollment){
+  const tasks = getPathTasks(pathOrTasks);
+  const durationDays = Array.isArray(pathOrTasks)
+    ? null
+    : normalizeDurationDays(pathOrTasks?.durationDays, pathOrTasks?.durationLabel);
+  const maxTaskDay = tasks.reduce((max, task) => {
+    if(task.scheduleType === 'daily') return Math.max(max, Number(task.endDay || task.startDay || task.unlockDay || 1));
+    return Math.max(max, Number(task.unlockDay || task.startDay || 1));
+  }, 1);
   const currentDay = Number(enrollment?.currentDay || 1);
   const lastCompleted = enrollment?.lastCompletedDay == null ? 0 : Number(enrollment.lastCompletedDay);
   const calculatedToday = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
-  return Math.max(7, maxTaskDay, currentDay + 6, calculatedToday + 6, lastCompleted);
+  return Math.max(durationDays || 0, 7, maxTaskDay, currentDay + 6, calculatedToday + 6, lastCompleted);
 }
 
 export function getDayStatus(dayNumber, enrollment, dayLogs = {}, today = localDateString()){

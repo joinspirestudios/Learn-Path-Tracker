@@ -21,6 +21,13 @@ Platform paths now use an enrollment-backed daily journey engine:
 - Roadmap states are `active`, `completed`, `locked`, `missed`, and `frozen`.
 - Future days are visible but locked until their calendar day.
 - Current-day task completion is stored in `completedTaskIds` on the dayLog.
+- Roadmap length uses `durationDays` when present. `durationLabel` is display
+  text only, with safe inference for labels like `75 days`, `8 weeks`, or
+  `1 year`.
+- Tasks support scheduling:
+  - `scheduleType: "once"` appears on `unlockDay` or `startDay`.
+  - `scheduleType: "daily"` appears every day from `startDay` to `endDay`.
+  - Legacy tasks without schedule fields still get a safe fallback day.
 - Completing the active day updates `lastCompletedDay`, `lastActivityDate`,
   `currentDay`, and `streak`.
 - New enrollments start with one freeze. A missed day can be changed to

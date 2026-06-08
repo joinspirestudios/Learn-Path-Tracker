@@ -277,6 +277,10 @@
 
 /* ---- user path: plan view + editor ---- */
 .plan-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:22px;flex-wrap:wrap}
+.journey-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:-6px 0 18px}
+.journey-status div{border:1px solid var(--line2);border-radius:10px;background:var(--ink2);padding:10px 12px}
+.journey-status span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--sand-dim);font-weight:700}
+.journey-status b{display:block;margin-top:3px;color:var(--cream);font-family:'Fraunces',serif;font-size:17px;line-height:1.1}
 .roadmap-foundation{margin:-4px 0 18px}
 .road-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
 .road-head h3{font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin:8px 0 0;color:var(--cream)}
@@ -286,8 +290,12 @@
 .journey-start b{color:var(--cream)}
 .journey-start p{font-size:12.5px;color:var(--sand);margin-top:2px}
 .road-days{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
-.road-days.vertical{grid-template-columns:repeat(auto-fill,minmax(124px,1fr))}
+.road-days.vertical{display:flex;flex-direction:column;max-height:560px;overflow:auto;padding:4px 4px 4px 0}
 .road-day{min-height:76px;text-align:left;border:1px solid var(--line2);border-radius:10px;background:var(--ink2);color:var(--cream);font-family:'DM Sans';padding:10px 11px;display:flex;flex-direction:column;justify-content:space-between;gap:4px;cursor:pointer}
+.road-days.vertical .road-day{width:min(420px,92%);position:relative}
+.road-days.vertical .road-day:nth-child(even){align-self:flex-end}
+.road-days.vertical .road-day::before{content:"";position:absolute;top:-9px;bottom:auto;left:24px;width:1px;height:8px;background:var(--line2)}
+.road-days.vertical .road-day:first-child::before{display:none}
 .road-day:disabled{cursor:not-allowed}
 .road-day span{font-weight:800;font-size:12px;color:var(--cream)}
 .road-day small{font-size:10.5px;color:var(--sand-dim);line-height:1.25}
@@ -325,6 +333,11 @@
 .row-edit.res{flex-wrap:wrap}
 .task-input,.res-label,.res-url{flex:1;min-width:160px;background:var(--ink);border:1px solid var(--line2);border-radius:9px;color:var(--cream);font-family:inherit;font-size:14px;padding:8px 11px}
 .res-label{flex:0 0 38%}
+.schedule-edit{display:grid;grid-template-columns:1.1fr 1fr 1fr auto;gap:8px;margin:0 0 10px 0;padding:8px 10px;border:1px dashed var(--line2);border-radius:10px;background:rgba(239,231,216,.025)}
+.schedule-edit label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--sand-dim);font-weight:700}
+.schedule-edit input,.schedule-edit select{width:100%;margin-top:4px;background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--cream);font-family:inherit;font-size:12px;padding:7px 8px}
+.schedule-edit .checkline{display:flex;align-items:center;gap:6px;letter-spacing:0;text-transform:none;font-size:12px;color:var(--sand);padding-top:18px}
+@media(max-width:720px){.schedule-edit{grid-template-columns:1fr 1fr}.schedule-edit .checkline{padding-top:0}}
 .icon-btn{background:var(--ink2);border:1px solid var(--line2);border-radius:8px;color:var(--sand);width:34px;height:34px;cursor:pointer;font-size:16px;line-height:1;flex:0 0 auto}
 .icon-btn.danger:hover{border-color:var(--oxblood-light);color:#e8b9bf}
 .add-link{background:none;border:none;color:var(--gold-soft);font-family:'DM Sans';font-size:13px;font-weight:600;cursor:pointer;padding:8px 4px;margin-top:4px}

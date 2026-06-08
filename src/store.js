@@ -6,6 +6,8 @@
 // but can't reassign across module boundaries. Wrapping everything in `store`
 // lets modules do `store.catalogue = store.catalogue.filter(...)` cleanly.
 
+import { normalizeDurationDays } from './journey.js';
+
 export const STATE_KEY  = 'lpt_state';
 export const CAT_PREFIX = 'lpt_cat:';
 export const LEGACY_KEY = 'dp_state';
@@ -24,6 +26,16 @@ export function migrateState(s){
   // Future migrations slot in here, gated on `if(startedAt < N)`.
   s.skills    = s.skills    || {};
   s.userPaths = s.userPaths || {};
+  Object.keys(s.userPaths).forEach(id => {
+    const path = s.userPaths[id] || {};
+    path.durationDays = normalizeDurationDays(path.durationDays, path.durationLabel);
+    (path.weeks || []).forEach(week => {
+      (week.tasks || []).forEach(task => {
+        if(task.scheduleType && !['once', 'daily'].includes(task.scheduleType)) task.scheduleType = null;
+      });
+    });
+    s.userPaths[id] = path;
+  });
   s.enrollments = s.enrollments || {};
   Object.keys(s.enrollments).forEach(id => {
     const en = s.enrollments[id] || {};

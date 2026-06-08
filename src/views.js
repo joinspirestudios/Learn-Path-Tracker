@@ -27,8 +27,8 @@ import { configPresent, cloudActive } from './db.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
-  getMaxRoadmapDay, getPathTasks, getTasksForDay, journeyDayForDate,
-  localDateString,
+  getMaxRoadmapDay, getTasksForDay, journeyDayForDate,
+  localDateString, normalizeDurationDays,
 } from './journey.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
@@ -201,13 +201,23 @@ function createPath(){
       if(!title) title = t.title;
       weeks = t.weeks.map(w => ({
         title: w.title,
-        tasks: (w.tasks || []).map(tk => ({ text: tk.text })),
+        tasks: (w.tasks || []).map(tk => ({
+          text: tk.text,
+          scheduleType: tk.scheduleType || null,
+          unlockDay: tk.unlockDay == null ? null : tk.unlockDay,
+          startDay: tk.startDay == null ? null : tk.startDay,
+          endDay: tk.endDay == null ? null : tk.endDay,
+          evidenceRequired: !!tk.evidenceRequired,
+        })),
         resources: (w.resources || []).map(r => ({ label: r.label, url: r.url })),
       }));
     }
     let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
+    const pickedTemplate = TEMPLATES.find(x => x.id === pick);
     const localPath = {
-      title, goal, description: goal, category: '', durationLabel: weeks.length + ' weeks',
+      title, goal, description: goal, category: '',
+      durationDays: pickedTemplate ? (pickedTemplate.durationDays || weeks.length * 7) : weeks.length * 7,
+      durationLabel: pickedTemplate ? (pickedTemplate.durationLabel || (weeks.length + ' weeks')) : (weeks.length + ' weeks'),
       creatorName: store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
       visibility: 'private', discoverable: false, previewEnabled: true,
       previewTitle: title, previewDescription: goal, previewIncludesScheme: false,
@@ -231,12 +241,12 @@ function createPath(){
 /* ---- enter / leave a skill ---- */
 export async function openSkill(id){
   store.state.current = id; ensureSkill(id); store.editMode = false;
-  if(isUserPath(id) && store.state.userPaths[id].platform && cloudActive()){
+  if(isUserPath(id)){
     await dbEnsureEnrollment(id);
     const def = store.state.userPaths[id];
     const enrollment = currentEnrollmentForPath(id);
     const todayDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
-    const taskCount = getTasksForDay(getPathTasks(def, id), Math.max(1, Number(enrollment?.currentDay || todayDay))).length;
+    const taskCount = getTasksForDay(def, Math.max(1, Number(enrollment?.currentDay || todayDay))).length;
     await dbReconcileEnrollment(id, taskCount);
   }
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
@@ -366,12 +376,10 @@ function statusLabel(status){
 }
 
 function roadmapHTML(id, def){
-  if(!def.platform) return '';
   const enrollment = currentEnrollmentForPath(id);
-  const tasks = getPathTasks(def, id);
   const logs = enrollment?.dayLogs || {};
   const today = localDateString();
-  const totalDays = getMaxRoadmapDay(tasks, enrollment);
+  const totalDays = getMaxRoadmapDay(def, enrollment);
   const activeDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate, today) : 1;
   let h = '<div class="panel card roadmap-foundation">'
     + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Daily journey</h3></div>'
@@ -384,7 +392,7 @@ function roadmapHTML(id, def){
     const status = getDayStatus(day, enrollment, logs, today);
     const open = canOpenDay(day, status);
     const date = enrollment?.startDate ? dateForJourneyDay(enrollment.startDate, day) : null;
-    const taskCount = getTasksForDay(tasks, day).length;
+    const taskCount = getTasksForDay(def, day).length;
     h += '<button type="button" class="road-day ' + status + (day === activeDay ? ' today' : '') + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled') + '>'
       + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' · ' + esc(date.slice(5)) : '') + '</small>'
       + '<em>' + (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') + '</em></button>';
@@ -394,20 +402,18 @@ function roadmapHTML(id, def){
 }
 
 function journeyDetailHTML(id, def){
-  if(!def.platform) return '';
   const enrollment = currentEnrollmentForPath(id);
   if(!enrollment?.startDate){
     return '<div class="panel card journey-detail"><h3>Not started yet</h3><p class="muted">Start the path to activate Day 1 and begin storing daily progress in your enrollment.</p></div>';
   }
-  const tasks = getPathTasks(def, id);
   const logs = enrollment.dayLogs || {};
   const today = localDateString();
   const activeDay = journeyDayForDate(enrollment.startDate, today);
   const day = selectedJourneyDay || Math.min(Number(enrollment.currentDay || 1), activeDay);
   const status = getDayStatus(day, enrollment, logs, today);
   const date = dateForJourneyDay(enrollment.startDate, day);
-  const log = dayLogFor(enrollment, day) || makeDayLog(day, { date, status, totalTaskCount: getTasksForDay(tasks, day).length });
-  const dayTasks = getTasksForDay(tasks, day);
+  const log = dayLogFor(enrollment, day) || makeDayLog(day, { date, status, totalTaskCount: getTasksForDay(def, day).length });
+  const dayTasks = getTasksForDay(def, day);
   const completed = new Set(log.completedTaskIds || []);
   const completeCount = dayTasks.filter(task => completed.has(task.id)).length;
   let h = '<div class="panel card journey-detail" id="journeyDetail">'
@@ -455,14 +461,32 @@ function journeyDetailHTML(id, def){
   return h;
 }
 
+function journeyStatusHTML(id, def){
+  const enrollment = currentEnrollmentForPath(id);
+  const today = localDateString();
+  const totalDays = getMaxRoadmapDay(def, enrollment);
+  const day = enrollment?.startDate ? Math.min(journeyDayForDate(enrollment.startDate, today), totalDays) : 0;
+  const status = enrollment?.startDate ? getDayStatus(day || 1, enrollment, enrollment.dayLogs || {}, today) : 'not started';
+  const todayTasks = enrollment?.startDate ? getTasksForDay(def, day || 1) : [];
+  const log = enrollment?.dayLogs && (enrollment.dayLogs[day] || enrollment.dayLogs[String(day)]);
+  const done = todayTasks.filter(task => (log?.completedTaskIds || []).includes(task.id)).length;
+  return '<div class="panel card journey-status">'
+    + '<div><span>Day</span><b>' + (day || '-') + ' of ' + totalDays + '</b></div>'
+    + '<div><span>Streak</span><b>' + esc(enrollment?.streak || 0) + '</b></div>'
+    + '<div><span>Freezes</span><b>' + esc(enrollment?.freezeCount ?? 1) + '</b></div>'
+    + '<div><span>Started</span><b>' + esc(enrollment?.startDate || 'Not yet') + '</b></div>'
+    + '<div><span>Today</span><b>' + esc(statusLabel(status)) + '</b></div>'
+    + '<div><span>Progress</span><b>' + done + '/' + todayTasks.length + '</b></div>'
+    + '</div>';
+}
+
 async function updateJourneyTask(id, def, taskId, checked){
   const enrollment = currentEnrollmentForPath(id);
   if(!enrollment?.startDate) return;
   const today = localDateString();
   const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
   if(!canCompleteDay(day, enrollment, today)) return;
-  const tasks = getPathTasks(def, id);
-  const dayTasks = getTasksForDay(tasks, day);
+  const dayTasks = getTasksForDay(def, day);
   const existing = dayLogFor(enrollment, day);
   const ids = new Set(existing?.completedTaskIds || []);
   if(checked) ids.add(taskId); else ids.delete(taskId);
@@ -480,8 +504,7 @@ async function updateJourneyTask(id, def, taskId, checked){
 async function completeJourneyDay(id, def, day){
   const enrollment = currentEnrollmentForPath(id);
   if(!enrollment?.startDate || !canCompleteDay(day, enrollment)) return;
-  const tasks = getPathTasks(def, id);
-  const dayTasks = getTasksForDay(tasks, day);
+  const dayTasks = getTasksForDay(def, day);
   const existing = dayLogFor(enrollment, day);
   const completedTaskIds = existing?.completedTaskIds || [];
   if(dayTasks.some(task => !completedTaskIds.includes(task.id))) return;
@@ -534,8 +557,7 @@ async function freezeMissedDay(id, day){
 function wireJourneyControls(id, def){
   const start = $('startJourney');
   if(start) start.onclick = async () => {
-    const tasks = getPathTasks(def, id);
-    await dbStartEnrollment(id, getTasksForDay(tasks, 1).length);
+    await dbStartEnrollment(id, getTasksForDay(def, 1).length);
     selectedJourneyDay = 1;
     renderPlan();
   };
@@ -572,14 +594,16 @@ export function renderPlan(){
     + '<div class="muted" style="font-size:12px;margin-top:10px">' + t.done + ' / ' + t.total + ' done · ' + pct + '%</div>'
     + '<div class="progress-bar" style="width:220px;max-width:60vw;margin-left:auto"><div style="width:' + pct + '%"></div></div></div></div>';
 
+  h += journeyStatusHTML(id, def);
   h += roadmapHTML(id, def);
-  if(def.platform) h += journeyDetailHTML(id, def);
+  h += journeyDetailHTML(id, def);
 
   if(store.editMode){
     h += '<div class="panel card edit-meta"><div class="field"><label>Path name</label><input type="text" id="pmTitle" value="' + esc(def.title) + '" maxlength="80"/></div>'
       + '<div class="field" style="margin-top:10px"><label>Goal / description</label><textarea id="pmGoal" placeholder="What does finishing look like?">' + esc(def.goal || '') + '</textarea></div>'
       + '<div class="edit-grid">'
       + '<div class="field"><label>Category</label><input type="text" id="pmCategory" value="' + esc(def.category || '') + '" placeholder="Fitness, 3D, business..."/></div>'
+      + '<div class="field"><label>Duration in days</label><input type="number" id="pmDurationDays" min="1" value="' + esc(def.durationDays || '') + '" placeholder="75"/></div>'
       + '<div class="field"><label>Duration label</label><input type="text" id="pmDuration" value="' + esc(def.durationLabel || '') + '" placeholder="8 weeks, 75 days..."/></div>'
       + '<div class="field"><label>Creator name</label><input type="text" id="pmCreator" value="' + esc(def.creatorName || '') + '"/></div>'
       + '<div class="field"><label>Visibility</label><select id="pmVisibility"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></div>'
@@ -594,7 +618,7 @@ export function renderPlan(){
       + '</div>';
   }
 
-  if(!(def.platform && !store.editMode)){
+  if(store.editMode){
   (def.weeks || []).forEach((wk, wi) => {
     h += '<div class="panel card week-block" data-wi="' + wi + '">';
     if(store.editMode){
@@ -608,6 +632,12 @@ export function renderPlan(){
       if(store.editMode){
         h += '<div class="row-edit"><input type="text" class="task-input" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.text || '') + '" placeholder="Task"/>'
           + '<button class="icon-btn danger" data-act="delTask" data-wi="' + wi + '" data-ti="' + ti + '" title="Remove">×</button></div>';
+        h += '<div class="schedule-edit">'
+          + '<label>Schedule<select class="task-schedule" data-wi="' + wi + '" data-ti="' + ti + '"><option value="once">Once</option><option value="daily">Daily</option></select></label>'
+          + '<label>Start/unlock day<input type="number" min="1" class="task-start" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.startDay || tk.unlockDay || '') + '"/></label>'
+          + '<label>End day<input type="number" min="1" class="task-end" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.endDay || '') + '"/></label>'
+          + '<label class="checkline"><input type="checkbox" class="task-evidence" data-wi="' + wi + '" data-ti="' + ti + '" ' + (tk.evidenceRequired ? 'checked' : '') + '/> Evidence</label>'
+          + '</div>';
       } else {
         h += '<label class="task-row ' + (p[tid] ? 'done' : '') + '"><input type="checkbox" class="ck" data-id="' + tid + '" ' + (p[tid] ? 'checked' : '') + '/><span>' + esc(tk.text || '') + '</span></label>';
       }
@@ -655,6 +685,16 @@ export function renderPlan(){
   const bindCheck = (id, key) => { const el = $(id); if(el) el.addEventListener('change', e => { def[key] = e.target.checked; upSave(); }); };
   bindText('pmCategory', 'category');
   bindText('pmDuration', 'durationLabel');
+  const pdl = $('pmDuration'); if(pdl) pdl.addEventListener('change', () => {
+    if(!def.durationDays) def.durationDays = normalizeDurationDays(null, def.durationLabel);
+    upSave();
+    renderPlan();
+  });
+  const pdd = $('pmDurationDays'); if(pdd) pdd.addEventListener('input', e => {
+    const n = Number(e.target.value);
+    def.durationDays = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+    upSaveSoft();
+  });
   bindText('pmCreator', 'creatorName');
   bindText('pmCover', 'coverImage');
   bindText('pmProfile', 'profileImage');
@@ -666,11 +706,33 @@ export function renderPlan(){
   const pi = $('pmImport'); if(pi) pi.onclick = () => importLocalPath(id);
   $('content').querySelectorAll('.wb-title-input').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].title = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.task-input').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti].text = e.target.value; upSaveSoft(); }));
+  $('content').querySelectorAll('.task-schedule').forEach(sel => {
+    const task = def.weeks[+sel.dataset.wi].tasks[+sel.dataset.ti];
+    sel.value = task.scheduleType || (task.unlockDay != null || task.startDay != null ? 'once' : 'once');
+    sel.addEventListener('change', e => { task.scheduleType = e.target.value; upSave(); renderPlan(); });
+  });
+  $('content').querySelectorAll('.task-start').forEach(inp => inp.addEventListener('input', e => {
+    const task = def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti];
+    const n = Number(e.target.value);
+    task.startDay = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+    task.unlockDay = task.scheduleType === 'daily' ? (task.startDay || null) : task.startDay;
+    upSaveSoft();
+  }));
+  $('content').querySelectorAll('.task-end').forEach(inp => inp.addEventListener('input', e => {
+    const task = def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti];
+    const n = Number(e.target.value);
+    task.endDay = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+    upSaveSoft();
+  }));
+  $('content').querySelectorAll('.task-evidence').forEach(inp => inp.addEventListener('change', e => {
+    def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti].evidenceRequired = e.target.checked;
+    upSave();
+  }));
   $('content').querySelectorAll('.res-label').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].label = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.res-url').forEach(inp   => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url   = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
     const act = btn.dataset.act, wi = +btn.dataset.wi, ti = +btn.dataset.ti, ri = +btn.dataset.ri;
-    if(act === 'addTask'){ (def.weeks[wi].tasks = def.weeks[wi].tasks || []).push({ text:'' }); }
+    if(act === 'addTask'){ (def.weeks[wi].tasks = def.weeks[wi].tasks || []).push({ text:'', scheduleType:'once', startDay:1, endDay:null }); }
     else if(act === 'delTask'){ def.weeks[wi].tasks.splice(ti, 1); }
     else if(act === 'addRes'){ (def.weeks[wi].resources = def.weeks[wi].resources || []).push({ label:'', url:'' }); }
     else if(act === 'delRes'){ def.weeks[wi].resources.splice(ri, 1); }

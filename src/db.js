@@ -472,6 +472,9 @@ export async function dbSavePlatformPath(id){
       evidenceRequired:!!t.evidenceRequired,
       order:t.order || 0,
       unlockDay:t.unlockDay == null ? null : t.unlockDay,
+      scheduleType:t.scheduleType || null,
+      startDay:t.startDay == null ? null : t.startDay,
+      endDay:t.endDay == null ? null : t.endDay,
       kind:t.kind || 'task',
     }, { merge:true })));
     const record = { id, path:{ ...path, ownerId }, sections, tasks, membership: ownerSaving ? { uid:ownerId, role:'owner' } : local.membership };

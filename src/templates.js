@@ -3,6 +3,26 @@
 // owner can rename, reorder, add to, or delete. Resource links were verified current.
 
 export const TEMPLATES = [
+  // ----------------------------- CONSISTENCY -----------------------------
+  {
+    id:'tpl_75_hard_style',
+    skill:'Discipline / Consistency',
+    title:'75-Day Consistency Challenge',
+    goal:'Build daily discipline with a simple 75-day proof-of-growth challenge.',
+    durationDays:75,
+    durationLabel:'75 days',
+    weeks:[
+      { title:'Daily commitments', tasks:[
+        {text:'Read 10 pages', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Run or walk 1km', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Train or stretch for 30 minutes', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Do one deep-work block', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Sleep 8 hours or follow your sleep target', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Avoid soda or your chosen vice', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Post one proof-of-work update', scheduleType:'daily', startDay:1, endDay:75, evidenceRequired:true}
+      ], resources:[]}
+    ]
+  },
   // ----------------------------- PYTHON -----------------------------
   {
     id:'tpl_py_fund', skill:'Programming (Python)', title:'Python Fundamentals',

@@ -2,6 +2,8 @@
 // The app still edits paths through the existing local `weeks` shape; these
 // helpers translate that shape to the top-level Firestore path model.
 
+import { normalizeDurationDays } from './journey.js';
+
 export const PATH_VISIBILITIES = ['private', 'unlisted', 'public'];
 
 export function nowStamp(){ return new Date(); }
@@ -24,6 +26,7 @@ export function normalizePathDoc(id, data = {}){
     goal: data.goal || data.description || '',
     category: data.category || '',
     durationLabel: data.durationLabel || '',
+    durationDays: normalizeDurationDays(data.durationDays, data.durationLabel),
     coverImage: data.coverImage || null,
     profileImage: data.profileImage || null,
     creatorName: data.creatorName || 'Creator',
@@ -91,6 +94,7 @@ export function localPathDefaults(localPath = {}, user){
     goal,
     category: localPath.category || '',
     durationLabel: localPath.durationLabel || (weeks.length ? `${weeks.length} weeks` : ''),
+    durationDays: normalizeDurationDays(localPath.durationDays, localPath.durationLabel || (weeks.length ? `${weeks.length} weeks` : '')),
     coverImage: localPath.coverImage || null,
     profileImage: localPath.profileImage || null,
     creatorName: localPath.creatorName || creatorName(user),
@@ -132,6 +136,9 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         evidenceRequired: !!task.evidenceRequired,
         order: ti,
         unlockDay: task.unlockDay == null ? null : Number(task.unlockDay),
+        scheduleType: task.scheduleType || (task.unlockDay == null && task.startDay == null ? null : 'once'),
+        startDay: task.startDay == null ? null : Number(task.startDay),
+        endDay: task.endDay == null ? null : Number(task.endDay),
         kind: 'task',
       });
     });
@@ -145,6 +152,9 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         evidenceRequired: false,
         order: 1000 + ri,
         unlockDay: null,
+        scheduleType: 'once',
+        startDay: null,
+        endDay: null,
         kind: 'resource',
       });
     });
@@ -170,6 +180,9 @@ export function platformToLocalPath(record){
         resourceUrl: task.resourceUrl || null,
         evidenceRequired: !!task.evidenceRequired,
         unlockDay: task.unlockDay == null ? null : task.unlockDay,
+        scheduleType: task.scheduleType || (task.unlockDay == null && task.startDay == null ? null : 'once'),
+        startDay: task.startDay == null ? null : task.startDay,
+        endDay: task.endDay == null ? null : task.endDay,
         order: task.order || 0,
       });
     }
@@ -180,6 +193,7 @@ export function platformToLocalPath(record){
     title: path.title,
     goal: path.goal,
     description: path.description,
+    durationDays: path.durationDays,
     weeks: sections.map(section => bySection[section.id]),
     platform: true,
     ownerId: path.ownerId,
