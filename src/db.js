@@ -333,7 +333,7 @@ export async function listLocalTaskEvidenceSubmissions(enrollmentId, dayNumber, 
 
 export async function uploadEvidenceFile(userId, enrollmentId, dayNumber, taskId, file){
   if(!fb.storageReady || !fb.storage){
-    throw new Error('File uploads require Firebase Storage. Use URL evidence for local mode.');
+    throw new Error('File uploads require Firebase Storage. Add Storage config or submit URL proof instead.');
   }
   if(!file) throw new Error('Choose a file to upload.');
   if(!ACCEPTED_EVIDENCE_TYPES.includes(file.type)){

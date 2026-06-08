@@ -28,7 +28,8 @@ submissions:
   normal checkbox completions or legacy progress.
 - Tasks marked `evidenceRequired` require URL or file proof before they count
   as verified. URL proof works in local mode. File uploads require Firebase
-  Storage.
+  Storage enabled, Storage rules published, and
+  `VITE_FIREBASE_STORAGE_BUCKET` configured.
 - Roadmap length uses `durationDays` when present. `durationLabel` is display
   text only, with safe inference for labels like `75 days`, `8 weeks`, or
   `1 year`.
@@ -103,9 +104,14 @@ files to `dist`, and `npm run preview` serves the built app.
 7. Register a Web app and copy its config.
 8. Add these values locally and in Vercel environment variables:
    `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`,
-   `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`.
+   `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`,
+   `VITE_FIREBASE_STORAGE_BUCKET`.
 9. Add `localhost` and your Vercel domain under Authentication authorized
    domains.
+
+File evidence uploads require Firebase Storage to be enabled, the Storage rules
+below to be published, and `VITE_FIREBASE_STORAGE_BUCKET` to match your Firebase
+bucket. Without that bucket config, users can still submit URL proof.
 
 ### Recommended platform Firestore rules
 
@@ -274,7 +280,8 @@ service cloud.firestore {
 1. Push this folder to a GitHub repo.
 2. Import it in Vercel. Vercel auto-detects Vite with build command
    `npm run build` and output directory `dist`.
-3. Add the `VITE_FIREBASE_*` environment variables.
+3. Add the `VITE_FIREBASE_*` environment variables, including
+   `VITE_FIREBASE_STORAGE_BUCKET` if file evidence uploads are enabled.
 4. Deploy. Files in `api/` deploy as serverless functions.
 
 ---

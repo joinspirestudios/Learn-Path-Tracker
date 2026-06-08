@@ -16,6 +16,7 @@ const cfg = {
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId:  import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId:      import.meta.env.VITE_FIREBASE_APP_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
 };
 
 const present = !!(cfg.apiKey && cfg.projectId);
@@ -37,7 +38,7 @@ export const fb = {
   present,
   ready: !!auth,
   auth, db,
-  storage, storageReady: !!storage,
+  storage, storageReady: !!(storage && cfg.storageBucket),
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail,
   doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where,

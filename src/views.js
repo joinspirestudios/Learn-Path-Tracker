@@ -37,6 +37,7 @@ import {
 let _noteTimer = null;
 let selectedJourneyDay = null;
 let evidenceFormTaskId = null;
+let evidenceProofType = 'url';
 let evidenceBusy = false;
 let evidenceError = '';
 function scheduleSave(ms = 650){
@@ -427,10 +428,12 @@ function evidenceListHTML(enrollmentId, dayNumber){
 function evidenceFormHTML(task){
   if(evidenceFormTaskId !== task.id) return '';
   const accepts = ACCEPTED_EVIDENCE_TYPES.join(',');
+  const type = evidenceProofType === 'file' ? 'file' : 'url';
   return '<div class="evidence-form" data-task="' + esc(task.id) + '">'
-    + '<label>Proof type<select id="evidenceType"><option value="url">URL</option><option value="file">File</option></select></label>'
-    + '<label>Proof URL<input type="url" id="evidenceUrl" placeholder="https://..."/></label>'
-    + '<label>File<input type="file" id="evidenceFile" accept="' + esc(accepts) + '"/></label>'
+    + '<label>Proof type<select id="evidenceType"><option value="url" ' + (type === 'url' ? 'selected' : '') + '>URL</option><option value="file" ' + (type === 'file' ? 'selected' : '') + '>File</option></select></label>'
+    + (type === 'url'
+      ? '<label>Proof URL<input type="url" id="evidenceUrl" placeholder="https://..."/></label>'
+      : '<label>File<input type="file" id="evidenceFile" accept="' + esc(accepts) + '"/></label>')
     + '<label>Note<textarea id="evidenceNote" placeholder="Short context for this proof"></textarea></label>'
     + (evidenceError ? '<div class="form-error">' + esc(evidenceError) + '</div>' : '')
     + '<div class="evidence-actions"><button class="btn gold" id="submitEvidence" data-task="' + esc(task.id) + '" ' + (evidenceBusy ? 'disabled' : '') + '>' + (evidenceBusy ? 'Submitting...' : 'Submit proof') + '</button>'
@@ -606,7 +609,7 @@ async function submitEvidenceForTask(id, def, taskId){
   const dayTasks = getTasksForDay(def, day);
   const task = dayTasks.find(t => t.id === taskId);
   if(!task) return;
-  const type = ($('evidenceType')?.value || 'url') === 'file' ? 'file' : 'url';
+  const type = ($('evidenceType')?.value || evidenceProofType || 'url') === 'file' ? 'file' : 'url';
   const note = ($('evidenceNote')?.value || '').trim();
   let evidenceUrl = null;
   let fileName = null;
@@ -620,7 +623,7 @@ async function submitEvidenceForTask(id, def, taskId){
       try{ new URL(evidenceUrl); }
       catch(e){ throw new Error('Add a valid proof URL.'); }
     } else {
-      if(!cloudActive()) throw new Error('File uploads require Firebase Storage. Use URL evidence for local mode.');
+      if(!cloudActive()) throw new Error('File uploads require Firebase Storage. Add Storage config or submit URL proof instead.');
       const file = $('evidenceFile')?.files?.[0];
       if(!file) throw new Error('Choose a file to upload.');
       evidenceUrl = await uploadEvidenceFile(enrollment.userId, enrollment.id, day, taskId, file);
@@ -660,6 +663,7 @@ async function submitEvidenceForTask(id, def, taskId){
       evidenceCount: evidenceCountFor(enrollment.id, day),
     }));
     evidenceFormTaskId = null;
+    evidenceProofType = 'url';
     flash('Proof submitted');
   }catch(e){
     evidenceError = e.message || 'Could not submit proof.';
@@ -761,12 +765,14 @@ function wireJourneyControls(id, def){
     await dbStartEnrollment(id, getTasksForDay(def, 1).length);
     selectedJourneyDay = 1;
     evidenceFormTaskId = null;
+    evidenceProofType = 'url';
     renderPlan();
   };
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
     btn.onclick = async () => {
       selectedJourneyDay = Number(btn.dataset.roadDay || 1);
       evidenceFormTaskId = null;
+      evidenceProofType = 'url';
       evidenceError = '';
       const enrollment = currentEnrollmentForPath(id);
       if(enrollment?.id) await listEvidenceSubmissions(enrollment.id, selectedJourneyDay).catch(() => {});
@@ -783,13 +789,21 @@ function wireJourneyControls(id, def){
   $('content').querySelectorAll('.add-evidence').forEach(btn => {
     btn.onclick = () => {
       evidenceFormTaskId = btn.dataset.task;
+      evidenceProofType = 'url';
       evidenceError = '';
       renderPlan();
     };
   });
+  const evidenceType = $('evidenceType');
+  if(evidenceType) evidenceType.onchange = () => {
+    evidenceProofType = evidenceType.value === 'file' ? 'file' : 'url';
+    evidenceError = '';
+    renderPlan();
+  };
   const cancelEvidence = $('cancelEvidence');
   if(cancelEvidence) cancelEvidence.onclick = () => {
     evidenceFormTaskId = null;
+    evidenceProofType = 'url';
     evidenceError = '';
     renderPlan();
   };
