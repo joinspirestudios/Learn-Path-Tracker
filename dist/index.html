@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Learn Path Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400;1,9..144,600&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-Cgh3zY16.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BQqt8IP0.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="kicker" id="kicker">LEARN · PRACTICE · TRACK</span>
+      <h1 id="brandTitle" title="Back to all skills">Learn Path <em>Tracker</em></h1>
+      <span class="sub" id="brandSub">Pick a skill. Practice deliberately. Track your climb.</span>
+    </div>
+    <div id="auth"></div>
+    <div class="startbar" id="startWrap"><span>Started</span><input type="date" id="startDate" /><span id="suggest"></span></div>
+    <div class="overall" id="overallWrap">
+      <div class="ring">
+        <svg width="56" height="56">
+          <circle cx="28" cy="28" r="23" fill="none" stroke="rgba(239,231,216,0.1)" stroke-width="5"/>
+          <circle id="ringFg" cx="28" cy="28" r="23" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="144.5"/>
+          <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b1a2b"/><stop offset="1" stop-color="#c9a24b"/></linearGradient></defs>
+        </svg>
+        <div class="pct" id="ringPct">0%</div>
+      </div>
+      <div class="meta"><b id="doneCount">0</b> done<br><span id="weekCount"></span></div>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button class="tab back" id="allSkills">← All skills</button>
+    <button class="tab tab-user" data-tab="plan">Plan</button>
+    <button class="tab active tab-cine" data-tab="today">Today</button>
+    <button class="tab tab-cine" data-tab="week">This Week</button>
+    <button class="tab tab-cine" data-tab="map">12-Month Map</button>
+    <button class="tab tab-cine" data-tab="ladders">Craft Ladders</button>
+    <button class="tab tab-cine" data-tab="drills">Drill Library</button>
+    <button class="tab tab-cine" data-tab="res">Resources</button>
+    <button class="tab" data-tab="log">Render Log <span class="dot" id="logDot"></span></button>
+    <button class="tab edit" id="editPathBtn">✎ Edit path</button>
+  </nav>
+  <div id="content"></div>
+</div>
+<div class="saved" id="saved">Saved ✓</div>
+</body>
+</html>
