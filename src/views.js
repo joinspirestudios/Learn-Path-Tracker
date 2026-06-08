@@ -434,8 +434,16 @@ function journeyDetailHTML(id, def){
     h += '</div>'
       + (log.summary ? '<p class="summary">' + esc(log.summary) + '</p>' : '')
       + '<div class="hint">Evidence count: ' + Number(log.evidenceCount || 0) + '. Evidence uploads coming next.</div>';
-    if(status === 'missed' && Number(enrollment.freezeCount || 0) > 0){
-      h += '<button class="btn gold" id="freezeDay" data-day="' + day + '">Use freeze</button>';
+    if(status === 'missed'){
+      h += '<div class="missed-copy"><b>You missed this day.</b><p>'
+        + (Number(enrollment.freezeCount || 0) > 0
+          ? 'Use a freeze to preserve your streak, or reset your streak and continue.'
+          : 'You are out of freezes. Reset your streak to continue.')
+        + '</p></div><div class="missed-actions">';
+      if(Number(enrollment.freezeCount || 0) > 0){
+        h += '<button class="btn gold" id="freezeDay" data-day="' + day + '">Use freeze</button>';
+      }
+      h += '<button class="btn" id="resetMissedDay" data-day="' + day + '">Reset streak and continue</button></div>';
     }
   } else {
     if(dayTasks.length){
@@ -554,6 +562,36 @@ async function freezeMissedDay(id, day){
   renderPlan();
 }
 
+async function resetMissedDay(id, def, day){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return;
+  const existing = dayLogFor(enrollment, day);
+  if(existing?.status !== 'missed') return;
+  const today = localDateString();
+  const todayDay = journeyDayForDate(enrollment.startDate, today);
+  const nextDay = Math.max(Number(day || 1) + 1, todayDay);
+  const nextLog = dayLogFor(enrollment, nextDay);
+  await dbSaveEnrollment({
+    ...store.enrollments[enrollment.id],
+    streak: 0,
+    missedDate: null,
+    lastActivityDate: today,
+    currentDay: nextDay,
+  });
+  if(!nextLog || nextLog.status === 'locked'){
+    await dbSaveDayLog(enrollment.id, makeDayLog(nextDay, {
+      ...nextLog,
+      dayNumber: nextDay,
+      date: dateForJourneyDay(enrollment.startDate, nextDay),
+      status: 'active',
+      totalTaskCount: getTasksForDay(def, nextDay).length,
+    }));
+  }
+  selectedJourneyDay = nextDay;
+  flash('Streak reset. Continue from today.');
+  renderPlan();
+}
+
 function wireJourneyControls(id, def){
   const start = $('startJourney');
   if(start) start.onclick = async () => {
@@ -576,6 +614,8 @@ function wireJourneyControls(id, def){
   if(complete) complete.onclick = () => completeJourneyDay(id, def, Number(complete.dataset.day || 1));
   const freeze = $('freezeDay');
   if(freeze) freeze.onclick = () => freezeMissedDay(id, Number(freeze.dataset.day || 1));
+  const reset = $('resetMissedDay');
+  if(reset) reset.onclick = () => resetMissedDay(id, def, Number(reset.dataset.day || 1));
 }
 
 /* ============================================================ */
@@ -663,7 +703,7 @@ export function renderPlan(){
   }
   }
   $('content').innerHTML = h;
-  if(def.platform) wireJourneyControls(id, def);
+  wireJourneyControls(id, def);
 
   // view-mode checkboxes
   $('content').querySelectorAll('input.ck[data-id]').forEach(cb => cb.addEventListener('change', async e => {

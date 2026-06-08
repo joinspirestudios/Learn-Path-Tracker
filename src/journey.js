@@ -158,6 +158,7 @@ export function getMaxRoadmapDay(pathOrTasks, enrollment){
   const currentDay = Number(enrollment?.currentDay || 1);
   const lastCompleted = enrollment?.lastCompletedDay == null ? 0 : Number(enrollment.lastCompletedDay);
   const calculatedToday = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
+  if(durationDays) return Math.max(durationDays, maxTaskDay, currentDay, lastCompleted);
   return Math.max(durationDays || 0, 7, maxTaskDay, currentDay + 6, calculatedToday + 6, lastCompleted);
 }
 

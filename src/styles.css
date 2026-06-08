@@ -322,6 +322,10 @@
 .history-task span{font-size:12px;color:var(--sand-dim)}
 .history-task.done span{color:var(--green)}
 .summary{border-left:2px solid var(--line);padding-left:10px;color:var(--sand);font-size:13px;margin:10px 0}
+.missed-copy{margin:12px 0;border:1px dashed rgba(179,41,60,.45);border-radius:10px;padding:11px 12px;background:rgba(139,26,43,.08)}
+.missed-copy b{color:#e8b9bf}
+.missed-copy p{color:var(--sand);font-size:12.5px;margin-top:3px}
+.missed-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
 .week-block{margin-bottom:16px}
 .wb-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .wb-title-input{flex:1;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'Fraunces',serif;font-size:17px;font-weight:600;padding:8px 12px}
