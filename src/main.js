@@ -13,7 +13,7 @@ import { store, CAT_PREFIX } from './store.js';
 import { $, Store } from './helpers.js';
 import {
   dbLoadState, dbLoadRenders, dbSaveState, dbSaveRender,
-  loadLocalState,
+  loadLocalState, dbLoadPlatformPaths,
 } from './db.js';
 import {
   initFirebase, setSignInHandler, setSignOutHandler,
@@ -26,7 +26,7 @@ import {
   renderCatalog, renderPlan, renderToday, renderWeek, renderMap,
   renderLadders, renderDrills, renderRes, renderLog,
   openSkill, goCatalog, goWeek, editPath,
-  refreshSuggest, updateLogDot,
+  refreshSuggest, updateLogDot, handleHashRoute,
 } from './views.js';
 
 /* ---- tab router ---- */
@@ -52,10 +52,12 @@ store.nav.switchTab = switchTab;
 store.nav.goCatalog = goCatalog;
 store.nav.goWeek    = goWeek;
 store.nav.openSkill = openSkill;
+store.nav.handleHash = handleHashRoute;
 
 /* ---- boot / load helpers ---- */
-function finishLoad(){
+async function finishLoad(){
   applyHeader(); updateLogDot();
+  if(await handleHashRoute()) return;
   if(store.state.current && (skillDef(store.state.current) || isUserPath(store.state.current))){
     ensureSkill(store.state.current);
     store.currentWeek = curState().meta.lastWeek || 1;
@@ -72,13 +74,15 @@ function finishLoad(){
 async function loadLocalAndRender(){
   store.state     = loadLocalState();        // already migrated
   store.catalogue = await dbLoadRenders();   // local renders (signed-out path)
-  finishLoad();
+  if(fb.ready) await dbLoadPlatformPaths();
+  await finishLoad();
 }
 
 async function loadAndRender(){
   store.state     = await dbLoadState();     // already migrated
   store.catalogue = await dbLoadRenders();
-  finishLoad();
+  await dbLoadPlatformPaths();
+  await finishLoad();
 }
 
 /* ---- the post-sign-in reconciliation (cloud vs local merge) ---- */
@@ -106,7 +110,8 @@ async function onSignIn(){
       store.catalogue = arr;
     }
   } else store.catalogue = cloudRenders;
-  finishLoad();
+  await dbLoadPlatformPaths();
+  await finishLoad();
 }
 
 /* ---- wire auth callbacks into the auth module ---- */
@@ -119,6 +124,7 @@ async function init(){
   const bt = $('brandTitle'); if(bt) bt.onclick = goCatalog;
   const ac = $('allSkills');  if(ac) ac.onclick = goCatalog;
   const ep = $('editPathBtn'); if(ep) ep.onclick = editPath;
+  window.addEventListener('hashchange', () => { if(store.nav.handleHash) store.nav.handleHash(); });
   $('startDate').addEventListener('change', e => {
     if(!store.state.current) return;
     curState().meta.startDate = e.target.value || null;

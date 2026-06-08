@@ -33,6 +33,9 @@ export function migrateState(s){
 export const store = {
   state:           { current:null, skills:{}, userPaths:{}, version:0 },
   catalogue:       [],     // every render entry, each carries .skill
+  platformPaths:   {},     // cloud platform paths, normalized into userPaths for rendering
+  accessRequests:  {},
+  route:           { kind:'catalog' },
   currentUser:     null,
   authChecked:     false,
   activeTab:       'week',
@@ -45,5 +48,6 @@ export const store = {
     goCatalog:  null,  // () => void
     goWeek:     null,  // (weekNumber) => void
     openSkill:  null,  // (skillId) => void
+    handleHash: null,  // () => boolean
   },
 };

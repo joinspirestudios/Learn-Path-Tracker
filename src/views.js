@@ -9,27 +9,36 @@ import { TEMPLATES } from './templates.js';
 import { store } from './store.js';
 import { $, esc, flash, undoToast } from './helpers.js';
 import {
-  dbSaveState, dbSaveRender, dbDelRender,
+  dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
+  dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
 } from './db.js';
 import {
   ensureSkill, curState, curDef, P, quarters, days, ladders,
   weekEdits, effPlan, setWeekFocus, weekResArr, addCineWeek, removeCineWeek,
-  isUserPath, curUser, pathTitle, pathGoal,
+  isUserPath, curUser, pathTitle, pathGoal, canEditUserPath,
   weekObj, dayLabel, weekProg, ladderCount, totalsFor, allTotals,
   nextRungIdx, currentWeekFromStart, computeStreak,
 } from './plan.js';
 import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive } from './db.js';
+import { canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
-  _noteTimer = setTimeout(dbSaveState, ms);
+  _noteTimer = setTimeout(saveCurrentPath, ms);
 }
-function upSave(){     dbSaveState(); }
+function upSave(){     saveCurrentPath(); }
 function upSaveSoft(){ scheduleSave(); }
+async function saveCurrentPath(){
+  await dbSaveState();
+  const id = store.state.current;
+  if(id && store.state.userPaths[id] && store.state.userPaths[id].platform && canEditUserPath(id)){
+    await dbSavePlatformPath(id);
+  }
+}
 
 /* ---- progress toggle (used by every .ck checkbox in every render) ---- */
 export async function toggle(id, val){
@@ -49,8 +58,8 @@ export async function toggle(id, val){
 /* ---------- CATALOG (the start screen) ---------------------- */
 /* ============================================================ */
 export function renderCatalog(){
-  let h = '<div class="cat-intro"><div class="section-title">Discover <em>learning paths</em></div>'
-    + '<div class="muted" style="max-width:640px">Each path is a full deliberate-practice program: a weekly plan, craft ladders, a drill library, curated resources, and a render log. Open one to start learning and tracking your progress, or build your own.</div></div>';
+  let h = '<div class="cat-intro"><div class="section-title">Discover <em>Learning Paths</em></div>'
+    + '<div class="muted" style="max-width:640px">Explore public journeys, keep your own private paths close, and turn local drafts into shareable learning paths when you are ready.</div></div>';
   h += '<div class="cat-grid">';
   SKILLS.forEach(s => {
     const t = totalsFor(s.id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
@@ -62,21 +71,28 @@ export function renderCatalog(){
       + '<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:' + pct + '%"></div></div><span class="sc-pct">' + pct + '%</span></div>'
       + '<div class="sc-cta">' + (started ? 'Continue' : 'Start') + ' →</div></button>';
   });
-  Object.keys(store.state.userPaths || {}).forEach(id => {
+  Object.keys(store.state.userPaths || {}).filter(id => shouldShowUserPath(id)).forEach(id => {
+    const def = store.state.userPaths[id];
     const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
     const goal = pathGoal(id);
+    const badge = def.platform
+      ? (def.ownerId === (store.currentUser && store.currentUser.uid) ? 'Your platform path' : 'Public path')
+      : (cloudActive() ? 'Local draft' : 'Your path');
     h += '<button class="skill-card" data-id="' + esc(id) + '">'
-      + '<div class="sc-badge">Your path</div>'
+      + '<div class="sc-badge">' + esc(badge) + '</div>'
       + '<div class="sc-top">' + esc(pathTitle(id)) + '</div>'
       + (goal ? ('<div class="sc-tag">' + esc(goal) + '</div>') : '')
-      + '<div class="sc-blurb">' + (t.total ? (t.total + ' tasks across ' + (store.state.userPaths[id].weeks || []).length + ' weeks') : 'Empty path. Open it to add weeks and tasks.') + '</div>'
+      + '<div class="sc-blurb">' + pathCardBlurb(def, t.total) + '</div>'
       + '<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:' + pct + '%"></div></div><span class="sc-pct">' + pct + '%</span></div>'
       + '<div class="sc-cta">Open →</div></button>';
+    if(!def.platform && cloudActive()){
+      h += '<button class="mini-import standalone" data-import="' + esc(id) + '">Publish/import "' + esc(pathTitle(id)) + '" to platform</button>';
+    }
   });
-  if(store.currentUser){
+  if(store.currentUser || !configPresent()){
     h += '<button class="skill-card create" id="createCard"><div class="sc-plus">＋</div>'
-      + '<div class="sc-top">Create your own path</div>'
-      + '<div class="sc-blurb">Build a learning path you own and control: your own weeks, tasks, and resources. Edit it anytime.</div>'
+      + '<div class="sc-top">Create new path</div>'
+      + '<div class="sc-blurb">Build a path you own, keep it private, publish it publicly, or share it by direct link.</div>'
       + '<div class="sc-cta">New path →</div></button>';
   } else if(configPresent()){
     h += '<button class="skill-card create" id="signinCard"><div class="sc-plus">＋</div>'
@@ -87,8 +103,50 @@ export function renderCatalog(){
   h += '</div>';
   $('content').innerHTML = h;
   $('content').querySelectorAll('.skill-card[data-id]').forEach(c => c.onclick = () => openSkill(c.dataset.id));
+  $('content').querySelectorAll('[data-import]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    importLocalPath(b.dataset.import);
+  });
   const cc = $('createCard'); if(cc) cc.onclick = createPath;
   const sc = $('signinCard'); if(sc) sc.onclick = () => openAuthModal('signup');
+}
+
+function shouldShowUserPath(id){
+  const def = store.state.userPaths[id];
+  if(!def) return false;
+  if(!def.platform) return true;
+  if(def.ownerId === (store.currentUser && store.currentUser.uid)) return true;
+  return def.visibility === 'public' && def.discoverable !== false;
+}
+
+function pathCardBlurb(def, total){
+  const bits = [];
+  if(def.category) bits.push(esc(def.category));
+  if(def.durationLabel) bits.push(esc(def.durationLabel));
+  if(def.visibility) bits.push(esc(def.visibility));
+  const meta = bits.length ? bits.join(' · ') + '. ' : '';
+  return meta + (total ? (total + ' tasks across ' + (def.weeks || []).length + ' sections') : 'Empty path. Open it to add sections, tasks, and resources.');
+}
+
+async function importLocalPath(id){
+  if(!cloudActive()){
+    openAuthModal('signup');
+    return;
+  }
+  const local = store.state.userPaths[id];
+  if(!local || local.platform) return;
+  const newId = await dbCreatePlatformPath({
+    ...JSON.parse(JSON.stringify(local)),
+    visibility: 'private',
+    discoverable: false,
+    migratedFromLocal: true,
+  }, id);
+  if(newId){
+    flash('Imported as private path');
+    openSkill(newId);
+    store.editMode = true;
+    renderPlan();
+  }
 }
 
 function createPath(){
@@ -124,7 +182,7 @@ function createPath(){
     if(pick === 'blank'){ titleIn.value = ''; goalIn.value = ''; titleIn.placeholder = 'Name your path'; }
     else { const t = TEMPLATES.find(x => x.id === pick); if(t){ titleIn.value = t.title; goalIn.value = t.goal; } }
   });
-  o.querySelector('#npCreate').onclick = () => {
+  o.querySelector('#npCreate').onclick = async () => {
     let title = titleIn.value.trim(); const goal = goalIn.value.trim();
     let weeks;
     if(pick === 'blank'){
@@ -139,10 +197,24 @@ function createPath(){
         resources: (w.resources || []).map(r => ({ label: r.label, url: r.url })),
       }));
     }
-    const id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
-    store.state.userPaths[id] = { title, goal, created: Date.now(), weeks };
+    let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
+    const localPath = {
+      title, goal, description: goal, category: '', durationLabel: weeks.length + ' weeks',
+      creatorName: store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
+      visibility: 'private', discoverable: false, previewEnabled: true,
+      previewTitle: title, previewDescription: goal, previewIncludesScheme: false,
+      coverImage: null, profileImage: null, created: Date.now(), weeks,
+    };
+    if(cloudActive()){
+      const cloudId = await dbCreatePlatformPath(localPath);
+      if(!cloudId) return;
+      id = cloudId;
+    } else {
+      store.state.userPaths[id] = localPath;
+      await dbSaveState();
+    }
     ensureSkill(id);
-    close(); dbSaveState(); openSkill(id);
+    close(); openSkill(id);
     if(pick === 'blank'){ store.editMode = true; }
     store.nav.switchTab('plan');
   };
@@ -158,12 +230,103 @@ export function openSkill(id){
   dbSaveState(); applyHeader();
   if(!isUserPath(id)) refreshSuggest();
   updateOverall(); store.nav.switchTab(startTab);
+  if(location.hash !== '#/path/' + encodeURIComponent(id)){
+    history.replaceState(null, '', '#/path/' + encodeURIComponent(id));
+  }
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 export function goCatalog(){
   store.state.current = null; store.editMode = false;
   dbSaveState(); applyHeader(); renderCatalog();
+  if(location.hash !== '#/discover') history.replaceState(null, '', '#/discover');
   window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+export async function handleHashRoute(){
+  const hash = (location.hash || '').replace(/^#\/?/, '');
+  if(!hash) return false;
+  if(hash === 'discover' || hash === 'my-paths'){
+    goCatalog();
+    return true;
+  }
+  const parts = hash.split('/').map(decodeURIComponent);
+  if(parts[0] !== 'path' || !parts[1]) return false;
+  await openPathRoute(parts[1], parts[2] === 'preview');
+  return true;
+}
+
+async function openPathRoute(id, forcePreview){
+  if(isUserPath(id) || SKILLS.some(s => s.id === id)){
+    if(forcePreview && isUserPath(id)){
+      const def = store.state.userPaths[id];
+      renderPathPreview({ id, path:def.platformData || def, membership:def.membership || null, sections:[], tasks:[] });
+    } else openSkill(id);
+    return;
+  }
+  const record = await dbLoadPlatformPath(id);
+  if(!record){
+    renderMissingPath();
+    return;
+  }
+  if(!forcePreview && canViewPath(record.path, record.membership, store.currentUser)){
+    openSkill(id);
+    return;
+  }
+  if(canPreviewPath(record.path, store.currentUser)){
+    if(store.currentUser) await dbLoadMyAccessRequest(id);
+    renderPathPreview(record);
+  } else {
+    renderAccessBlocked(record);
+  }
+}
+
+function renderMissingPath(){
+  store.state.current = null; store.editMode = false; applyHeader();
+  $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">Path not found</div><div class="muted">This path may have been removed, hidden, or shared with the wrong link.</div><button class="btn" id="backDiscover" style="margin-top:14px">Back to discover</button></div>';
+  const b = $('backDiscover'); if(b) b.onclick = goCatalog;
+}
+
+function renderAccessBlocked(record){
+  store.state.current = null; store.editMode = false; applyHeader();
+  $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">' + esc(record.path.title) + '</div><div class="muted">This path is private. The creator has not enabled a public preview.</div></div>';
+}
+
+function renderPathPreview(record){
+  const path = record.path;
+  const req = store.accessRequests[record.id];
+  store.state.current = null; store.editMode = false; applyHeader();
+  let h = '<div class="preview-hero panel">'
+    + (path.coverImage ? '<div class="preview-cover" style="background-image:url(\'' + esc(path.coverImage) + '\')"></div>' : '')
+    + '<div class="preview-body">'
+    + (path.profileImage ? '<img class="preview-avatar" src="' + esc(path.profileImage) + '" alt=""/>' : '')
+    + '<div class="chip">' + esc(path.visibility) + ' preview</div>'
+    + '<div class="section-title" style="margin-top:10px">' + esc(path.previewTitle || path.title) + '</div>'
+    + '<div class="muted" style="max-width:680px;margin-top:8px">' + esc(path.previewDescription || path.description || path.goal || '') + '</div>'
+    + '<div class="preview-meta">' + esc(path.category || 'Learning path') + (path.durationLabel ? ' · ' + esc(path.durationLabel) : '') + (path.creatorName ? ' · by ' + esc(path.creatorName) : '') + '</div>'
+    + '<div class="preview-actions">';
+  if(canViewPath(path, record.membership, store.currentUser)){
+    h += '<button class="btn gold" id="openFullPath">Open full path</button>';
+  } else if(!store.currentUser){
+    h += '<button class="btn gold" id="previewSignIn">Sign in to request access</button>';
+  } else if(req && req.status === 'pending'){
+    h += '<button class="btn" disabled>Access requested</button>';
+  } else if(canRequestAccess(path, record.membership, store.currentUser)){
+    h += '<button class="btn gold" id="requestAccess">Request access</button>';
+  }
+  h += '</div></div></div>';
+  if(path.previewIncludesScheme && record.sections && record.sections.length){
+    h += '<div class="panel card preview-scheme"><h3>Path scheme</h3>'
+      + record.sections.sort((a, b) => (a.order || 0) - (b.order || 0)).map(s => '<div class="scheme-row"><b>' + esc(s.title) + '</b><span>' + esc(s.description || '') + '</span></div>').join('')
+      + '</div>';
+  }
+  $('content').innerHTML = h;
+  const open = $('openFullPath'); if(open) open.onclick = () => openSkill(record.id);
+  const si = $('previewSignIn'); if(si) si.onclick = () => openAuthModal('signup');
+  const ra = $('requestAccess'); if(ra) ra.onclick = async () => {
+    await dbRequestAccess(record.id);
+    await dbLoadMyAccessRequest(record.id);
+    renderPathPreview(record);
+  };
 }
 
 /* ============================================================ */
@@ -172,6 +335,8 @@ export function goCatalog(){
 export function renderPlan(){
   const id = store.state.current, def = curUser();
   if(!def){ renderCatalog(); return; }
+  const editable = canEditUserPath(id);
+  if(store.editMode && !editable) store.editMode = false;
   const p = P(); const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
   let h = '<div class="plan-head"><div><div class="chip" style="margin-bottom:8px">Your path</div>'
     + '<div class="section-title" style="margin:0">' + esc(pathTitle(id)) + '</div>'
@@ -182,7 +347,20 @@ export function renderPlan(){
 
   if(store.editMode){
     h += '<div class="panel card edit-meta"><div class="field"><label>Path name</label><input type="text" id="pmTitle" value="' + esc(def.title) + '" maxlength="80"/></div>'
-      + '<div class="field" style="margin-top:10px"><label>Goal</label><textarea id="pmGoal" placeholder="What does finishing look like?">' + esc(def.goal || '') + '</textarea></div></div>';
+      + '<div class="field" style="margin-top:10px"><label>Goal / description</label><textarea id="pmGoal" placeholder="What does finishing look like?">' + esc(def.goal || '') + '</textarea></div>'
+      + '<div class="edit-grid">'
+      + '<div class="field"><label>Category</label><input type="text" id="pmCategory" value="' + esc(def.category || '') + '" placeholder="Fitness, 3D, business..."/></div>'
+      + '<div class="field"><label>Duration label</label><input type="text" id="pmDuration" value="' + esc(def.durationLabel || '') + '" placeholder="8 weeks, 75 days..."/></div>'
+      + '<div class="field"><label>Creator name</label><input type="text" id="pmCreator" value="' + esc(def.creatorName || '') + '"/></div>'
+      + '<div class="field"><label>Visibility</label><select id="pmVisibility"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></div>'
+      + '<div class="field"><label>Cover image URL</label><input type="text" id="pmCover" value="' + esc(def.coverImage || '') + '" placeholder="https://..."/></div>'
+      + '<div class="field"><label>Profile image URL</label><input type="text" id="pmProfile" value="' + esc(def.profileImage || '') + '" placeholder="https://..."/></div>'
+      + '</div>'
+      + '<div class="toggle-row"><label><input type="checkbox" id="pmDiscoverable" ' + (def.discoverable ? 'checked' : '') + '/> Discoverable</label><label><input type="checkbox" id="pmPreviewEnabled" ' + (def.previewEnabled !== false ? 'checked' : '') + '/> Preview enabled</label><label><input type="checkbox" id="pmPreviewScheme" ' + (def.previewIncludesScheme ? 'checked' : '') + '/> Preview includes scheme</label></div>'
+      + '<div class="field" style="margin-top:10px"><label>Preview title</label><input type="text" id="pmPreviewTitle" value="' + esc(def.previewTitle || def.title || '') + '"/></div>'
+      + '<div class="field" style="margin-top:10px"><label>Preview description</label><textarea id="pmPreviewDescription" placeholder="What should non-members see?">' + esc(def.previewDescription || def.goal || '') + '</textarea></div>'
+      + (!def.platform && cloudActive() ? '<button class="btn gold" id="pmImport" style="margin-top:12px">Publish/import this path to platform</button>' : '')
+      + '</div>';
   }
 
   (def.weeks || []).forEach((wk, wi) => {
@@ -228,12 +406,30 @@ export function renderPlan(){
     await toggle(e.target.dataset.id, e.target.checked);
     const r = e.target.closest('.task-row'); if(r) r.classList.toggle('done', e.target.checked);
   }));
-  $('planEdit').onclick = () => { store.editMode = !store.editMode; renderPlan(); };
+  const editBtn = $('planEdit');
+  if(editBtn){
+    editBtn.style.display = editable ? '' : 'none';
+    editBtn.onclick = () => { if(!editable) return; store.editMode = !store.editMode; renderPlan(); };
+  }
   if(!store.editMode) return;
 
   // edit-mode wiring
   const pm = $('pmTitle'); if(pm) pm.addEventListener('input', e => { def.title = e.target.value; applyHeader(); upSaveSoft(); });
-  const pg = $('pmGoal');  if(pg) pg.addEventListener('input', e => { def.goal  = e.target.value; upSaveSoft(); });
+  const pg = $('pmGoal');  if(pg) pg.addEventListener('input', e => { def.goal  = e.target.value; def.description = e.target.value; upSaveSoft(); });
+  const pv = $('pmVisibility'); if(pv){ pv.value = def.visibility || 'private'; pv.addEventListener('change', e => { def.visibility = e.target.value; if(def.visibility !== 'public') def.discoverable = !!def.discoverable; upSave(); renderPlan(); }); }
+  const bindText = (id, key) => { const el = $(id); if(el) el.addEventListener('input', e => { def[key] = e.target.value; upSaveSoft(); }); };
+  const bindCheck = (id, key) => { const el = $(id); if(el) el.addEventListener('change', e => { def[key] = e.target.checked; upSave(); }); };
+  bindText('pmCategory', 'category');
+  bindText('pmDuration', 'durationLabel');
+  bindText('pmCreator', 'creatorName');
+  bindText('pmCover', 'coverImage');
+  bindText('pmProfile', 'profileImage');
+  bindText('pmPreviewTitle', 'previewTitle');
+  bindText('pmPreviewDescription', 'previewDescription');
+  bindCheck('pmDiscoverable', 'discoverable');
+  bindCheck('pmPreviewEnabled', 'previewEnabled');
+  bindCheck('pmPreviewScheme', 'previewIncludesScheme');
+  const pi = $('pmImport'); if(pi) pi.onclick = () => importLocalPath(id);
   $('content').querySelectorAll('.wb-title-input').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].title = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.task-input').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti].text = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.res-label').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].label = e.target.value; upSaveSoft(); }));

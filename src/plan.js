@@ -5,6 +5,7 @@
 import { SKILLS } from './data.js';
 import { store } from './store.js';
 import { dstr, addDays } from './helpers.js';
+import { canEditPath } from './platform.js';
 
 /* ---- skill accessors ---- */
 export function skillDef(id){ return SKILLS.find(s => s.id === id); }
@@ -83,6 +84,13 @@ export function userDef(id){    return store.state.userPaths[id]; }
 export function curUser(){
   return store.state.current && isUserPath(store.state.current)
     ? store.state.userPaths[store.state.current] : null;
+}
+export function isPlatformPath(id){ return !!(store.state.userPaths[id] && store.state.userPaths[id].platform); }
+export function canEditUserPath(id){
+  const def = store.state.userPaths[id];
+  if(!def) return false;
+  if(!def.platform) return true;
+  return canEditPath(def.platformData || def, def.membership, store.currentUser);
 }
 
 /* ---- title / goal (handles built-in with owner override + user paths) ---- */

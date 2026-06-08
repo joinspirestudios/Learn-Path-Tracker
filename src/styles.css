@@ -157,8 +157,8 @@
   .log-form{display:grid;grid-template-columns:90px 1fr;gap:12px 14px;align-items:start}
   @media(max-width:620px){.log-form{grid-template-columns:1fr}}
   .field label{display:block;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--sand);font-weight:700;margin-bottom:6px}
-  .field input[type=text],.field input[type=number],.field textarea{width:100%;background:var(--ink2);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'DM Sans';font-size:14px;padding:10px 12px}
-  .field input:focus,.field textarea:focus{outline:none;border-color:var(--gold)}
+.field input[type=text],.field input[type=number],.field textarea,.field select{width:100%;background:var(--ink2);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'DM Sans';font-size:14px;padding:10px 12px}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--gold)}
   .field textarea{min-height:60px;resize:vertical}
   .filebox{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .filebtn{position:relative;overflow:hidden}
@@ -252,7 +252,7 @@
 .stat-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--sand);margin-bottom:6px}
 .stat-row b{color:var(--cream);font-family:'Fraunces',serif}
 .modal-body .field label{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--sand-dim);margin-bottom:6px}
-.modal-body .field input,.modal-body .field textarea{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:inherit;font-size:14px;padding:10px 12px;box-sizing:border-box}
+.modal-body .field input,.modal-body .field textarea,.modal-body .field select{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:inherit;font-size:14px;padding:10px 12px;box-sizing:border-box}
 .modal-body .field textarea{min-height:84px;resize:vertical}
 @media(max-width:720px){.today-grid{grid-template-columns:1fr}.today-side{position:static}.tab.edit{margin-left:0}}
 
@@ -295,7 +295,26 @@
 .btn.add-week{margin:6px 0 18px}
 .edit-meta{margin-bottom:18px}
 .edit-meta .field label{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--sand-dim);margin-bottom:6px}
-.edit-meta .field input,.edit-meta .field textarea{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:inherit;font-size:14px;padding:10px 12px;box-sizing:border-box}
+.edit-meta .field input,.edit-meta .field textarea,.edit-meta .field select{width:100%;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:inherit;font-size:14px;padding:10px 12px;box-sizing:border-box}
+.edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin-top:12px}
+.toggle-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;color:var(--sand);font-size:12.5px}
+.toggle-row label{display:flex;align-items:center;gap:7px}
+.mini-import{margin-top:10px;text-align:left;border:1px dashed var(--line);border-radius:10px;background:rgba(201,162,75,.06);color:var(--gold-soft);font-family:'DM Sans';font-size:12px;font-weight:700;padding:8px 10px;cursor:pointer}
+.mini-import:hover{border-color:var(--gold);color:var(--gold)}
+.mini-import.standalone{min-height:auto;margin-top:-8px}
+.empty-state{max-width:680px;margin:30px auto;padding:28px}
+.preview-hero{overflow:hidden;margin-bottom:18px}
+.preview-cover{height:220px;background:center/cover no-repeat;border-bottom:1px solid var(--line)}
+.preview-body{padding:22px;position:relative}
+.preview-avatar{width:58px;height:58px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);margin-bottom:12px}
+.preview-meta{color:var(--sand-dim);font-size:12.5px;margin-top:12px}
+.preview-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.preview-scheme{margin-top:18px}
+.scheme-row{padding:10px 0;border-bottom:1px solid var(--line2)}
+.scheme-row:last-child{border-bottom:none}
+.scheme-row b{display:block;color:var(--cream);font-size:14px}
+.scheme-row span{display:block;color:var(--sand);font-size:12.5px;margin-top:2px}
+@media(max-width:680px){.edit-grid{grid-template-columns:1fr}.preview-cover{height:160px}}
 .danger-zone{margin-top:10px;padding-top:16px;border-top:1px solid var(--line)}
 .linklike.danger{color:#cf7884}
 .linklike.danger:hover{color:#e8b9bf}

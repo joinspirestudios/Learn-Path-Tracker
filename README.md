@@ -130,3 +130,96 @@ If you ever need server-side API calls with a secret key, add it as a
 `/api/*` function (pattern shown in `api/analyze.js`). The browser calls your
 function; your function calls the third-party API with the secret key. The key
 never reaches the client.
+
+---
+
+## Firestore rules for platform paths
+
+The original minimal rules only cover private user state. For the platform path
+model, use starter rules like these. They support public discoverable paths,
+private/unlisted owner and member reads, editor content edits, owner-only
+member/visibility management, and self-service access requests.
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function path(pathId) {
+      return get(/databases/$(database)/documents/paths/$(pathId)).data;
+    }
+    function isOwner(pathId) {
+      return signedIn() && path(pathId).ownerId == request.auth.uid;
+    }
+    function memberRole(pathId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/paths/$(pathId)/members/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/paths/$(pathId)/members/$(request.auth.uid)).data.role
+        : null;
+    }
+    function canReadPath(pathId) {
+      let p = path(pathId);
+      return p.visibility == "public"
+        || p.previewEnabled == true
+        || isOwner(pathId)
+        || memberRole(pathId) in ["editor", "commenter", "viewer", "owner"];
+    }
+    function canReadFullPath(pathId) {
+      let p = path(pathId);
+      return p.visibility == "public"
+        || isOwner(pathId)
+        || memberRole(pathId) in ["editor", "commenter", "viewer", "owner"];
+    }
+    function canEditContent(pathId) {
+      return isOwner(pathId) || memberRole(pathId) == "editor";
+    }
+
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /paths/{pathId} {
+      allow read: if canReadPath(pathId);
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if canEditContent(pathId)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "ownerId", "visibility", "discoverable", "previewEnabled"
+        ]) || isOwner(pathId));
+      allow delete: if isOwner(pathId);
+
+      match /sections/{sectionId} {
+        allow read: if canReadFullPath(pathId);
+        allow write: if canEditContent(pathId);
+      }
+
+      match /tasks/{taskId} {
+        allow read: if canReadFullPath(pathId);
+        allow write: if canEditContent(pathId);
+      }
+
+      match /members/{uid} {
+        allow read: if canReadFullPath(pathId);
+        allow create, update, delete: if isOwner(pathId)
+          && request.resource.data.uid == uid;
+      }
+
+      match /accessRequests/{requestId} {
+        allow read: if isOwner(pathId)
+          || (signedIn() && requestId == request.auth.uid);
+        allow create, update: if signedIn()
+          && requestId == request.auth.uid
+          && request.resource.data.requesterId == request.auth.uid
+          && request.resource.data.status == "pending";
+        allow delete: if isOwner(pathId);
+      }
+    }
+  }
+}
+```
+
+Production hardening note: these rules intentionally allow reading a
+preview-enabled path document so signed-out visitors can see preview metadata.
+Keep full path content in `sections` and `tasks`, and review field-level update
+constraints before adding comments, uploads, payments, or analytics.
