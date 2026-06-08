@@ -11,6 +11,7 @@ import { $, esc, flash, undoToast } from './helpers.js';
 import {
   dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
   dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
+  dbEnsureEnrollment, enrollmentIdFor,
 } from './db.js';
 import {
   ensureSkill, curState, curDef, P, quarters, days, ladders,
@@ -22,7 +23,7 @@ import {
 import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive } from './db.js';
-import { canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
+import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -214,20 +215,23 @@ function createPath(){
       await dbSaveState();
     }
     ensureSkill(id);
-    close(); openSkill(id);
+    close(); await openSkill(id);
     if(pick === 'blank'){ store.editMode = true; }
     store.nav.switchTab('plan');
   };
 }
 
 /* ---- enter / leave a skill ---- */
-export function openSkill(id){
+export async function openSkill(id){
   store.state.current = id; ensureSkill(id); store.editMode = false;
+  if(isUserPath(id) && store.state.userPaths[id].platform && cloudActive()){
+    await dbEnsureEnrollment(id);
+  }
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
   const startTab = isUserPath(id) ? 'plan' : 'today';
   store.activeTab = startTab;
-  dbSaveState(); applyHeader();
+  await dbSaveState(); applyHeader();
   if(!isUserPath(id)) refreshSuggest();
   updateOverall(); store.nav.switchTab(startTab);
   if(location.hash !== '#/path/' + encodeURIComponent(id)){
@@ -260,7 +264,7 @@ async function openPathRoute(id, forcePreview){
     if(forcePreview && isUserPath(id)){
       const def = store.state.userPaths[id];
       renderPathPreview({ id, path:def.platformData || def, membership:def.membership || null, sections:[], tasks:[] });
-    } else openSkill(id);
+    } else await openSkill(id);
     return;
   }
   const record = await dbLoadPlatformPath(id);
@@ -269,7 +273,7 @@ async function openPathRoute(id, forcePreview){
     return;
   }
   if(!forcePreview && canViewPath(record.path, record.membership, store.currentUser)){
-    openSkill(id);
+    await openSkill(id);
     return;
   }
   if(canPreviewPath(record.path, store.currentUser)){
@@ -329,6 +333,53 @@ function renderPathPreview(record){
   };
 }
 
+function currentEnrollmentForPath(id){
+  const userId = (store.currentUser && store.currentUser.uid) || 'local';
+  const enrollmentId = enrollmentIdFor(id, userId);
+  return store.enrollments[enrollmentId] || (store.state.enrollments && store.state.enrollments[enrollmentId]) || null;
+}
+
+function roadmapDayCount(def, enrollment){
+  const fromWeeks = Math.max(1, (def.weeks || []).length) * 7;
+  let fromTasks = 0;
+  (def.weeks || []).forEach(wk => {
+    (wk.tasks || []).forEach(task => {
+      const unlockDay = Number(task.unlockDay || 0);
+      if(unlockDay > fromTasks) fromTasks = unlockDay;
+    });
+  });
+  const currentDay = enrollment ? Number(enrollment.currentDay || 1) : 1;
+  const lastCompleted = enrollment && enrollment.lastCompletedDay != null ? Number(enrollment.lastCompletedDay) : 0;
+  return Math.max(7, fromWeeks, fromTasks, currentDay + 6, lastCompleted);
+}
+
+function roadmapHTML(id, def){
+  if(!def.platform) return '';
+  const enrollment = currentEnrollmentForPath(id);
+  const logs = (enrollment && enrollment.dayLogs) || {};
+  const currentDay = enrollment ? Math.max(1, Number(enrollment.currentDay || 1)) : 1;
+  const totalDays = roadmapDayCount(def, enrollment);
+  let h = '<div class="panel card roadmap-foundation">'
+    + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Journey map coming soon</h3></div>'
+    + '<div class="muted">Enrollment progress is stored separately from the path definition.</div></div>'
+    + '<div class="road-days">';
+  for(let day = 1; day <= totalDays; day++){
+    const log = logs[day];
+    let status = 'locked', label = 'Locked';
+    if(log && log.status === 'completed'){
+      status = 'completed'; label = 'Completed';
+    } else if(day < currentDay){
+      status = 'past'; label = log ? log.status : 'Past placeholder';
+    } else if(day === currentDay){
+      status = 'active'; label = 'Current day';
+    }
+    h += '<button type="button" class="road-day ' + status + '" ' + (status === 'active' ? '' : 'disabled') + '>'
+      + '<span>Day ' + day + '</span><small>' + esc(label) + '</small></button>';
+  }
+  h += '</div></div>';
+  return h;
+}
+
 /* ============================================================ */
 /* ---------- USER-CREATED PATH (Plan view + inline editor) --- */
 /* ============================================================ */
@@ -345,6 +396,8 @@ export function renderPlan(){
     + '<div class="muted" style="font-size:12px;margin-top:10px">' + t.done + ' / ' + t.total + ' done · ' + pct + '%</div>'
     + '<div class="progress-bar" style="width:220px;max-width:60vw;margin-left:auto"><div style="width:' + pct + '%"></div></div></div></div>';
 
+  h += roadmapHTML(id, def);
+
   if(store.editMode){
     h += '<div class="panel card edit-meta"><div class="field"><label>Path name</label><input type="text" id="pmTitle" value="' + esc(def.title) + '" maxlength="80"/></div>'
       + '<div class="field" style="margin-top:10px"><label>Goal / description</label><textarea id="pmGoal" placeholder="What does finishing look like?">' + esc(def.goal || '') + '</textarea></div>'
@@ -359,6 +412,7 @@ export function renderPlan(){
       + '<div class="toggle-row"><label><input type="checkbox" id="pmDiscoverable" ' + (def.discoverable ? 'checked' : '') + '/> Discoverable</label><label><input type="checkbox" id="pmPreviewEnabled" ' + (def.previewEnabled !== false ? 'checked' : '') + '/> Preview enabled</label><label><input type="checkbox" id="pmPreviewScheme" ' + (def.previewIncludesScheme ? 'checked' : '') + '/> Preview includes scheme</label></div>'
       + '<div class="field" style="margin-top:10px"><label>Preview title</label><input type="text" id="pmPreviewTitle" value="' + esc(def.previewTitle || def.title || '') + '"/></div>'
       + '<div class="field" style="margin-top:10px"><label>Preview description</label><textarea id="pmPreviewDescription" placeholder="What should non-members see?">' + esc(def.previewDescription || def.goal || '') + '</textarea></div>'
+      + (canManageMembers(def.platformData || def, def.membership, store.currentUser) ? '<div class="owner-note">Member sharing and role management coming next.</div>' : '')
       + (!def.platform && cloudActive() ? '<button class="btn gold" id="pmImport" style="margin-top:12px">Publish/import this path to platform</button>' : '')
       + '</div>';
   }

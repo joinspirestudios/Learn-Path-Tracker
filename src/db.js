@@ -118,6 +118,153 @@ function sectionRef(pathId, sectionId){ return fb.doc(fb.db, 'paths', pathId, 's
 function taskRef(pathId, taskId){ return fb.doc(fb.db, 'paths', pathId, 'tasks', taskId); }
 function memberRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'members', uid); }
 function accessRequestRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'accessRequests', uid); }
+function enrollmentRef(enrollmentId){ return fb.doc(fb.db, 'enrollments', enrollmentId); }
+function dayLogRef(enrollmentId, dayNumber){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'dayLogs', String(dayNumber)); }
+
+export function enrollmentIdFor(pathId, userId){
+  return String(userId || 'local') + '_' + String(pathId || '').replace(/[\/\\]/g, '_');
+}
+
+function cleanEnrollmentStatus(status){
+  return ['active', 'paused', 'completed'].includes(status) ? status : 'active';
+}
+
+function cleanDayLogStatus(status){
+  return ['locked', 'active', 'completed', 'missed', 'frozen'].includes(status) ? status : 'locked';
+}
+
+function stamp(){ return new Date(); }
+
+export function makeEnrollment(pathId, userId, data = {}){
+  const id = data.id || enrollmentIdFor(pathId, userId);
+  const createdAt = data.createdAt || stamp();
+  return {
+    id,
+    pathId: data.pathId || pathId,
+    userId: data.userId || userId,
+    startDate: data.startDate || null,
+    currentDay: Number(data.currentDay || 1),
+    streak: Number(data.streak || 0),
+    freezeCount: Number(data.freezeCount || 0),
+    status: cleanEnrollmentStatus(data.status),
+    lastCompletedDay: data.lastCompletedDay == null ? null : Number(data.lastCompletedDay),
+    createdAt,
+    updatedAt: data.updatedAt || createdAt,
+  };
+}
+
+export function makeDayLog(dayNumber, data = {}){
+  const n = Number(data.dayNumber || dayNumber);
+  const createdAt = data.createdAt || stamp();
+  return {
+    dayNumber: n,
+    status: cleanDayLogStatus(data.status),
+    completedAt: data.completedAt || null,
+    summary: data.summary || null,
+    evidenceCount: Number(data.evidenceCount || 0),
+    createdAt,
+    updatedAt: data.updatedAt || createdAt,
+  };
+}
+
+function cacheEnrollment(enrollment, dayLogs = null){
+  if(!enrollment || !enrollment.id) return null;
+  const previous = store.enrollments[enrollment.id] || (store.state.enrollments && store.state.enrollments[enrollment.id]) || {};
+  const logs = dayLogs || previous.dayLogs || {};
+  const cached = { ...previous, ...enrollment, dayLogs: logs };
+  store.enrollments[enrollment.id] = cached;
+  store.state.enrollments = store.state.enrollments || {};
+  store.state.enrollments[enrollment.id] = cached;
+  return cached;
+}
+
+async function loadDayLogs(enrollmentId){
+  const logs = {};
+  const snap = await fb.getDocs(fb.collection(fb.db, 'enrollments', enrollmentId, 'dayLogs'));
+  snap.forEach(d => {
+    const dayNumber = Number(d.id);
+    if(dayNumber) logs[dayNumber] = makeDayLog(dayNumber, d.data());
+  });
+  return logs;
+}
+
+export async function dbSaveEnrollment(enrollment){
+  if(!enrollment || !enrollment.id) return null;
+  const next = { ...enrollment, updatedAt: stamp() };
+  delete next.dayLogs;
+  if(cloudActive()){
+    try{ await fb.setDoc(enrollmentRef(next.id), next, { merge:true }); }
+    catch(e){ console.warn('save enrollment:', e); }
+  }
+  cacheEnrollment(next);
+  if(!cloudActive()) await dbSaveState();
+  return store.enrollments[next.id];
+}
+
+export async function dbSaveDayLog(enrollmentId, dayLog){
+  if(!enrollmentId || !dayLog) return null;
+  const next = makeDayLog(dayLog.dayNumber, { ...dayLog, updatedAt: stamp() });
+  if(cloudActive()){
+    try{ await fb.setDoc(dayLogRef(enrollmentId, next.dayNumber), next, { merge:true }); }
+    catch(e){ console.warn('save day log:', e); }
+  }
+  const enrollment = store.enrollments[enrollmentId] || cacheEnrollment({ id: enrollmentId });
+  enrollment.dayLogs = enrollment.dayLogs || {};
+  enrollment.dayLogs[next.dayNumber] = next;
+  cacheEnrollment(enrollment, enrollment.dayLogs);
+  if(!cloudActive()) await dbSaveState();
+  return next;
+}
+
+export async function dbEnsureEnrollment(pathId){
+  const userId = (store.currentUser && store.currentUser.uid) || 'local';
+  const enrollmentId = enrollmentIdFor(pathId, userId);
+  if(cloudActive()){
+    try{
+      const ref = enrollmentRef(enrollmentId);
+      const snap = await fb.getDoc(ref);
+      let enrollment;
+      if(snap.exists()){
+        enrollment = makeEnrollment(pathId, userId, { id: enrollmentId, ...snap.data() });
+        if(
+          snap.data().pathId == null ||
+          snap.data().userId == null ||
+          snap.data().currentDay == null ||
+          snap.data().status == null
+        ){
+          await fb.setDoc(ref, enrollment, { merge:true });
+        }
+      } else {
+        enrollment = makeEnrollment(pathId, userId, {
+          id: enrollmentId,
+          status: 'active',
+          currentDay: 1,
+          streak: 0,
+          freezeCount: 0,
+          lastCompletedDay: null,
+        });
+        await fb.setDoc(ref, enrollment, { merge:true });
+      }
+      const dayLogs = await loadDayLogs(enrollmentId);
+      return cacheEnrollment(enrollment, dayLogs);
+    }catch(e){
+      console.warn('ensure enrollment:', e);
+    }
+  }
+  const local = store.state.enrollments && store.state.enrollments[enrollmentId];
+  if(local) return cacheEnrollment(makeEnrollment(pathId, userId, local), local.dayLogs || {});
+  const enrollment = makeEnrollment(pathId, userId, {
+    id: enrollmentId,
+    status: 'active',
+    currentDay: 1,
+    streak: 0,
+    freezeCount: 0,
+    lastCompletedDay: null,
+  });
+  cacheEnrollment(enrollment, {});
+  await dbSaveState();
+  return store.enrollments[enrollmentId];
+}
 
 function upsertPlatformPath(record){
   if(!record || !record.id) return null;

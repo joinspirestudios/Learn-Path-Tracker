@@ -277,6 +277,17 @@
 
 /* ---- user path: plan view + editor ---- */
 .plan-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:22px;flex-wrap:wrap}
+.roadmap-foundation{margin:-4px 0 18px}
+.road-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.road-head h3{font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin:8px 0 0;color:var(--cream)}
+.road-days{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.road-day{min-height:64px;text-align:left;border:1px solid var(--line2);border-radius:10px;background:var(--ink2);color:var(--cream);font-family:'DM Sans';padding:10px 11px;display:flex;flex-direction:column;justify-content:space-between;gap:4px}
+.road-day span{font-weight:800;font-size:12px;color:var(--cream)}
+.road-day small{font-size:10.5px;color:var(--sand-dim);line-height:1.25}
+.road-day.active{border-color:var(--gold);box-shadow:0 0 0 1px rgba(201,162,75,.25) inset}
+.road-day.completed span{color:var(--green)}
+.road-day.past{border-style:dashed}
+.road-day.locked{opacity:.55}
 .week-block{margin-bottom:16px}
 .wb-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .wb-title-input{flex:1;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'Fraunces',serif;font-size:17px;font-weight:600;padding:8px 12px}
@@ -299,6 +310,7 @@
 .edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin-top:12px}
 .toggle-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;color:var(--sand);font-size:12.5px}
 .toggle-row label{display:flex;align-items:center;gap:7px}
+.owner-note{margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;color:var(--sand);font-size:12.5px;background:rgba(201,162,75,.06)}
 .mini-import{margin-top:10px;text-align:left;border:1px dashed var(--line);border-radius:10px;background:rgba(201,162,75,.06);color:var(--gold-soft);font-family:'DM Sans';font-size:12px;font-weight:700;padding:8px 10px;cursor:pointer}
 .mini-import:hover{border-color:var(--gold);color:var(--gold)}
 .mini-import.standalone{min-height:auto;margin-top:-8px}

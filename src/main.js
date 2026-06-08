@@ -56,6 +56,7 @@ store.nav.handleHash = handleHashRoute;
 
 /* ---- boot / load helpers ---- */
 async function finishLoad(){
+  store.enrollments = store.state.enrollments || {};
   applyHeader(); updateLogDot();
   if(await handleHashRoute()) return;
   if(store.state.current && (skillDef(store.state.current) || isUserPath(store.state.current))){
@@ -73,6 +74,7 @@ async function finishLoad(){
 
 async function loadLocalAndRender(){
   store.state     = loadLocalState();        // already migrated
+  store.enrollments = store.state.enrollments || {};
   store.catalogue = await dbLoadRenders();   // local renders (signed-out path)
   if(fb.ready) await dbLoadPlatformPaths();
   await finishLoad();
@@ -80,23 +82,62 @@ async function loadLocalAndRender(){
 
 async function loadAndRender(){
   store.state     = await dbLoadState();     // already migrated
+  store.enrollments = store.state.enrollments || {};
   store.catalogue = await dbLoadRenders();
   await dbLoadPlatformPaths();
   await finishLoad();
 }
 
 /* ---- the post-sign-in reconciliation (cloud vs local merge) ---- */
+function hasOwnData(state){
+  return !!(
+    Object.keys(state.skills || {}).length ||
+    Object.keys(state.userPaths || {}).length ||
+    Object.keys(state.enrollments || {}).length
+  );
+}
+
+function clone(v){
+  return JSON.parse(JSON.stringify(v));
+}
+
+function stateHasPath(state, id){
+  return !!(id && ((state.skills && state.skills[id]) || (state.userPaths && state.userPaths[id])));
+}
+
+function mergeLocalPrivateState(cloudState, localState){
+  const merged = {
+    ...cloudState,
+    skills: { ...(cloudState.skills || {}) },
+    userPaths: { ...(cloudState.userPaths || {}) },
+    enrollments: { ...(cloudState.enrollments || {}) },
+  };
+  Object.entries(localState.skills || {}).forEach(([id, value]) => {
+    if(!merged.skills[id]) merged.skills[id] = clone(value);
+  });
+  Object.entries(localState.userPaths || {}).forEach(([id, value]) => {
+    if(!merged.userPaths[id]) merged.userPaths[id] = clone(value);
+  });
+  Object.entries(localState.enrollments || {}).forEach(([id, value]) => {
+    if(!merged.enrollments[id]) merged.enrollments[id] = clone(value);
+  });
+  if(!stateHasPath(merged, merged.current) && stateHasPath(merged, localState.current)){
+    merged.current = localState.current;
+  }
+  return merged;
+}
+
 async function onSignIn(){
   const cloudState   = await dbLoadState();    // already migrated
   const cloudRenders = await dbLoadRenders();
-  const cloudEmpty = !cloudState.skills || Object.keys(cloudState.skills).length === 0;
-  if(cloudEmpty){
-    const local = loadLocalState();            // already migrated
-    if(Object.keys(local.skills || {}).length){ store.state = local; await dbSaveState(); }
-    else { store.state = cloudState; }
-  } else {
-    store.state = cloudState;
-  }
+  const local = loadLocalState();              // already migrated
+  const cloudEmpty = !hasOwnData(cloudState);
+  const localHasData = hasOwnData(local);
+  if(cloudEmpty && localHasData) store.state = local;
+  else if(localHasData) store.state = mergeLocalPrivateState(cloudState, local);
+  else store.state = cloudState;
+  store.enrollments = store.state.enrollments || {};
+  if(localHasData || cloudEmpty) await dbSaveState();
   if(cloudRenders.length === 0){
     const lkeys = await Store.list(CAT_PREFIX);
     if(lkeys.length){

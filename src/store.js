@@ -14,7 +14,7 @@ export const LEGACY_KEY = 'dp_state';
    Bump SCHEMA_VERSION and add a numbered migration block below whenever the
    stored shape changes. Migrations run once per load on both local and cloud
    bundles, so deployed users do not silently break when data.js evolves. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export function migrateState(s){
   s = s && typeof s === 'object' ? s : {};
   // Treat any pre-versioning bundle as v1.
@@ -24,6 +24,12 @@ export function migrateState(s){
   // Future migrations slot in here, gated on `if(startedAt < N)`.
   s.skills    = s.skills    || {};
   s.userPaths = s.userPaths || {};
+  s.enrollments = s.enrollments || {};
+  Object.keys(s.enrollments).forEach(id => {
+    const en = s.enrollments[id] || {};
+    en.dayLogs = en.dayLogs || {};
+    s.enrollments[id] = en;
+  });
   s.current   = s.current   || null;
   s.version   = SCHEMA_VERSION;
   return s;
@@ -34,6 +40,7 @@ export const store = {
   state:           { current:null, skills:{}, userPaths:{}, version:0 },
   catalogue:       [],     // every render entry, each carries .skill
   platformPaths:   {},     // cloud platform paths, normalized into userPaths for rendering
+  enrollments:     {},     // current user's per-path enrollment progress
   accessRequests:  {},
   route:           { kind:'catalog' },
   currentUser:     null,
