@@ -11,16 +11,24 @@ enrollments.
 
 ---
 
-## Phase 2 journey model
+## Phase 3 journey + proof model
 
-Platform paths now use an enrollment-backed daily journey engine:
+Platform paths now use an enrollment-backed daily journey engine with proof
+submissions:
 
 - Path definitions stay in `paths/{pathId}` with sections and tasks.
 - User progress lives in `enrollments/{enrollmentId}`.
 - Daily state lives in `enrollments/{enrollmentId}/dayLogs/{dayNumber}`.
+- Proof submissions live in
+  `enrollments/{enrollmentId}/submissions/{submissionId}`.
 - Roadmap states are `active`, `completed`, `locked`, `missed`, and `frozen`.
 - Future days are visible but locked until their calendar day.
-- Current-day task completion is stored in `completedTaskIds` on the dayLog.
+- Current-day task completion is stored in `completedTaskIds` on the dayLog,
+  with `verifiedTaskIds` for proof-backed tasks and `unverifiedTaskIds` for
+  normal checkbox completions or legacy progress.
+- Tasks marked `evidenceRequired` require URL or file proof before they count
+  as verified. URL proof works in local mode. File uploads require Firebase
+  Storage.
 - Roadmap length uses `durationDays` when present. `durationLabel` is display
   text only, with safe inference for labels like `75 days`, `8 weeks`, or
   `1 year`.
@@ -32,10 +40,6 @@ Platform paths now use an enrollment-backed daily journey engine:
   `currentDay`, and `streak`.
 - New enrollments start with one freeze. A missed day can be changed to
   `frozen` to preserve the streak without counting as a completed day.
-
-Evidence uploads are still a future Phase 3 feature. Tasks that require evidence
-can be completed for now, but they are shown as unverified and `evidenceCount`
-stays `0` until real uploads exist.
 
 AI generation, comments, notifications, payments, and advanced catch-up modes are
 not implemented in this phase.
@@ -93,20 +97,23 @@ files to `dist`, and `npm run preview` serves the built app.
 1. Go to Firebase Console and create a project.
 2. Enable Google sign-in under Authentication.
 3. Create a Firestore database in production mode.
-4. Publish the platform rules below.
-5. Register a Web app and copy its config.
-6. Add these values locally and in Vercel environment variables:
+4. Enable Firebase Storage if you want file evidence uploads.
+5. Publish the platform Firestore rules below.
+6. If Storage is enabled, publish the Storage rules below.
+7. Register a Web app and copy its config.
+8. Add these values locally and in Vercel environment variables:
    `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`,
    `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`.
-7. Add `localhost` and your Vercel domain under Authentication authorized
+9. Add `localhost` and your Vercel domain under Authentication authorized
    domains.
 
 ### Recommended platform Firestore rules
 
 Use these starter rules for this version. Platform path definitions live in
 `paths/{pathId}`. User progress lives separately in
-`enrollments/{enrollmentId}` and `dayLogs`, not inside path definitions. These
-rules allow the owner of an enrollment to read/write their daily journey logs.
+`enrollments/{enrollmentId}`, `dayLogs`, and `submissions`, not inside path
+definitions. These rules allow the owner of an enrollment to read/write their
+daily journey logs and private proof submissions.
 
 ```text
 rules_version = '2';
@@ -197,6 +204,44 @@ service cloud.firestore {
       match /dayLogs/{dayNumber} {
         allow read, write: if ownsEnrollment(enrollmentId);
       }
+
+      match /submissions/{submissionId} {
+        allow read, write: if ownsEnrollment(enrollmentId);
+      }
+    }
+  }
+}
+```
+
+### Recommended Storage rules for evidence files
+
+File evidence is stored under
+`evidence/{userId}/{enrollmentId}/day-{dayNumber}/{taskId}/{timestamp}-{safeFileName}`.
+These starter rules keep uploads scoped to the signed-in owner folder and limit
+files to images or PDFs up to 10MB.
+
+```text
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function validEvidenceFile() {
+      return request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType in [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "application/pdf"
+        ];
+    }
+
+    match /evidence/{userId}/{enrollmentId}/{allPaths=**} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validEvidenceFile();
     }
   }
 }

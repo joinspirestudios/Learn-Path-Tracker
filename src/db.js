@@ -123,6 +123,11 @@ function memberRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'members'
 function accessRequestRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'accessRequests', uid); }
 function enrollmentRef(enrollmentId){ return fb.doc(fb.db, 'enrollments', enrollmentId); }
 function dayLogRef(enrollmentId, dayNumber){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'dayLogs', String(dayNumber)); }
+function submissionRef(enrollmentId, submissionId){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'submissions', submissionId); }
+function submissionsCol(enrollmentId){ return fb.collection(fb.db, 'enrollments', enrollmentId, 'submissions'); }
+
+export const ACCEPTED_EVIDENCE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+export const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024;
 
 export function enrollmentIdFor(pathId, userId){
   return String(userId || 'local') + '_' + String(pathId || '').replace(/[\/\\]/g, '_');
@@ -137,6 +142,15 @@ function cleanDayLogStatus(status){
 }
 
 function stamp(){ return new Date(); }
+
+function cleanEvidenceType(type){
+  return type === 'file' ? 'file' : 'url';
+}
+
+function safeFileName(fileName){
+  const base = String(fileName || 'evidence').trim() || 'evidence';
+  return base.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || 'evidence';
+}
 
 export function makeEnrollment(pathId, userId, data = {}){
   const id = data.id || enrollmentIdFor(pathId, userId);
@@ -170,10 +184,56 @@ export function makeDayLog(dayNumber, data = {}){
     summary: data.summary || null,
     evidenceCount: Number(data.evidenceCount || 0),
     completedTaskIds: Array.isArray(data.completedTaskIds) ? data.completedTaskIds : [],
+    verifiedTaskIds: Array.isArray(data.verifiedTaskIds) ? data.verifiedTaskIds : [],
+    unverifiedTaskIds: Array.isArray(data.unverifiedTaskIds) ? data.unverifiedTaskIds : [],
     totalTaskCount: Number(data.totalTaskCount || 0),
     createdAt,
     updatedAt: data.updatedAt || createdAt,
   };
+}
+
+function makeEvidenceSubmission(enrollmentId, payload = {}){
+  const enrollment = store.enrollments[enrollmentId] || (store.state.enrollments && store.state.enrollments[enrollmentId]) || {};
+  const createdAt = payload.createdAt || stamp();
+  return {
+    id: payload.id || ('sub_' + Date.now().toString(36) + Math.floor(Math.random() * 100000).toString(36)),
+    pathId: payload.pathId || enrollment.pathId || null,
+    userId: payload.userId || enrollment.userId || (store.currentUser && store.currentUser.uid) || 'local',
+    dayNumber: Number(payload.dayNumber || 1),
+    taskId: String(payload.taskId || ''),
+    taskTitle: String(payload.taskTitle || ''),
+    evidenceType: cleanEvidenceType(payload.evidenceType),
+    evidenceUrl: payload.evidenceUrl || null,
+    fileName: payload.fileName || null,
+    fileType: payload.fileType || null,
+    fileSize: payload.fileSize == null ? null : Number(payload.fileSize || 0),
+    note: payload.note || null,
+    status: 'submitted',
+    createdAt,
+    updatedAt: payload.updatedAt || createdAt,
+  };
+}
+
+function cacheEvidenceSubmission(enrollmentId, submission){
+  if(!enrollmentId || !submission || !submission.id) return null;
+  store.evidenceSubmissions = store.evidenceSubmissions || {};
+  store.state.evidenceSubmissions = store.state.evidenceSubmissions || {};
+  const live = store.evidenceSubmissions[enrollmentId] || {};
+  const persisted = store.state.evidenceSubmissions[enrollmentId] || {};
+  const next = { ...persisted, ...live, [submission.id]: submission };
+  store.evidenceSubmissions[enrollmentId] = next;
+  store.state.evidenceSubmissions[enrollmentId] = next;
+  return submission;
+}
+
+function cachedEvidenceSubmissions(enrollmentId, dayNumber = null, taskId = null){
+  const bucket = (store.evidenceSubmissions && store.evidenceSubmissions[enrollmentId])
+    || (store.state.evidenceSubmissions && store.state.evidenceSubmissions[enrollmentId])
+    || {};
+  return Object.values(bucket)
+    .filter(s => dayNumber == null || Number(s.dayNumber) === Number(dayNumber))
+    .filter(s => taskId == null || s.taskId === taskId)
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
 function cacheEnrollment(enrollment, dayLogs = null){
@@ -223,6 +283,77 @@ export async function dbSaveDayLog(enrollmentId, dayLog){
   cacheEnrollment(enrollment, enrollment.dayLogs);
   if(!cloudActive()) await dbSaveState();
   return next;
+}
+
+export async function createEvidenceSubmission(enrollmentId, payload){
+  if(!enrollmentId) return null;
+  const submission = makeEvidenceSubmission(enrollmentId, { ...payload, updatedAt: stamp() });
+  if(cloudActive()){
+    try{
+      await fb.setDoc(submissionRef(enrollmentId, submission.id), submission, { merge:true });
+    }catch(e){
+      console.warn('create evidence submission:', e);
+      throw e;
+    }
+  }
+  cacheEvidenceSubmission(enrollmentId, submission);
+  if(!cloudActive()) await dbSaveState();
+  return submission;
+}
+
+export async function listEvidenceSubmissions(enrollmentId, dayNumber = null){
+  if(!enrollmentId) return [];
+  if(cloudActive()){
+    try{
+      const snap = await fb.getDocs(submissionsCol(enrollmentId));
+      snap.forEach(d => cacheEvidenceSubmission(enrollmentId, makeEvidenceSubmission(enrollmentId, { id:d.id, ...d.data() })));
+    }catch(e){
+      console.warn('list evidence submissions:', e);
+    }
+  }
+  return cachedEvidenceSubmissions(enrollmentId, dayNumber);
+}
+
+export async function listTaskEvidenceSubmissions(enrollmentId, dayNumber, taskId){
+  const submissions = await listEvidenceSubmissions(enrollmentId, dayNumber);
+  return submissions.filter(s => s.taskId === taskId);
+}
+
+export async function createLocalEvidenceSubmission(enrollmentId, payload){
+  return createEvidenceSubmission(enrollmentId, payload);
+}
+
+export async function listLocalEvidenceSubmissions(enrollmentId, dayNumber = null){
+  return cachedEvidenceSubmissions(enrollmentId, dayNumber);
+}
+
+export async function listLocalTaskEvidenceSubmissions(enrollmentId, dayNumber, taskId){
+  return cachedEvidenceSubmissions(enrollmentId, dayNumber, taskId);
+}
+
+export async function uploadEvidenceFile(userId, enrollmentId, dayNumber, taskId, file){
+  if(!fb.storageReady || !fb.storage){
+    throw new Error('File uploads require Firebase Storage. Use URL evidence for local mode.');
+  }
+  if(!file) throw new Error('Choose a file to upload.');
+  if(!ACCEPTED_EVIDENCE_TYPES.includes(file.type)){
+    throw new Error('Use a JPG, PNG, WebP, or PDF file.');
+  }
+  if(Number(file.size || 0) > MAX_EVIDENCE_BYTES){
+    throw new Error('Evidence files must be 10MB or smaller.');
+  }
+  const name = safeFileName(file.name);
+  const path = [
+    'evidence',
+    String(userId || 'local'),
+    String(enrollmentId),
+    'day-' + Number(dayNumber || 1),
+    String(taskId || 'task').replace(/[\/\\]/g, '_'),
+    Date.now() + '-' + name,
+  ].join('/');
+  const ref = fb.storageRef(fb.storage, path);
+  await fb.uploadBytes(ref, file, { contentType:file.type });
+  return fb.getDownloadURL(ref);
 }
 
 export async function dbStartEnrollment(pathId, totalTaskCount = 0){

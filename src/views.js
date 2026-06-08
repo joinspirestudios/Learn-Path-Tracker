@@ -13,6 +13,8 @@ import {
   dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
   dbEnsureEnrollment, dbReconcileEnrollment, dbSaveEnrollment, dbSaveDayLog,
   dbStartEnrollment, enrollmentIdFor, makeDayLog,
+  createEvidenceSubmission, listEvidenceSubmissions, uploadEvidenceFile,
+  ACCEPTED_EVIDENCE_TYPES,
 } from './db.js';
 import {
   ensureSkill, curState, curDef, P, quarters, days, ladders,
@@ -34,6 +36,9 @@ import {
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
 let selectedJourneyDay = null;
+let evidenceFormTaskId = null;
+let evidenceBusy = false;
+let evidenceError = '';
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -248,6 +253,8 @@ export async function openSkill(id){
     const todayDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
     const taskCount = getTasksForDay(def, Math.max(1, Number(enrollment?.currentDay || todayDay))).length;
     await dbReconcileEnrollment(id, taskCount);
+    const reconciled = currentEnrollmentForPath(id);
+    if(reconciled?.id) await listEvidenceSubmissions(reconciled.id).catch(() => {});
   }
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
@@ -375,6 +382,62 @@ function statusLabel(status){
   })[status] || status;
 }
 
+function cachedEvidenceFor(enrollmentId, dayNumber = null, taskId = null){
+  const bucket = (store.evidenceSubmissions && store.evidenceSubmissions[enrollmentId])
+    || (store.state.evidenceSubmissions && store.state.evidenceSubmissions[enrollmentId])
+    || {};
+  return Object.values(bucket)
+    .filter(s => dayNumber == null || Number(s.dayNumber) === Number(dayNumber))
+    .filter(s => taskId == null || s.taskId === taskId)
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+}
+
+function dateText(value){
+  if(!value) return '';
+  if(typeof value.toDate === 'function') return value.toDate().toLocaleDateString();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+}
+
+function taskIsDone(task, log){
+  const completed = new Set(log?.completedTaskIds || []);
+  const verified = new Set(log?.verifiedTaskIds || []);
+  return task.evidenceRequired ? verified.has(task.id) : completed.has(task.id);
+}
+
+function evidenceCountFor(enrollmentId, dayNumber){
+  return cachedEvidenceFor(enrollmentId, dayNumber).length;
+}
+
+function evidenceListHTML(enrollmentId, dayNumber){
+  const submissions = cachedEvidenceFor(enrollmentId, dayNumber);
+  if(!submissions.length) return '<div class="hint">No proof submissions for this day yet.</div>';
+  return '<div class="evidence-list">' + submissions.map(s => {
+    const title = s.taskTitle || 'Task proof';
+    const label = s.evidenceType === 'file' ? (s.fileName || 'Uploaded file') : 'URL proof';
+    const href = s.evidenceUrl || '#';
+    return '<div class="evidence-item"><div><b>' + esc(title) + '</b>'
+      + '<span>' + esc(dateText(s.createdAt)) + '</span>'
+      + (s.note ? '<p>' + esc(s.note) + '</p>' : '') + '</div>'
+      + (s.evidenceUrl ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(label) + '</a>' : '<em>' + esc(label) + '</em>')
+      + '</div>';
+  }).join('') + '</div>';
+}
+
+function evidenceFormHTML(task){
+  if(evidenceFormTaskId !== task.id) return '';
+  const accepts = ACCEPTED_EVIDENCE_TYPES.join(',');
+  return '<div class="evidence-form" data-task="' + esc(task.id) + '">'
+    + '<label>Proof type<select id="evidenceType"><option value="url">URL</option><option value="file">File</option></select></label>'
+    + '<label>Proof URL<input type="url" id="evidenceUrl" placeholder="https://..."/></label>'
+    + '<label>File<input type="file" id="evidenceFile" accept="' + esc(accepts) + '"/></label>'
+    + '<label>Note<textarea id="evidenceNote" placeholder="Short context for this proof"></textarea></label>'
+    + (evidenceError ? '<div class="form-error">' + esc(evidenceError) + '</div>' : '')
+    + '<div class="evidence-actions"><button class="btn gold" id="submitEvidence" data-task="' + esc(task.id) + '" ' + (evidenceBusy ? 'disabled' : '') + '>' + (evidenceBusy ? 'Submitting...' : 'Submit proof') + '</button>'
+    + '<button class="btn" id="cancelEvidence" type="button">Cancel</button></div>'
+    + '</div>';
+}
+
 function roadmapHTML(id, def){
   const enrollment = currentEnrollmentForPath(id);
   const logs = enrollment?.dayLogs || {};
@@ -415,7 +478,9 @@ function journeyDetailHTML(id, def){
   const log = dayLogFor(enrollment, day) || makeDayLog(day, { date, status, totalTaskCount: getTasksForDay(def, day).length });
   const dayTasks = getTasksForDay(def, day);
   const completed = new Set(log.completedTaskIds || []);
-  const completeCount = dayTasks.filter(task => completed.has(task.id)).length;
+  const verified = new Set(log.verifiedTaskIds || []);
+  const completeCount = dayTasks.filter(task => taskIsDone(task, log)).length;
+  const evidenceCount = evidenceCountFor(enrollment.id, day);
   let h = '<div class="panel card journey-detail" id="journeyDetail">'
     + '<div class="detail-head"><div><div class="chip">' + esc(statusLabel(status)) + '</div><h3>Day ' + day + '</h3><p class="muted">' + esc(date || 'Date set when started') + '</p></div>'
     + '<div class="detail-progress">' + completeCount + '/' + dayTasks.length + ' tasks</div></div>';
@@ -425,15 +490,21 @@ function journeyDetailHTML(id, def){
     h += '<div class="history-list">';
     if(dayTasks.length){
       dayTasks.forEach(task => {
+        const isVerified = verified.has(task.id);
+        const isCompleted = completed.has(task.id);
+        const label = task.evidenceRequired
+          ? (isVerified ? 'Proof submitted' : (isCompleted ? 'Completed before proof tracking' : 'Not completed'))
+          : (isCompleted ? 'Completed' : 'Not completed');
         h += '<div class="history-task ' + (completed.has(task.id) ? 'done' : '') + '"><b>' + esc(task.title || task.text || 'Task') + '</b>'
-          + '<span>' + (completed.has(task.id) ? 'Completed' : 'Not completed') + '</span></div>';
+          + '<span>' + esc(label) + '</span></div>';
       });
     } else {
       h += '<div class="muted">No tasks were assigned to this day.</div>';
     }
     h += '</div>'
       + (log.summary ? '<p class="summary">' + esc(log.summary) + '</p>' : '')
-      + '<div class="hint">Evidence count: ' + Number(log.evidenceCount || 0) + '. Evidence uploads coming next.</div>';
+      + '<div class="hint">Evidence count: ' + evidenceCount + '</div>'
+      + evidenceListHTML(enrollment.id, day);
     if(status === 'missed'){
       h += '<div class="missed-copy"><b>You missed this day.</b><p>'
         + (Number(enrollment.freezeCount || 0) > 0
@@ -449,11 +520,22 @@ function journeyDetailHTML(id, def){
     if(dayTasks.length){
       h += '<div class="journey-tasks">';
       dayTasks.forEach(task => {
-        h += '<label class="journey-task ' + (completed.has(task.id) ? 'done' : '') + '"><input type="checkbox" class="ck journey-ck" data-task="' + esc(task.id) + '" ' + (completed.has(task.id) ? 'checked' : '') + '/>'
-          + '<span><b>' + esc(task.title || task.text || 'Task') + '</b>'
-          + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
-          + (task.evidenceRequired ? '<small class="evidence-note">Evidence required in Phase 3 - unverified for now.</small>' : '')
-          + '</span></label>';
+        if(task.evidenceRequired){
+          const isVerified = verified.has(task.id);
+          h += '<div class="journey-task proof-required ' + (isVerified ? 'done' : '') + '">'
+            + '<span><b>' + esc(task.title || task.text || 'Task') + '</b>'
+            + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
+            + '<small class="evidence-note">' + (isVerified ? 'Proof submitted' : 'Require proof for this task') + '</small></span>'
+            + (isVerified ? '<span class="proof-pill">Verified</span>' : '<button class="btn add-evidence" data-task="' + esc(task.id) + '">Add proof</button>')
+            + evidenceFormHTML(task)
+            + '</div>';
+        } else {
+          h += '<label class="journey-task ' + (completed.has(task.id) ? 'done' : '') + '"><input type="checkbox" class="ck journey-ck" data-task="' + esc(task.id) + '" ' + (completed.has(task.id) ? 'checked' : '') + '/>'
+            + '<span><b>' + esc(task.title || task.text || 'Task') + '</b>'
+            + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
+            + (completed.has(task.id) ? '<small class="evidence-note">Completed without proof</small>' : '')
+            + '</span></label>';
+        }
       });
       h += '</div>';
     } else {
@@ -463,7 +545,7 @@ function journeyDetailHTML(id, def){
     const canComplete = canCompleteDay(day, enrollment, today);
     h += '<button class="btn gold" id="completeDay" data-day="' + day + '" ' + (ready && canComplete ? '' : 'disabled') + '>Complete day</button>';
     if(!canComplete && status === 'active') h += '<div class="hint">This day is not eligible for completion today.</div>';
-    if(ready && canComplete) h += '<div class="hint">Completion is unverified until proof upload is added.</div>';
+    if(ready && canComplete) h += '<div class="hint">All required proof has been submitted.</div>';
   }
   h += '</div>';
   return h;
@@ -477,7 +559,7 @@ function journeyStatusHTML(id, def){
   const status = enrollment?.startDate ? getDayStatus(day || 1, enrollment, enrollment.dayLogs || {}, today) : 'not started';
   const todayTasks = enrollment?.startDate ? getTasksForDay(def, day || 1) : [];
   const log = enrollment?.dayLogs && (enrollment.dayLogs[day] || enrollment.dayLogs[String(day)]);
-  const done = todayTasks.filter(task => (log?.completedTaskIds || []).includes(task.id)).length;
+  const done = todayTasks.filter(task => taskIsDone(task, log)).length;
   return '<div class="panel card journey-status">'
     + '<div><span>Day</span><b>' + (day || '-') + ' of ' + totalDays + '</b></div>'
     + '<div><span>Streak</span><b>' + esc(enrollment?.streak || 0) + '</b></div>'
@@ -495,18 +577,96 @@ async function updateJourneyTask(id, def, taskId, checked){
   const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
   if(!canCompleteDay(day, enrollment, today)) return;
   const dayTasks = getTasksForDay(def, day);
+  const task = dayTasks.find(t => t.id === taskId);
+  if(task?.evidenceRequired) return;
   const existing = dayLogFor(enrollment, day);
   const ids = new Set(existing?.completedTaskIds || []);
+  const unverified = new Set(existing?.unverifiedTaskIds || []);
   if(checked) ids.add(taskId); else ids.delete(taskId);
+  if(checked) unverified.add(taskId); else unverified.delete(taskId);
   await dbSaveDayLog(enrollment.id, makeDayLog(day, {
     ...existing,
     dayNumber: day,
     date: dateForJourneyDay(enrollment.startDate, day),
     status: 'active',
     completedTaskIds: Array.from(ids),
+    verifiedTaskIds: existing?.verifiedTaskIds || [],
+    unverifiedTaskIds: Array.from(unverified),
     totalTaskCount: dayTasks.length,
+    evidenceCount: evidenceCountFor(enrollment.id, day),
   }));
   renderPlan();
+}
+
+async function submitEvidenceForTask(id, def, taskId){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return;
+  const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
+  if(!canCompleteDay(day, enrollment, localDateString())) return;
+  const dayTasks = getTasksForDay(def, day);
+  const task = dayTasks.find(t => t.id === taskId);
+  if(!task) return;
+  const type = ($('evidenceType')?.value || 'url') === 'file' ? 'file' : 'url';
+  const note = ($('evidenceNote')?.value || '').trim();
+  let evidenceUrl = null;
+  let fileName = null;
+  let fileType = null;
+  let fileSize = null;
+  try{
+    evidenceBusy = true;
+    evidenceError = '';
+    if(type === 'url'){
+      evidenceUrl = ($('evidenceUrl')?.value || '').trim();
+      try{ new URL(evidenceUrl); }
+      catch(e){ throw new Error('Add a valid proof URL.'); }
+    } else {
+      if(!cloudActive()) throw new Error('File uploads require Firebase Storage. Use URL evidence for local mode.');
+      const file = $('evidenceFile')?.files?.[0];
+      if(!file) throw new Error('Choose a file to upload.');
+      evidenceUrl = await uploadEvidenceFile(enrollment.userId, enrollment.id, day, taskId, file);
+      fileName = file.name;
+      fileType = file.type;
+      fileSize = file.size;
+    }
+    await createEvidenceSubmission(enrollment.id, {
+      pathId:id,
+      userId:enrollment.userId,
+      dayNumber:day,
+      taskId,
+      taskTitle:task.title || task.text || 'Task',
+      evidenceType:type,
+      evidenceUrl,
+      fileName,
+      fileType,
+      fileSize,
+      note: note || null,
+    });
+    const existing = dayLogFor(enrollment, day);
+    const completed = new Set(existing?.completedTaskIds || []);
+    const verified = new Set(existing?.verifiedTaskIds || []);
+    const unverified = new Set(existing?.unverifiedTaskIds || []);
+    completed.add(taskId);
+    verified.add(taskId);
+    unverified.delete(taskId);
+    await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+      ...existing,
+      dayNumber: day,
+      date: dateForJourneyDay(enrollment.startDate, day),
+      status: 'active',
+      completedTaskIds: Array.from(completed),
+      verifiedTaskIds: Array.from(verified),
+      unverifiedTaskIds: Array.from(unverified),
+      totalTaskCount: dayTasks.length,
+      evidenceCount: evidenceCountFor(enrollment.id, day),
+    }));
+    evidenceFormTaskId = null;
+    flash('Proof submitted');
+  }catch(e){
+    evidenceError = e.message || 'Could not submit proof.';
+  }finally{
+    evidenceBusy = false;
+    renderPlan();
+  }
 }
 
 async function completeJourneyDay(id, def, day){
@@ -515,7 +675,8 @@ async function completeJourneyDay(id, def, day){
   const dayTasks = getTasksForDay(def, day);
   const existing = dayLogFor(enrollment, day);
   const completedTaskIds = existing?.completedTaskIds || [];
-  if(dayTasks.some(task => !completedTaskIds.includes(task.id))) return;
+  const verifiedTaskIds = existing?.verifiedTaskIds || [];
+  if(dayTasks.some(task => task.evidenceRequired ? !verifiedTaskIds.includes(task.id) : !completedTaskIds.includes(task.id))) return;
   const wasCompleted = existing?.status === 'completed';
   await dbSaveDayLog(enrollment.id, makeDayLog(day, {
     ...existing,
@@ -524,8 +685,10 @@ async function completeJourneyDay(id, def, day){
     status: 'completed',
     completedAt: existing?.completedAt || new Date(),
     completedTaskIds,
+    verifiedTaskIds,
+    unverifiedTaskIds: existing?.unverifiedTaskIds || [],
     totalTaskCount: dayTasks.length,
-    evidenceCount: existing?.evidenceCount || 0,
+    evidenceCount: evidenceCountFor(enrollment.id, day),
   }));
   await dbSaveEnrollment({
     ...store.enrollments[enrollment.id],
@@ -597,11 +760,16 @@ function wireJourneyControls(id, def){
   if(start) start.onclick = async () => {
     await dbStartEnrollment(id, getTasksForDay(def, 1).length);
     selectedJourneyDay = 1;
+    evidenceFormTaskId = null;
     renderPlan();
   };
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       selectedJourneyDay = Number(btn.dataset.roadDay || 1);
+      evidenceFormTaskId = null;
+      evidenceError = '';
+      const enrollment = currentEnrollmentForPath(id);
+      if(enrollment?.id) await listEvidenceSubmissions(enrollment.id, selectedJourneyDay).catch(() => {});
       renderPlan();
       const detail = $('journeyDetail');
       if(detail) detail.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -612,6 +780,21 @@ function wireJourneyControls(id, def){
   });
   const complete = $('completeDay');
   if(complete) complete.onclick = () => completeJourneyDay(id, def, Number(complete.dataset.day || 1));
+  $('content').querySelectorAll('.add-evidence').forEach(btn => {
+    btn.onclick = () => {
+      evidenceFormTaskId = btn.dataset.task;
+      evidenceError = '';
+      renderPlan();
+    };
+  });
+  const cancelEvidence = $('cancelEvidence');
+  if(cancelEvidence) cancelEvidence.onclick = () => {
+    evidenceFormTaskId = null;
+    evidenceError = '';
+    renderPlan();
+  };
+  const submitEvidence = $('submitEvidence');
+  if(submitEvidence) submitEvidence.onclick = () => submitEvidenceForTask(id, def, submitEvidence.dataset.task);
   const freeze = $('freezeDay');
   if(freeze) freeze.onclick = () => freezeMissedDay(id, Number(freeze.dataset.day || 1));
   const reset = $('resetMissedDay');
@@ -676,7 +859,7 @@ export function renderPlan(){
           + '<label>Schedule<select class="task-schedule" data-wi="' + wi + '" data-ti="' + ti + '"><option value="once">Once</option><option value="daily">Daily</option></select></label>'
           + '<label>Start/unlock day<input type="number" min="1" class="task-start" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.startDay || tk.unlockDay || '') + '"/></label>'
           + '<label>End day<input type="number" min="1" class="task-end" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.endDay || '') + '"/></label>'
-          + '<label class="checkline"><input type="checkbox" class="task-evidence" data-wi="' + wi + '" data-ti="' + ti + '" ' + (tk.evidenceRequired ? 'checked' : '') + '/> Evidence</label>'
+          + '<label class="checkline"><input type="checkbox" class="task-evidence" data-wi="' + wi + '" data-ti="' + ti + '" ' + (tk.evidenceRequired ? 'checked' : '') + '/> Require proof for this task</label>'
           + '</div>';
       } else {
         h += '<label class="task-row ' + (p[tid] ? 'done' : '') + '"><input type="checkbox" class="ck" data-id="' + tid + '" ' + (p[tid] ? 'checked' : '') + '/><span>' + esc(tk.text || '') + '</span></label>';

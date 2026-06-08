@@ -57,6 +57,7 @@ store.nav.handleHash = handleHashRoute;
 /* ---- boot / load helpers ---- */
 async function finishLoad(){
   store.enrollments = store.state.enrollments || {};
+  store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   applyHeader(); updateLogDot();
   if(await handleHashRoute()) return;
   if(store.state.current && (skillDef(store.state.current) || isUserPath(store.state.current))){
@@ -75,6 +76,7 @@ async function finishLoad(){
 async function loadLocalAndRender(){
   store.state     = loadLocalState();        // already migrated
   store.enrollments = store.state.enrollments || {};
+  store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   store.catalogue = await dbLoadRenders();   // local renders (signed-out path)
   if(fb.ready) await dbLoadPlatformPaths();
   await finishLoad();
@@ -83,6 +85,7 @@ async function loadLocalAndRender(){
 async function loadAndRender(){
   store.state     = await dbLoadState();     // already migrated
   store.enrollments = store.state.enrollments || {};
+  store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   store.catalogue = await dbLoadRenders();
   await dbLoadPlatformPaths();
   await finishLoad();
@@ -93,7 +96,8 @@ function hasOwnData(state){
   return !!(
     Object.keys(state.skills || {}).length ||
     Object.keys(state.userPaths || {}).length ||
-    Object.keys(state.enrollments || {}).length
+    Object.keys(state.enrollments || {}).length ||
+    Object.keys(state.evidenceSubmissions || {}).length
   );
 }
 
@@ -111,6 +115,7 @@ function mergeLocalPrivateState(cloudState, localState){
     skills: { ...(cloudState.skills || {}) },
     userPaths: { ...(cloudState.userPaths || {}) },
     enrollments: { ...(cloudState.enrollments || {}) },
+    evidenceSubmissions: { ...(cloudState.evidenceSubmissions || {}) },
   };
   Object.entries(localState.skills || {}).forEach(([id, value]) => {
     if(!merged.skills[id]) merged.skills[id] = clone(value);
@@ -120,6 +125,10 @@ function mergeLocalPrivateState(cloudState, localState){
   });
   Object.entries(localState.enrollments || {}).forEach(([id, value]) => {
     if(!merged.enrollments[id]) merged.enrollments[id] = clone(value);
+  });
+  Object.entries(localState.evidenceSubmissions || {}).forEach(([id, value]) => {
+    if(!merged.evidenceSubmissions[id]) merged.evidenceSubmissions[id] = clone(value);
+    else merged.evidenceSubmissions[id] = { ...clone(value), ...merged.evidenceSubmissions[id] };
   });
   if(!stateHasPath(merged, merged.current) && stateHasPath(merged, localState.current)){
     merged.current = localState.current;
@@ -137,6 +146,7 @@ async function onSignIn(){
   else if(localHasData) store.state = mergeLocalPrivateState(cloudState, local);
   else store.state = cloudState;
   store.enrollments = store.state.enrollments || {};
+  store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   if(localHasData || cloudEmpty) await dbSaveState();
   if(cloudRenders.length === 0){
     const lkeys = await Store.list(CAT_PREFIX);

@@ -9,6 +9,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const cfg = {
   apiKey:     import.meta.env.VITE_FIREBASE_API_KEY,
@@ -18,12 +19,13 @@ const cfg = {
 };
 
 const present = !!(cfg.apiKey && cfg.projectId);
-let auth = null, db = null;
+let auth = null, db = null, storage = null;
 if (present) {
   try {
     const app = initializeApp(cfg);
     auth = getAuth(app);
     db = getFirestore(app);
+    storage = getStorage(app);
     // Keep the user signed in across refreshes (localStorage-backed).
     setPersistence(auth, browserLocalPersistence).catch(e => console.warn('persistence:', e));
   } catch (e) {
@@ -35,7 +37,9 @@ export const fb = {
   present,
   ready: !!auth,
   auth, db,
+  storage, storageReady: !!storage,
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail,
   doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where,
+  storageRef, uploadBytes, getDownloadURL,
 };

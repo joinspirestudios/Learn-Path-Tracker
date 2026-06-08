@@ -14,9 +14,9 @@ export const TEMPLATES = [
     weeks:[
       { title:'Daily commitments', tasks:[
         {text:'Read 10 pages', scheduleType:'daily', startDay:1, endDay:75},
-        {text:'Run or walk 1km', scheduleType:'daily', startDay:1, endDay:75},
-        {text:'Train or stretch for 30 minutes', scheduleType:'daily', startDay:1, endDay:75},
-        {text:'Do one deep-work block', scheduleType:'daily', startDay:1, endDay:75},
+        {text:'Run or walk 1km', scheduleType:'daily', startDay:1, endDay:75, evidenceRequired:true},
+        {text:'Train or stretch for 30 minutes', scheduleType:'daily', startDay:1, endDay:75, evidenceRequired:true},
+        {text:'Do one deep-work block', scheduleType:'daily', startDay:1, endDay:75, evidenceRequired:true},
         {text:'Sleep 8 hours or follow your sleep target', scheduleType:'daily', startDay:1, endDay:75},
         {text:'Avoid soda or your chosen vice', scheduleType:'daily', startDay:1, endDay:75},
         {text:'Post one proof-of-work update', scheduleType:'daily', startDay:1, endDay:75, evidenceRequired:true}
