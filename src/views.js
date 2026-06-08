@@ -11,7 +11,8 @@ import { $, esc, flash, undoToast } from './helpers.js';
 import {
   dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
   dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
-  dbEnsureEnrollment, enrollmentIdFor,
+  dbEnsureEnrollment, dbReconcileEnrollment, dbSaveEnrollment, dbSaveDayLog,
+  dbStartEnrollment, enrollmentIdFor, makeDayLog,
 } from './db.js';
 import {
   ensureSkill, curState, curDef, P, quarters, days, ladders,
@@ -24,9 +25,15 @@ import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive } from './db.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
+import {
+  canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
+  getMaxRoadmapDay, getPathTasks, getTasksForDay, journeyDayForDate,
+  localDateString,
+} from './journey.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
+let selectedJourneyDay = null;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -144,7 +151,7 @@ async function importLocalPath(id){
   }, id);
   if(newId){
     flash('Imported as private path');
-    openSkill(newId);
+    await openSkill(newId);
     store.editMode = true;
     renderPlan();
   }
@@ -226,6 +233,11 @@ export async function openSkill(id){
   store.state.current = id; ensureSkill(id); store.editMode = false;
   if(isUserPath(id) && store.state.userPaths[id].platform && cloudActive()){
     await dbEnsureEnrollment(id);
+    const def = store.state.userPaths[id];
+    const enrollment = currentEnrollmentForPath(id);
+    const todayDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
+    const taskCount = getTasksForDay(getPathTasks(def, id), Math.max(1, Number(enrollment?.currentDay || todayDay))).length;
+    await dbReconcileEnrollment(id, taskCount);
   }
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
@@ -339,45 +351,209 @@ function currentEnrollmentForPath(id){
   return store.enrollments[enrollmentId] || (store.state.enrollments && store.state.enrollments[enrollmentId]) || null;
 }
 
-function roadmapDayCount(def, enrollment){
-  const fromWeeks = Math.max(1, (def.weeks || []).length) * 7;
-  let fromTasks = 0;
-  (def.weeks || []).forEach(wk => {
-    (wk.tasks || []).forEach(task => {
-      const unlockDay = Number(task.unlockDay || 0);
-      if(unlockDay > fromTasks) fromTasks = unlockDay;
-    });
-  });
-  const currentDay = enrollment ? Number(enrollment.currentDay || 1) : 1;
-  const lastCompleted = enrollment && enrollment.lastCompletedDay != null ? Number(enrollment.lastCompletedDay) : 0;
-  return Math.max(7, fromWeeks, fromTasks, currentDay + 6, lastCompleted);
+function dayLogFor(enrollment, day){
+  return (enrollment && enrollment.dayLogs && (enrollment.dayLogs[day] || enrollment.dayLogs[String(day)])) || null;
+}
+
+function statusLabel(status){
+  return ({
+    active: 'Today',
+    completed: 'Completed',
+    locked: 'Locked',
+    missed: 'Missed',
+    frozen: 'Frozen',
+  })[status] || status;
 }
 
 function roadmapHTML(id, def){
   if(!def.platform) return '';
   const enrollment = currentEnrollmentForPath(id);
-  const logs = (enrollment && enrollment.dayLogs) || {};
-  const currentDay = enrollment ? Math.max(1, Number(enrollment.currentDay || 1)) : 1;
-  const totalDays = roadmapDayCount(def, enrollment);
+  const tasks = getPathTasks(def, id);
+  const logs = enrollment?.dayLogs || {};
+  const today = localDateString();
+  const totalDays = getMaxRoadmapDay(tasks, enrollment);
+  const activeDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate, today) : 1;
   let h = '<div class="panel card roadmap-foundation">'
-    + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Journey map coming soon</h3></div>'
-    + '<div class="muted">Enrollment progress is stored separately from the path definition.</div></div>'
-    + '<div class="road-days">';
+    + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Daily journey</h3></div>'
+    + '<div class="road-stats"><span>Streak ' + esc(enrollment?.streak || 0) + '</span><span>Freezes ' + esc(enrollment?.freezeCount ?? 1) + '</span></div></div>';
+  if(!enrollment?.startDate){
+    h += '<div class="journey-start"><div><b>Start this path</b><p>Set today as Day 1 and begin tracking daily progress.</p></div><button class="btn gold" id="startJourney">Start this path</button></div>';
+  }
+  h += '<div class="road-days vertical">';
   for(let day = 1; day <= totalDays; day++){
-    const log = logs[day];
-    let status = 'locked', label = 'Locked';
-    if(log && log.status === 'completed'){
-      status = 'completed'; label = 'Completed';
-    } else if(day < currentDay){
-      status = 'past'; label = log ? log.status : 'Past placeholder';
-    } else if(day === currentDay){
-      status = 'active'; label = 'Current day';
-    }
-    h += '<button type="button" class="road-day ' + status + '" ' + (status === 'active' ? '' : 'disabled') + '>'
-      + '<span>Day ' + day + '</span><small>' + esc(label) + '</small></button>';
+    const status = getDayStatus(day, enrollment, logs, today);
+    const open = canOpenDay(day, status);
+    const date = enrollment?.startDate ? dateForJourneyDay(enrollment.startDate, day) : null;
+    const taskCount = getTasksForDay(tasks, day).length;
+    h += '<button type="button" class="road-day ' + status + (day === activeDay ? ' today' : '') + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled') + '>'
+      + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' · ' + esc(date.slice(5)) : '') + '</small>'
+      + '<em>' + (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') + '</em></button>';
   }
   h += '</div></div>';
   return h;
+}
+
+function journeyDetailHTML(id, def){
+  if(!def.platform) return '';
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate){
+    return '<div class="panel card journey-detail"><h3>Not started yet</h3><p class="muted">Start the path to activate Day 1 and begin storing daily progress in your enrollment.</p></div>';
+  }
+  const tasks = getPathTasks(def, id);
+  const logs = enrollment.dayLogs || {};
+  const today = localDateString();
+  const activeDay = journeyDayForDate(enrollment.startDate, today);
+  const day = selectedJourneyDay || Math.min(Number(enrollment.currentDay || 1), activeDay);
+  const status = getDayStatus(day, enrollment, logs, today);
+  const date = dateForJourneyDay(enrollment.startDate, day);
+  const log = dayLogFor(enrollment, day) || makeDayLog(day, { date, status, totalTaskCount: getTasksForDay(tasks, day).length });
+  const dayTasks = getTasksForDay(tasks, day);
+  const completed = new Set(log.completedTaskIds || []);
+  const completeCount = dayTasks.filter(task => completed.has(task.id)).length;
+  let h = '<div class="panel card journey-detail" id="journeyDetail">'
+    + '<div class="detail-head"><div><div class="chip">' + esc(statusLabel(status)) + '</div><h3>Day ' + day + '</h3><p class="muted">' + esc(date || 'Date set when started') + '</p></div>'
+    + '<div class="detail-progress">' + completeCount + '/' + dayTasks.length + ' tasks</div></div>';
+  if(status === 'locked'){
+    h += '<p class="muted">This day unlocks later.</p>';
+  } else if(status === 'completed' || status === 'frozen' || status === 'missed'){
+    h += '<div class="history-list">';
+    if(dayTasks.length){
+      dayTasks.forEach(task => {
+        h += '<div class="history-task ' + (completed.has(task.id) ? 'done' : '') + '"><b>' + esc(task.title || task.text || 'Task') + '</b>'
+          + '<span>' + (completed.has(task.id) ? 'Completed' : 'Not completed') + '</span></div>';
+      });
+    } else {
+      h += '<div class="muted">No tasks were assigned to this day.</div>';
+    }
+    h += '</div>'
+      + (log.summary ? '<p class="summary">' + esc(log.summary) + '</p>' : '')
+      + '<div class="hint">Evidence count: ' + Number(log.evidenceCount || 0) + '. Evidence uploads coming next.</div>';
+    if(status === 'missed' && Number(enrollment.freezeCount || 0) > 0){
+      h += '<button class="btn gold" id="freezeDay" data-day="' + day + '">Use freeze</button>';
+    }
+  } else {
+    if(dayTasks.length){
+      h += '<div class="journey-tasks">';
+      dayTasks.forEach(task => {
+        h += '<label class="journey-task ' + (completed.has(task.id) ? 'done' : '') + '"><input type="checkbox" class="ck journey-ck" data-task="' + esc(task.id) + '" ' + (completed.has(task.id) ? 'checked' : '') + '/>'
+          + '<span><b>' + esc(task.title || task.text || 'Task') + '</b>'
+          + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
+          + (task.evidenceRequired ? '<small class="evidence-note">Evidence required in Phase 3 - unverified for now.</small>' : '')
+          + '</span></label>';
+      });
+      h += '</div>';
+    } else {
+      h += '<div class="muted">No tasks assigned to this day. You can still complete the day.</div>';
+    }
+    const ready = dayTasks.length === 0 || completeCount === dayTasks.length;
+    const canComplete = canCompleteDay(day, enrollment, today);
+    h += '<button class="btn gold" id="completeDay" data-day="' + day + '" ' + (ready && canComplete ? '' : 'disabled') + '>Complete day</button>';
+    if(!canComplete && status === 'active') h += '<div class="hint">This day is not eligible for completion today.</div>';
+    if(ready && canComplete) h += '<div class="hint">Completion is unverified until proof upload is added.</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+async function updateJourneyTask(id, def, taskId, checked){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return;
+  const today = localDateString();
+  const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
+  if(!canCompleteDay(day, enrollment, today)) return;
+  const tasks = getPathTasks(def, id);
+  const dayTasks = getTasksForDay(tasks, day);
+  const existing = dayLogFor(enrollment, day);
+  const ids = new Set(existing?.completedTaskIds || []);
+  if(checked) ids.add(taskId); else ids.delete(taskId);
+  await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+    ...existing,
+    dayNumber: day,
+    date: dateForJourneyDay(enrollment.startDate, day),
+    status: 'active',
+    completedTaskIds: Array.from(ids),
+    totalTaskCount: dayTasks.length,
+  }));
+  renderPlan();
+}
+
+async function completeJourneyDay(id, def, day){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate || !canCompleteDay(day, enrollment)) return;
+  const tasks = getPathTasks(def, id);
+  const dayTasks = getTasksForDay(tasks, day);
+  const existing = dayLogFor(enrollment, day);
+  const completedTaskIds = existing?.completedTaskIds || [];
+  if(dayTasks.some(task => !completedTaskIds.includes(task.id))) return;
+  const wasCompleted = existing?.status === 'completed';
+  await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+    ...existing,
+    dayNumber: day,
+    date: dateForJourneyDay(enrollment.startDate, day),
+    status: 'completed',
+    completedAt: existing?.completedAt || new Date(),
+    completedTaskIds,
+    totalTaskCount: dayTasks.length,
+    evidenceCount: existing?.evidenceCount || 0,
+  }));
+  await dbSaveEnrollment({
+    ...store.enrollments[enrollment.id],
+    lastCompletedDay: Math.max(Number(enrollment.lastCompletedDay || 0), day),
+    lastActivityDate: localDateString(),
+    missedDate: null,
+    streak: wasCompleted ? Number(enrollment.streak || 0) : Number(enrollment.streak || 0) + 1,
+    currentDay: Math.max(Number(enrollment.currentDay || 1), day + 1),
+  });
+  selectedJourneyDay = day;
+  flash('Day complete. Come back tomorrow to continue.');
+  renderPlan();
+}
+
+async function freezeMissedDay(id, day){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment || Number(enrollment.freezeCount || 0) <= 0) return;
+  const existing = dayLogFor(enrollment, day);
+  if(existing?.status !== 'missed') return;
+  await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+    ...existing,
+    status: 'frozen',
+    frozenAt: new Date(),
+  }));
+  await dbSaveEnrollment({
+    ...store.enrollments[enrollment.id],
+    freezeCount: Math.max(0, Number(enrollment.freezeCount || 0) - 1),
+    missedDate: null,
+    lastActivityDate: localDateString(),
+    currentDay: Math.max(Number(enrollment.currentDay || 1), day + 1),
+  });
+  selectedJourneyDay = day;
+  flash('Freeze used');
+  renderPlan();
+}
+
+function wireJourneyControls(id, def){
+  const start = $('startJourney');
+  if(start) start.onclick = async () => {
+    const tasks = getPathTasks(def, id);
+    await dbStartEnrollment(id, getTasksForDay(tasks, 1).length);
+    selectedJourneyDay = 1;
+    renderPlan();
+  };
+  $('content').querySelectorAll('[data-road-day]').forEach(btn => {
+    btn.onclick = () => {
+      selectedJourneyDay = Number(btn.dataset.roadDay || 1);
+      renderPlan();
+      const detail = $('journeyDetail');
+      if(detail) detail.scrollIntoView({ behavior:'smooth', block:'start' });
+    };
+  });
+  $('content').querySelectorAll('.journey-ck').forEach(cb => {
+    cb.addEventListener('change', e => updateJourneyTask(id, def, e.target.dataset.task, e.target.checked));
+  });
+  const complete = $('completeDay');
+  if(complete) complete.onclick = () => completeJourneyDay(id, def, Number(complete.dataset.day || 1));
+  const freeze = $('freezeDay');
+  if(freeze) freeze.onclick = () => freezeMissedDay(id, Number(freeze.dataset.day || 1));
 }
 
 /* ============================================================ */
@@ -397,6 +573,7 @@ export function renderPlan(){
     + '<div class="progress-bar" style="width:220px;max-width:60vw;margin-left:auto"><div style="width:' + pct + '%"></div></div></div></div>';
 
   h += roadmapHTML(id, def);
+  if(def.platform) h += journeyDetailHTML(id, def);
 
   if(store.editMode){
     h += '<div class="panel card edit-meta"><div class="field"><label>Path name</label><input type="text" id="pmTitle" value="' + esc(def.title) + '" maxlength="80"/></div>'
@@ -417,6 +594,7 @@ export function renderPlan(){
       + '</div>';
   }
 
+  if(!(def.platform && !store.editMode)){
   (def.weeks || []).forEach((wk, wi) => {
     h += '<div class="panel card week-block" data-wi="' + wi + '">';
     if(store.editMode){
@@ -453,10 +631,12 @@ export function renderPlan(){
     h += '<button class="btn add-week" data-act="addWeek">+ Add week</button>';
     h += '<div class="danger-zone"><button class="linklike danger" data-act="delPath">Delete this path</button></div>';
   }
+  }
   $('content').innerHTML = h;
+  if(def.platform) wireJourneyControls(id, def);
 
   // view-mode checkboxes
-  $('content').querySelectorAll('input.ck').forEach(cb => cb.addEventListener('change', async e => {
+  $('content').querySelectorAll('input.ck[data-id]').forEach(cb => cb.addEventListener('change', async e => {
     await toggle(e.target.dataset.id, e.target.checked);
     const r = e.target.closest('.task-row'); if(r) r.classList.toggle('done', e.target.checked);
   }));

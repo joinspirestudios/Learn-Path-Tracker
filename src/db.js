@@ -9,6 +9,9 @@ import { Store, flash } from './helpers.js';
 import {
   canViewPath, localToPlatformParts, normalizePathDoc, platformToLocalPath,
 } from './platform.js';
+import {
+  dateForJourneyDay, journeyDayForDate, localDateString,
+} from './journey.js';
 
 export function configPresent(){ return fb.present; }
 export function cloudActive(){ return fb.ready && !!store.currentUser; }
@@ -145,9 +148,11 @@ export function makeEnrollment(pathId, userId, data = {}){
     startDate: data.startDate || null,
     currentDay: Number(data.currentDay || 1),
     streak: Number(data.streak || 0),
-    freezeCount: Number(data.freezeCount || 0),
+    freezeCount: data.freezeCount == null ? 1 : Number(data.freezeCount || 0),
     status: cleanEnrollmentStatus(data.status),
     lastCompletedDay: data.lastCompletedDay == null ? null : Number(data.lastCompletedDay),
+    lastActivityDate: data.lastActivityDate || null,
+    missedDate: data.missedDate || null,
     createdAt,
     updatedAt: data.updatedAt || createdAt,
   };
@@ -158,10 +163,14 @@ export function makeDayLog(dayNumber, data = {}){
   const createdAt = data.createdAt || stamp();
   return {
     dayNumber: n,
+    date: data.date || null,
     status: cleanDayLogStatus(data.status),
     completedAt: data.completedAt || null,
+    frozenAt: data.frozenAt || null,
     summary: data.summary || null,
     evidenceCount: Number(data.evidenceCount || 0),
+    completedTaskIds: Array.isArray(data.completedTaskIds) ? data.completedTaskIds : [],
+    totalTaskCount: Number(data.totalTaskCount || 0),
     createdAt,
     updatedAt: data.updatedAt || createdAt,
   };
@@ -190,7 +199,7 @@ async function loadDayLogs(enrollmentId){
 
 export async function dbSaveEnrollment(enrollment){
   if(!enrollment || !enrollment.id) return null;
-  const next = { ...enrollment, updatedAt: stamp() };
+  const next = makeEnrollment(enrollment.pathId, enrollment.userId, { ...enrollment, updatedAt: stamp() });
   delete next.dayLogs;
   if(cloudActive()){
     try{ await fb.setDoc(enrollmentRef(next.id), next, { merge:true }); }
@@ -214,6 +223,91 @@ export async function dbSaveDayLog(enrollmentId, dayLog){
   cacheEnrollment(enrollment, enrollment.dayLogs);
   if(!cloudActive()) await dbSaveState();
   return next;
+}
+
+export async function dbStartEnrollment(pathId, totalTaskCount = 0){
+  const enrollment = await dbEnsureEnrollment(pathId);
+  if(!enrollment) return null;
+  const today = localDateString();
+  const next = {
+    ...enrollment,
+    startDate: enrollment.startDate || today,
+    currentDay: 1,
+    status: 'active',
+    freezeCount: enrollment.freezeCount == null ? 1 : Number(enrollment.freezeCount),
+    lastCompletedDay: enrollment.lastCompletedDay == null ? null : enrollment.lastCompletedDay,
+    missedDate: null,
+  };
+  await dbSaveEnrollment(next);
+  await dbSaveDayLog(next.id, makeDayLog(1, {
+    ...(enrollment.dayLogs && enrollment.dayLogs[1] ? enrollment.dayLogs[1] : {}),
+    dayNumber: 1,
+    date: next.startDate,
+    status: 'active',
+    totalTaskCount,
+  }));
+  return store.enrollments[next.id];
+}
+
+export async function dbReconcileEnrollment(pathId, totalTaskCount = 0){
+  const enrollment = await dbEnsureEnrollment(pathId);
+  if(!enrollment || !enrollment.startDate || enrollment.status !== 'active') return enrollment;
+  const today = localDateString();
+  const todayDay = journeyDayForDate(enrollment.startDate, today);
+  const currentDay = Number(enrollment.currentDay || 1);
+  const logs = enrollment.dayLogs || {};
+  const currentLog = logs[currentDay] || logs[String(currentDay)];
+  const doneOrFrozen = ['completed', 'frozen'].includes(currentLog?.status);
+
+  if(todayDay > currentDay && !doneOrFrozen){
+    const missedDate = dateForJourneyDay(enrollment.startDate, currentDay);
+    await dbSaveDayLog(enrollment.id, makeDayLog(currentDay, {
+      ...currentLog,
+      dayNumber: currentDay,
+      date: missedDate,
+      status: 'missed',
+      totalTaskCount: currentLog?.totalTaskCount || totalTaskCount,
+    }));
+    await dbSaveEnrollment({
+      ...store.enrollments[enrollment.id],
+      missedDate,
+    });
+    return store.enrollments[enrollment.id];
+  }
+
+  if(todayDay > currentDay && doneOrFrozen){
+    const next = {
+      ...enrollment,
+      currentDay: todayDay,
+      missedDate: null,
+    };
+    await dbSaveEnrollment(next);
+    const existing = logs[todayDay] || logs[String(todayDay)];
+    if(!existing || existing.status === 'locked'){
+      await dbSaveDayLog(next.id, makeDayLog(todayDay, {
+        ...existing,
+        dayNumber: todayDay,
+        date: today,
+        status: 'active',
+        totalTaskCount,
+      }));
+    }
+    return store.enrollments[next.id];
+  }
+
+  if(todayDay === currentDay){
+    const existing = logs[currentDay] || logs[String(currentDay)];
+    if(!existing || existing.status === 'locked'){
+      await dbSaveDayLog(enrollment.id, makeDayLog(currentDay, {
+        ...existing,
+        dayNumber: currentDay,
+        date: today,
+        status: 'active',
+        totalTaskCount,
+      }));
+    }
+  }
+  return store.enrollments[enrollment.id] || enrollment;
 }
 
 export async function dbEnsureEnrollment(pathId){
@@ -240,7 +334,7 @@ export async function dbEnsureEnrollment(pathId){
           status: 'active',
           currentDay: 1,
           streak: 0,
-          freezeCount: 0,
+          freezeCount: 1,
           lastCompletedDay: null,
         });
         await fb.setDoc(ref, enrollment, { merge:true });
@@ -258,7 +352,7 @@ export async function dbEnsureEnrollment(pathId){
     status: 'active',
     currentDay: 1,
     streak: 0,
-    freezeCount: 0,
+    freezeCount: 1,
     lastCompletedDay: null,
   });
   cacheEnrollment(enrollment, {});

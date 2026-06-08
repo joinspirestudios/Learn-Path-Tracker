@@ -124,7 +124,7 @@ export function localToPlatformParts(id, localPath, user, ownerId){
     });
     (week.tasks || []).forEach((task, ti) => {
       tasks.push({
-        id: `t_${wi}_${ti}`,
+        id: task.id || `t_${wi}_${ti}`,
         sectionId,
         title: task.title || task.text || '',
         description: task.description || '',
@@ -164,11 +164,13 @@ export function platformToLocalPath(record){
       week.resources.push({ label: task.title || task.resourceUrl || 'Resource', url: task.resourceUrl || '' });
     } else {
       week.tasks.push({
+        id: task.id,
         text: task.title || '',
         description: task.description || '',
         resourceUrl: task.resourceUrl || null,
         evidenceRequired: !!task.evidenceRequired,
         unlockDay: task.unlockDay == null ? null : task.unlockDay,
+        order: task.order || 0,
       });
     }
   });

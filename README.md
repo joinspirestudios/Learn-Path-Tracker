@@ -11,6 +11,30 @@ enrollments.
 
 ---
 
+## Phase 2 journey model
+
+Platform paths now use an enrollment-backed daily journey engine:
+
+- Path definitions stay in `paths/{pathId}` with sections and tasks.
+- User progress lives in `enrollments/{enrollmentId}`.
+- Daily state lives in `enrollments/{enrollmentId}/dayLogs/{dayNumber}`.
+- Roadmap states are `active`, `completed`, `locked`, `missed`, and `frozen`.
+- Future days are visible but locked until their calendar day.
+- Current-day task completion is stored in `completedTaskIds` on the dayLog.
+- Completing the active day updates `lastCompletedDay`, `lastActivityDate`,
+  `currentDay`, and `streak`.
+- New enrollments start with one freeze. A missed day can be changed to
+  `frozen` to preserve the streak without counting as a completed day.
+
+Evidence uploads are still a future Phase 3 feature. Tasks that require evidence
+can be completed for now, but they are shown as unverified and `evidenceCount`
+stays `0` until real uploads exist.
+
+AI generation, comments, notifications, payments, and advanced catch-up modes are
+not implemented in this phase.
+
+---
+
 ## Project structure
 
 The project uses real folders, not literal backslash filenames:
@@ -74,7 +98,8 @@ files to `dist`, and `npm run preview` serves the built app.
 
 Use these starter rules for this version. Platform path definitions live in
 `paths/{pathId}`. User progress lives separately in
-`enrollments/{enrollmentId}` and `dayLogs`, not inside path definitions.
+`enrollments/{enrollmentId}` and `dayLogs`, not inside path definitions. These
+rules allow the owner of an enrollment to read/write their daily journey logs.
 
 ```text
 rules_version = '2';
