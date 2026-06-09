@@ -17,6 +17,9 @@
   .app-loading{margin:42px auto;padding:24px;max-width:520px;text-align:left;background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line2);border-radius:14px;box-shadow:var(--shadow)}
   .app-loading h2{font-family:'Fraunces',serif;font-size:24px;margin:10px 0 4px;color:var(--cream)}
   .app-loading p{color:var(--sand);font-size:13.5px}
+  .sync-banner{margin:0 0 14px;padding:9px 12px;border:1px solid var(--line2);border-radius:10px;background:rgba(201,162,75,.08);color:var(--sand);font-size:12.5px;font-weight:700}
+  .path-loading{max-width:680px;margin:30px auto;padding:26px}
+  .skill-card.is-opening,.skill-card:disabled{opacity:.72;cursor:wait}
   body::before{
     content:"";position:fixed;inset:-12%;z-index:-1;pointer-events:none;
     background:

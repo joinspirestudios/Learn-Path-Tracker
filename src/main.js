@@ -28,6 +28,7 @@ import {
   openSkill, goCatalog, goWeek, editPath,
   refreshSuggest, updateLogDot, handleHashRoute,
 } from './views.js';
+import { READ_TIMEOUT_MS, trackOperation, withTimeout } from './sync.js';
 
 /* ---- tab router ---- */
 function routeHashForCurrent(tab = store.activeTab){
@@ -100,8 +101,8 @@ async function loadLocalAndRender(){
   store.enrollments = store.state.enrollments || {};
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   store.catalogue = await dbLoadRenders();   // local renders (signed-out path)
-  if(fb.ready) await dbLoadPlatformPaths();
   await finishLoad();
+  startPlatformSync('platform summaries load');
 }
 
 async function loadAndRender(){
@@ -109,8 +110,29 @@ async function loadAndRender(){
   store.enrollments = store.state.enrollments || {};
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   store.catalogue = await dbLoadRenders();
-  await dbLoadPlatformPaths();
   await finishLoad();
+  startPlatformSync('platform summaries load');
+}
+
+function refreshVisibleRoute(){
+  if(store.state.current && store.activeTab === 'plan') renderPlan();
+  else if(store.state.current) switchTab(store.activeTab);
+  else renderCatalog();
+}
+
+function startPlatformSync(label = 'platform summaries load'){
+  if(!fb.ready) return;
+  store.syncStatus = 'Syncing in background...';
+  trackOperation(label, withTimeout(dbLoadPlatformPaths(), READ_TIMEOUT_MS, label))
+    .then(() => {
+      store.syncStatus = '';
+      refreshVisibleRoute();
+    })
+    .catch(e => {
+      store.syncStatus = 'Sync issue';
+      console.warn(label + ':', e && e.message ? e.message : e);
+      refreshVisibleRoute();
+    });
 }
 
 function renderBootState(message = 'Restoring your workspace...'){
@@ -171,33 +193,61 @@ function mergeLocalPrivateState(cloudState, localState){
 }
 
 async function onSignIn(){
-  renderBootState('Syncing your paths...');
-  const cloudState   = await dbLoadState();    // already migrated
-  const cloudRenders = await dbLoadRenders();
   const local = loadLocalState();              // already migrated
-  const cloudEmpty = !hasOwnData(cloudState);
-  const localHasData = hasOwnData(local);
-  if(cloudEmpty && localHasData) store.state = local;
-  else if(localHasData) store.state = mergeLocalPrivateState(cloudState, local);
-  else store.state = cloudState;
+  store.state = local;
   store.enrollments = store.state.enrollments || {};
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
-  if(localHasData || cloudEmpty) await dbSaveState();
-  if(cloudRenders.length === 0){
-    const lkeys = await Store.list(CAT_PREFIX);
-    if(lkeys.length){
-      const arr = [];
-      for(const k of lkeys){
-        try{
-          const v = await Store.get(k);
-          if(v){ const e = JSON.parse(v); arr.push(e); await dbSaveRender(e); }
-        }catch(e){}
-      }
-      store.catalogue = arr;
-    }
-  } else store.catalogue = cloudRenders;
-  await dbLoadPlatformPaths();
   await finishLoad();
+  store.syncStatus = 'Syncing your cloud paths...';
+  refreshVisibleRoute();
+  const routeAtStart = location.hash;
+  (async () => {
+    try{
+      const cloudState = await trackOperation('cloud state load', withTimeout(dbLoadState(), READ_TIMEOUT_MS, 'cloud state load'));
+      const cloudRenders = await withTimeout(dbLoadRenders(), READ_TIMEOUT_MS, 'render log load');
+      const cloudEmpty = !hasOwnData(cloudState);
+      const localHasData = hasOwnData(local);
+      if(cloudEmpty && localHasData) store.state = local;
+      else if(localHasData) store.state = mergeLocalPrivateState(cloudState, local);
+      else store.state = cloudState;
+      store.enrollments = store.state.enrollments || {};
+      store.evidenceSubmissions = store.state.evidenceSubmissions || {};
+      if(localHasData || cloudEmpty) await dbSaveState();
+      if(cloudRenders.length === 0){
+        const lkeys = await Store.list(CAT_PREFIX);
+        if(lkeys.length){
+          const arr = [];
+          for(const k of lkeys){
+            try{
+              const v = await Store.get(k);
+              if(v){ const e = JSON.parse(v); arr.push(e); await dbSaveRender(e); }
+            }catch(e){}
+          }
+          store.catalogue = arr;
+        }
+      } else store.catalogue = cloudRenders;
+      await withTimeout(dbLoadPlatformPaths(), READ_TIMEOUT_MS, 'platform summaries load');
+      store.syncStatus = '';
+      if(location.hash === routeAtStart) await finishLoad();
+      else refreshVisibleRoute();
+    }catch(e){
+      store.syncStatus = 'Sync issue';
+      console.warn('cloud reconciliation:', e && e.message ? e.message : e);
+      refreshVisibleRoute();
+      if($('saved')) $('saved').textContent = 'Sync issue';
+    }
+  })();
+}
+
+function armAuthSoftTimeout(){
+  setTimeout(() => {
+    if(!store.authChecked){
+      store.authSoftTimedOut = true;
+      store.syncStatus = 'Still checking sign-in...';
+      if(!store.bootReady) markBootReady();
+      refreshVisibleRoute();
+    }
+  }, 2500);
 }
 
 /* ---- wire auth callbacks into the auth module ---- */
@@ -220,6 +270,7 @@ async function init(){
   });
   // Local-first: render instantly from the local mirror so a refresh never
   // waits or loses your place. If signed in, the cloud reconciles in the background.
+  armAuthSoftTimeout();
   await loadLocalAndRender();
   if(fb.present) initFirebase();
 }

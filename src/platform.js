@@ -37,6 +37,7 @@ export function normalizePathDoc(id, data = {}){
     previewIncludesScheme: !!data.previewIncludesScheme,
     discoverable: visibility === 'public' ? data.discoverable !== false : !!data.discoverable,
     migratedFromLocal: !!data.migratedFromLocal,
+    clientSaveId: data.clientSaveId || null,
     createdAt: data.createdAt || nowStamp(),
     updatedAt: data.updatedAt || nowStamp(),
   };
@@ -105,6 +106,7 @@ export function localPathDefaults(localPath = {}, user){
     previewIncludesScheme: !!localPath.previewIncludesScheme,
     discoverable: visibility === 'public' ? localPath.discoverable !== false : !!localPath.discoverable,
     migratedFromLocal: !!localPath.migratedFromLocal,
+    clientSaveId: localPath.clientSaveId || null,
   };
 }
 
@@ -220,5 +222,6 @@ export function platformToLocalPath(record){
     ownerId: path.ownerId,
     membership: record.membership || null,
     platformData: path,
+    childrenLoaded: !!record.childrenLoaded || !!((record.sections || []).length || (record.tasks || []).length),
   };
 }

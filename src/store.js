@@ -74,6 +74,8 @@ export const store = {
   accessRequests:  {},
   route:           { kind:'catalog' },
   bootReady:       false,
+  authSoftTimedOut:false,
+  syncStatus:      '',
   currentUser:     null,
   authChecked:     false,
   activeTab:       'week',

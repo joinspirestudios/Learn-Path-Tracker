@@ -12,7 +12,7 @@ import {
   dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
   dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
   dbEnsureEnrollment, dbReconcileEnrollment, dbSaveEnrollment, dbSaveDayLog,
-  dbStartEnrollment, enrollmentIdFor, makeDayLog,
+  dbStartEnrollment, enrollmentIdFor, makeDayLog, makeEnrollment,
   createEvidenceSubmission, listEvidenceSubmissions, uploadEvidenceFile,
   ACCEPTED_EVIDENCE_TYPES,
 } from './db.js';
@@ -33,6 +33,10 @@ import {
   formatProgressiveTaskTitle, getMaxRoadmapDay, getTasksForDay, journeyDayForDate,
   localDateString, normalizeDurationDays,
 } from './journey.js';
+import {
+  AI_SAVE_TIMEOUT_MS, ENROLLMENT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS,
+  trackOperation, userSyncMessage, withTimeout,
+} from './sync.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -45,6 +49,9 @@ let aiBuilder = null;
 let voiceDurationTimer = null;
 let discardVoiceOnStop = false;
 let isCreatingPath = false;
+let openingPathId = null;
+let startingJourneyId = null;
+let aiSaveClientId = null;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -62,8 +69,35 @@ function pathHash(id, tab = store.activeTab || 'plan', day = null){
 }
 
 function authRestoring(){
-  return !!(configPresent() && !store.authChecked && cachedAuthLabel());
+  return !!(configPresent() && !store.authChecked && cachedAuthLabel() && !store.authSoftTimedOut);
 }
+
+function syncStatusHTML(){
+  return store.syncStatus ? '<div class="sync-banner">' + esc(store.syncStatus) + '</div>' : '';
+}
+
+function pathTasksReady(def){
+  if(!def) return false;
+  if(!def.platform) return true;
+  return def.childrenLoaded === true;
+}
+
+function pathHasTasks(def){
+  return !!((def?.weeks || []).some(w => (w.tasks || []).length));
+}
+
+function renderPathOpening(title = 'Opening path...', message = 'Loading path details.'){
+  applyHeader();
+  $('content').innerHTML = '<div class="panel card path-loading"><div class="chip">Loading</div><h3>' + esc(title) + '</h3><p class="muted">' + esc(message) + '</p></div>';
+}
+
+function renderPathLoadError(id, title = 'Could not load path tasks. Try again.'){
+  applyHeader();
+  $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">Path loading issue</div><div class="muted">' + esc(title) + '</div><button class="btn gold" id="retryPathLoad" style="margin-top:14px">Retry</button></div>';
+  const retry = $('retryPathLoad');
+  if(retry) retry.onclick = () => openSkill(id, { tab:'plan' });
+}
+
 function upSave(){     saveCurrentPath(); }
 function upSaveSoft(){ scheduleSave(); }
 async function saveCurrentPath(){
@@ -94,6 +128,7 @@ export async function toggle(id, val){
 export function renderCatalog(){
   let h = '<div class="cat-intro"><div class="section-title">Discover <em>Learning Paths</em></div>'
     + '<div class="muted" style="max-width:640px">Explore public journeys, keep your own private paths close, and turn local drafts into shareable learning paths when you are ready.</div></div>';
+  h += syncStatusHTML();
   if(authRestoring()){
     h += '<div class="panel card restoring-state"><div class="chip">Restoring</div><h3>Restoring your session...</h3><p class="muted">Loading your workspace before showing account actions.</p></div>';
     $('content').innerHTML = h;
@@ -146,7 +181,15 @@ export function renderCatalog(){
   }
   h += '</div>';
   $('content').innerHTML = h;
-  $('content').querySelectorAll('.skill-card[data-id]').forEach(c => c.onclick = () => openSkill(c.dataset.id));
+  $('content').querySelectorAll('.skill-card[data-id]').forEach(c => c.onclick = () => {
+    if(openingPathId === c.dataset.id) return;
+    openingPathId = c.dataset.id;
+    c.disabled = true;
+    c.classList.add('is-opening');
+    const cta = c.querySelector('.sc-cta');
+    if(cta) cta.textContent = 'Opening...';
+    openSkill(c.dataset.id);
+  });
   $('content').querySelectorAll('[data-import]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     importLocalPath(b.dataset.import);
@@ -180,12 +223,18 @@ async function importLocalPath(id){
   }
   const local = store.state.userPaths[id];
   if(!local || local.platform) return;
-  const newId = await dbCreatePlatformPath({
-    ...JSON.parse(JSON.stringify(local)),
-    visibility: 'private',
-    discoverable: false,
-    migratedFromLocal: true,
-  }, id);
+  let newId = null;
+  try{
+    newId = await withTimeout(dbCreatePlatformPath({
+      ...JSON.parse(JSON.stringify(local)),
+      visibility: 'private',
+      discoverable: false,
+      migratedFromLocal: true,
+      clientSaveId: 'import_' + id + '_' + Date.now().toString(36),
+    }, id), AI_SAVE_TIMEOUT_MS, 'import local path');
+  }catch(e){
+    flash(userSyncMessage(e, 'Could not sync this path. Your local draft is still safe.'));
+  }
   if(newId){
     flash('Imported as private path');
     await openSkill(newId);
@@ -1239,14 +1288,18 @@ async function saveGeneratedPath(){
   aiBuilder.saving = true;
   aiBuilder.error = '';
   aiBuilder.message = 'Saving generated path...';
+  aiSaveClientId = aiSaveClientId || ('ai_' + Date.now().toString(36) + Math.floor(Math.random()*99999).toString(36));
   renderAIBuilder();
   try{
-    const localPath = aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt));
+    const localPath = {
+      ...aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt)),
+      clientSaveId: aiSaveClientId,
+    };
     let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
     if(cloudActive()){
-      const cloudId = await dbCreatePlatformPath(localPath);
+      const cloudId = await trackOperation('save generated path', withTimeout(dbCreatePlatformPath(localPath), AI_SAVE_TIMEOUT_MS, 'save generated path'));
       if(!cloudId){
-        throw new Error('Could not save generated path. Check your connection or permissions.');
+        throw new Error('Could not save generated path. Check Firebase rules, connection, or permissions.');
       }
       id = cloudId;
     } else if(configPresent()){
@@ -1265,9 +1318,12 @@ async function saveGeneratedPath(){
     store.editMode = true;
     renderPlan();
     flash('Generated path saved as private');
+    aiSaveClientId = null;
   }catch(e){
     aiBuilder.saving = false;
-    aiBuilder.error = e.message || 'Could not save generated path. Check your connection or permissions.';
+    aiBuilder.error = e?.code === 'operation_timeout'
+      ? 'Saving is taking too long. Please check your connection/Firebase rules and try again.'
+      : (e.message || 'Could not save generated path. Check Firebase rules, connection, or permissions.');
     renderAIBuilder();
   }
 }
@@ -1363,12 +1419,13 @@ function createPath(){
       visibility: 'private', discoverable: false, previewEnabled: true,
       previewTitle: title, previewDescription: goal, previewIncludesScheme: false,
       coverImage: null, profileImage: null, created: Date.now(), weeks,
+      clientSaveId: 'tpl_' + Date.now().toString(36) + Math.floor(Math.random()*99999).toString(36),
     };
     setBusy(true);
     isCreatingPath = true;
     try{
       if(cloudActive()){
-        const cloudId = await dbCreatePlatformPath(localPath);
+        const cloudId = await trackOperation('create template path', withTimeout(dbCreatePlatformPath(localPath), AI_SAVE_TIMEOUT_MS, 'create template path'));
         if(!cloudId) throw new Error('Could not create path. Please try again.');
         id = cloudId;
       } else {
@@ -1382,7 +1439,7 @@ function createPath(){
       store.nav.switchTab('plan');
       flash('Path created');
     }catch(e){
-      setErr(e.message || 'Could not create path. Please try again.');
+      setErr(e?.code === 'operation_timeout' ? 'This is taking too long. Check your connection and try again.' : (e.message || 'Could not create path. Please try again.'));
       setBusy(false);
     }finally{
       isCreatingPath = false;
@@ -1391,23 +1448,9 @@ function createPath(){
 }
 
 /* ---- enter / leave a skill ---- */
-export async function openSkill(id, options = {}){
+function renderOpenedPath(id, options = {}){
   store.state.current = id; ensureSkill(id); store.editMode = false;
   selectedJourneyDay = options.day ? (Number(options.day) || null) : null;
-  if(isUserPath(id)){
-    const existingDef = store.state.userPaths[id];
-    if(existingDef?.platform && (!(existingDef.weeks || []).length) && configPresent()){
-      await dbLoadPlatformPath(id);
-    }
-    await dbEnsureEnrollment(id);
-    const def = store.state.userPaths[id];
-    const enrollment = currentEnrollmentForPath(id);
-    const todayDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
-    const taskCount = getTasksForDay(def, Math.max(1, Number(enrollment?.currentDay || todayDay))).length;
-    await dbReconcileEnrollment(id, taskCount);
-    const reconciled = currentEnrollmentForPath(id);
-    if(reconciled?.id) await listEvidenceSubmissions(reconciled.id).catch(() => {});
-  }
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
   const allowedUserTabs = ['plan', 'log'];
@@ -1417,11 +1460,67 @@ export async function openSkill(id, options = {}){
     ? (allowedUserTabs.includes(requestedTab) ? requestedTab : 'plan')
     : (allowedBuiltInTabs.includes(requestedTab) ? requestedTab : 'today');
   store.activeTab = startTab;
-  await dbSaveState(); applyHeader();
+  dbSaveState(); applyHeader();
   if(!isUserPath(id)) refreshSuggest();
   updateOverall(); store.nav.switchTab(startTab);
   setRoute(pathHash(id, startTab, selectedJourneyDay));
+  openingPathId = null;
   window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+function syncOpenedPathInBackground(id){
+  if(!isUserPath(id)) return;
+  const syncToken = Date.now() + ':' + id;
+  store.activeEnrollmentSync = syncToken;
+  trackOperation('start enrollment', withTimeout((async () => {
+    const enrollment = await dbEnsureEnrollment(id);
+    const def = store.state.userPaths[id];
+    const todayDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate) : 1;
+    const taskCount = getTasksForDay(def, Math.max(1, Number(enrollment?.currentDay || todayDay))).length;
+    await dbReconcileEnrollment(id, taskCount);
+    const reconciled = currentEnrollmentForPath(id);
+    if(reconciled?.id){
+      const day = selectedJourneyDay || Number(reconciled.currentDay || todayDay || 1);
+      listEvidenceSubmissions(reconciled.id, day).then(() => {
+        if(store.state.current === id && store.activeTab === 'plan') renderPlan();
+      }).catch(e => console.warn('load evidence:', e && e.message ? e.message : e));
+    }
+  })(), ENROLLMENT_TIMEOUT_MS, 'start enrollment')).then(() => {
+    if(store.activeEnrollmentSync === syncToken && store.state.current === id && store.activeTab === 'plan') renderPlan();
+  }).catch(e => {
+    console.warn('enrollment sync:', e && e.message ? e.message : e);
+    flash('Could not sync start yet. We will retry when online.');
+    if(store.state.current === id && store.activeTab === 'plan') renderPlan();
+  });
+}
+
+export async function openSkill(id, options = {}){
+  if(openingPathId && openingPathId !== id) openingPathId = id;
+  store.state.current = id; ensureSkill(id); store.editMode = false;
+  selectedJourneyDay = options.day ? (Number(options.day) || null) : null;
+  if(isUserPath(id)){
+    const existingDef = store.state.userPaths[id];
+    if(existingDef?.platform && !pathTasksReady(existingDef)){
+      renderPathOpening('Opening path...', 'Loading path tasks before enabling the roadmap.');
+      setRoute(pathHash(id, options.tab || 'plan', selectedJourneyDay));
+      trackOperation('path children load', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load path tasks'))
+        .then(() => {
+          if(store.state.current === id){
+            renderOpenedPath(id, options);
+            syncOpenedPathInBackground(id);
+          }
+        })
+        .catch(e => {
+          if(store.state.current === id){
+            openingPathId = null;
+            renderPathLoadError(id, userSyncMessage(e, 'Could not load path tasks. Try again.'));
+          }
+        });
+      return;
+    }
+  }
+  renderOpenedPath(id, options);
+  syncOpenedPathInBackground(id);
 }
 export function goCatalog(){
   store.state.current = null; store.editMode = false;
@@ -1454,7 +1553,14 @@ async function openPathRoute(id, forcePreview, options = {}){
     } else await openSkill(id, options);
     return;
   }
-  const record = await dbLoadPlatformPath(id);
+  let record = null;
+  try{
+    renderPathOpening('Opening path...', 'Loading platform path details.');
+    record = await trackOperation('path children load', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load platform path'));
+  }catch(e){
+    renderPathLoadError(id, userSyncMessage(e, 'Could not load path tasks. Try again.'));
+    return;
+  }
   if(!record){
     renderMissingPath();
     return;
@@ -1600,6 +1706,7 @@ function evidenceFormHTML(task){
 
 function roadmapHTML(id, def){
   const enrollment = currentEnrollmentForPath(id);
+  const tasksReady = pathTasksReady(def);
   const logs = enrollment?.dayLogs || {};
   const today = localDateString();
   const totalDays = getMaxRoadmapDay(def, enrollment);
@@ -1607,18 +1714,21 @@ function roadmapHTML(id, def){
   let h = '<div class="panel card roadmap-foundation">'
     + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Daily journey</h3></div>'
     + '<div class="road-stats"><span>Streak ' + esc(enrollment?.streak || 0) + '</span><span>Freezes ' + esc(enrollment?.freezeCount ?? 1) + '</span></div></div>';
-  if(!enrollment?.startDate){
-    h += '<div class="journey-start"><div><b>Start this path</b><p>Set today as Day 1 and begin tracking daily progress.</p></div><button class="btn gold" id="startJourney">Start this path</button></div>';
+  if(!tasksReady){
+    h += '<div class="journey-start"><div><b>Loading tasks...</b><p>Roadmap controls will unlock once this platform path finishes loading.</p></div><button class="btn" disabled>Loading...</button></div>';
+  } else if(!enrollment?.startDate){
+    const starting = startingJourneyId === id;
+    h += '<div class="journey-start"><div><b>Start this path</b><p>Set today as Day 1 and begin tracking daily progress.</p></div><button class="btn gold" id="startJourney" ' + (starting ? 'disabled' : '') + '>' + (starting ? 'Starting...' : 'Start this path') + '</button></div>';
   }
   h += '<div class="road-days vertical">';
   for(let day = 1; day <= totalDays; day++){
     const status = getDayStatus(day, enrollment, logs, today);
     const open = canOpenDay(day, status);
     const date = enrollment?.startDate ? dateForJourneyDay(enrollment.startDate, day) : null;
-    const taskCount = getTasksForDay(def, day).length;
+    const taskCount = tasksReady ? getTasksForDay(def, day).length : 0;
     h += '<button type="button" class="road-day ' + status + (day === activeDay ? ' today' : '') + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled') + '>'
       + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' · ' + esc(date.slice(5)) : '') + '</small>'
-      + '<em>' + (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') + '</em></button>';
+      + '<em>' + (tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks') + '</em></button>';
   }
   h += '</div></div>';
   return h;
@@ -1626,6 +1736,10 @@ function roadmapHTML(id, def){
 
 function journeyDetailHTML(id, def){
   const enrollment = currentEnrollmentForPath(id);
+  const tasksReady = pathTasksReady(def);
+  if(!tasksReady){
+    return '<div class="panel card journey-detail"><h3>Loading tasks...</h3><p class="muted">This platform path is still loading its sections and tasks. Start and completion controls will appear when the tasks are ready.</p></div>';
+  }
   if(!enrollment?.startDate){
     return '<div class="panel card journey-detail"><h3>Not started yet</h3><p class="muted">Start the path to activate Day 1 and begin storing daily progress in your enrollment.</p></div>';
   }
@@ -1705,7 +1819,7 @@ function journeyDetailHTML(id, def){
     } else {
       h += '<div class="muted">No tasks assigned to this day. You can still complete the day.</div>';
     }
-    const ready = dayTasks.length === 0 || completeCount === dayTasks.length;
+    const ready = (dayTasks.length === 0 && tasksReady) || completeCount === dayTasks.length;
     const canComplete = canCompleteDay(day, enrollment, today);
     h += '<button class="btn gold" id="completeDay" data-day="' + day + '" ' + (ready && canComplete ? '' : 'disabled') + '>Complete day</button>';
     if(!canComplete && status === 'active') h += '<div class="hint">This day is not eligible for completion today.</div>';
@@ -1717,11 +1831,12 @@ function journeyDetailHTML(id, def){
 
 function journeyStatusHTML(id, def){
   const enrollment = currentEnrollmentForPath(id);
+  const tasksReady = pathTasksReady(def);
   const today = localDateString();
   const totalDays = getMaxRoadmapDay(def, enrollment);
   const day = enrollment?.startDate ? Math.min(journeyDayForDate(enrollment.startDate, today), totalDays) : 0;
   const status = enrollment?.startDate ? getDayStatus(day || 1, enrollment, enrollment.dayLogs || {}, today) : 'not started';
-  const todayTasks = enrollment?.startDate ? getTasksForDay(def, day || 1) : [];
+  const todayTasks = (tasksReady && enrollment?.startDate) ? getTasksForDay(def, day || 1) : [];
   const log = enrollment?.dayLogs && (enrollment.dayLogs[day] || enrollment.dayLogs[String(day)]);
   const done = todayTasks.filter(task => taskIsDone(task, log)).length;
   return '<div class="panel card journey-status">'
@@ -1730,7 +1845,7 @@ function journeyStatusHTML(id, def){
     + '<div><span>Freezes</span><b>' + esc(enrollment?.freezeCount ?? 1) + '</b></div>'
     + '<div><span>Started</span><b>' + esc(enrollment?.startDate || 'Not yet') + '</b></div>'
     + '<div><span>Today</span><b>' + esc(statusLabel(status)) + '</b></div>'
-    + '<div><span>Progress</span><b>' + done + '/' + todayTasks.length + '</b></div>'
+    + '<div><span>Progress</span><b>' + (tasksReady ? (done + '/' + todayTasks.length) : 'Loading') + '</b></div>'
     + '</div>';
 }
 
@@ -1837,11 +1952,22 @@ async function submitEvidenceForTask(id, def, taskId){
 async function completeJourneyDay(id, def, day){
   const enrollment = currentEnrollmentForPath(id);
   if(!enrollment?.startDate || !canCompleteDay(day, enrollment)) return;
+  if(!pathTasksReady(def)){
+    flash('Loading tasks. Try again in a moment.');
+    return;
+  }
   const dayTasks = getTasksForDay(def, day);
+  if(def.platform && !pathHasTasks(def)){
+    flash('Could not load path tasks. Try again.');
+    return;
+  }
   const existing = dayLogFor(enrollment, day);
   const completedTaskIds = existing?.completedTaskIds || [];
   const verifiedTaskIds = existing?.verifiedTaskIds || [];
-  if(dayTasks.some(task => task.evidenceRequired ? !verifiedTaskIds.includes(task.id) : !completedTaskIds.includes(task.id))) return;
+  if(dayTasks.some(task => task.evidenceRequired ? !verifiedTaskIds.includes(task.id) : !completedTaskIds.includes(task.id))){
+    flash('This task needs proof before Day can be completed.');
+    return;
+  }
   const wasCompleted = existing?.status === 'completed';
   await dbSaveDayLog(enrollment.id, makeDayLog(day, {
     ...existing,
@@ -1923,11 +2049,52 @@ async function resetMissedDay(id, def, day){
 function wireJourneyControls(id, def){
   const start = $('startJourney');
   if(start) start.onclick = async () => {
-    await dbStartEnrollment(id, getTasksForDay(def, 1).length);
+    if(!pathTasksReady(def)){
+      flash('Loading tasks. Try again in a moment.');
+      return;
+    }
+    startingJourneyId = id;
+    start.disabled = true;
+    start.textContent = 'Starting...';
+    const today = localDateString();
+    const userId = (store.currentUser && store.currentUser.uid) || 'local';
+    const enrollmentId = enrollmentIdFor(id, userId);
+    const existing = currentEnrollmentForPath(id);
+    const next = makeEnrollment(id, userId, {
+      ...(existing || {}),
+      id: enrollmentId,
+      startDate: existing?.startDate || today,
+      currentDay: 1,
+      status: 'active',
+      missedDate: null,
+    });
+    next.dayLogs = { ...(existing?.dayLogs || {}) };
+    next.dayLogs[1] = makeDayLog(1, {
+      ...(next.dayLogs[1] || {}),
+      dayNumber: 1,
+      date: next.startDate,
+      status: 'active',
+      totalTaskCount: getTasksForDay(def, 1).length,
+    });
+    store.enrollments[enrollmentId] = next;
+    store.state.enrollments = store.state.enrollments || {};
+    store.state.enrollments[enrollmentId] = next;
+    dbSaveState();
     selectedJourneyDay = 1;
     evidenceFormTaskId = null;
     evidenceProofType = 'url';
     renderPlan();
+    trackOperation('start enrollment', withTimeout(dbStartEnrollment(id, getTasksForDay(def, 1).length), ENROLLMENT_TIMEOUT_MS, 'start enrollment'))
+      .then(() => {
+        startingJourneyId = null;
+        if(store.state.current === id && store.activeTab === 'plan') renderPlan();
+      })
+      .catch(e => {
+        startingJourneyId = null;
+        console.warn('start enrollment:', e && e.message ? e.message : e);
+        flash(userSyncMessage(e, 'Could not sync start yet. We will retry when online.'));
+        if(store.state.current === id && store.activeTab === 'plan') renderPlan();
+      });
   };
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
     btn.onclick = async () => {
@@ -1936,9 +2103,13 @@ function wireJourneyControls(id, def){
       evidenceFormTaskId = null;
       evidenceProofType = 'url';
       evidenceError = '';
-      const enrollment = currentEnrollmentForPath(id);
-      if(enrollment?.id) await listEvidenceSubmissions(enrollment.id, selectedJourneyDay).catch(() => {});
       renderPlan();
+      const enrollment = currentEnrollmentForPath(id);
+      if(enrollment?.id){
+        listEvidenceSubmissions(enrollment.id, selectedJourneyDay)
+          .then(() => { if(store.state.current === id && store.activeTab === 'plan') renderPlan(); })
+          .catch(e => console.warn('load evidence:', e && e.message ? e.message : e));
+      }
       const detail = $('journeyDetail');
       if(detail) detail.scrollIntoView({ behavior:'smooth', block:'start' });
     };
@@ -1993,6 +2164,7 @@ export function renderPlan(){
     + '<div class="muted" style="font-size:12px;margin-top:10px">' + t.done + ' / ' + t.total + ' done · ' + pct + '%</div>'
     + '<div class="progress-bar" style="width:220px;max-width:60vw;margin-left:auto"><div style="width:' + pct + '%"></div></div></div></div>';
 
+  h += syncStatusHTML();
   h += journeyStatusHTML(id, def);
   h += roadmapHTML(id, def);
   h += journeyDetailHTML(id, def);
