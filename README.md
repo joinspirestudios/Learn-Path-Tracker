@@ -64,20 +64,21 @@ The generator is intentionally a starting-point tool:
 - It does not publish generated paths publicly unless the user changes
   visibility.
 
-AI calls run server-side through `api/generate-path.js`. The frontend never needs
-or receives an AI API key.
+AI calls use Anthropic Claude server-side through `api/generate-path.js`. The
+frontend never needs or receives an AI API key.
 
 Server-side AI configuration:
 
 ```bash
-OPENAI_API_KEY=your_server_side_key
+ANTHROPIC_API_KEY=your_server_side_key
 # Optional:
-OPENAI_MODEL=gpt-4o-mini
+ANTHROPIC_MODEL=claude-sonnet-4-6
 ```
 
-If `OPENAI_API_KEY` is missing, unavailable, or the provider returns invalid
-output, the app shows a clear fallback message and creates a basic starter
-template from the prompt. That fallback is not labeled as AI-generated.
+If `ANTHROPIC_API_KEY` is missing, real AI generation is unavailable. The app can
+still create a clearly labeled basic starter template from the prompt, but that
+fallback is not labeled as AI-generated. If Claude returns malformed JSON, the
+app shows an error and does not create a generated path draft.
 
 Limitations:
 
@@ -160,8 +161,9 @@ File evidence uploads require Firebase Storage to be enabled, the Storage rules
 below to be published, and `VITE_FIREBASE_STORAGE_BUCKET` to match your Firebase
 bucket. Without that bucket config, users can still submit URL proof.
 
-To enable AI path generation on Vercel, add `OPENAI_API_KEY` as a server-side
-environment variable. Do not prefix it with `VITE_`.
+To enable AI path generation on Vercel, add `ANTHROPIC_API_KEY` as a server-side
+environment variable. Optionally add `ANTHROPIC_MODEL`; if omitted, the server
+uses `claude-sonnet-4-6`. Do not prefix Anthropic variables with `VITE_`.
 
 ### Recommended platform Firestore rules
 
@@ -332,8 +334,9 @@ service cloud.firestore {
    `npm run build` and output directory `dist`.
 3. Add the `VITE_FIREBASE_*` environment variables, including
    `VITE_FIREBASE_STORAGE_BUCKET` if file evidence uploads are enabled.
-4. Add `OPENAI_API_KEY` if you want real AI path generation. Without it, the
-   builder uses the basic starter fallback.
+4. Add `ANTHROPIC_API_KEY` if you want real Claude AI path generation. Optional:
+   add `ANTHROPIC_MODEL`. Without an Anthropic key, the builder uses the basic
+   starter fallback.
 5. Deploy. Files in `api/` deploy as serverless functions.
 
 ---

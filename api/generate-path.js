@@ -1,3 +1,5 @@
+import Anthropic from '@anthropic-ai/sdk';
+
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const INTENSITIES = ['light', 'moderate', 'intense'];
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'];
@@ -210,30 +212,46 @@ function buildPrompt(input){
   ].join('\n');
 }
 
-async function callOpenAI(input){
-  const apiKey = process.env.OPENAI_API_KEY;
-  if(!apiKey) return null;
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method:'POST',
-    headers:{
-      'Authorization':'Bearer ' + apiKey,
-      'Content-Type':'application/json',
-    },
-    body:JSON.stringify({
-      model:process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      temperature:0.5,
-      messages:[
-        { role:'system', content:'You generate safe, realistic, editable learning path JSON for a habit and skill tracking app.' },
-        { role:'user', content:buildPrompt(input) },
-      ],
-      response_format:{ type:'json_object' },
-    }),
+function codedError(message, code, status = 400){
+  const err = new Error(message);
+  err.code = code;
+  err.status = status;
+  return err;
+}
+
+function parseClaudeJson(content){
+  const trimmed = text(content);
+  if(!trimmed) throw codedError('Claude returned an empty response.', 'empty_ai_response', 502);
+  if(/^```/m.test(trimmed)){
+    throw codedError('Claude returned formatted text instead of strict JSON. Please regenerate.', 'invalid_ai_json', 502);
+  }
+  try{
+    return JSON.parse(trimmed);
+  }catch(e){
+    throw codedError('Claude returned invalid JSON. Please regenerate the draft.', 'invalid_ai_json', 502);
+  }
+}
+
+async function callAnthropic(input){
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if(!apiKey){
+    throw codedError('AI generation requires Anthropic API configuration.', 'missing_anthropic_config', 503);
+  }
+  const anthropic = new Anthropic({ apiKey });
+  const message = await anthropic.messages.create({
+    model:process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+    max_tokens:6000,
+    temperature:0.5,
+    system:'You generate safe, realistic, editable learning path JSON for a habit and skill tracking app. Return strict JSON only.',
+    messages:[
+      { role:'user', content:buildPrompt(input) },
+    ],
   });
-  if(!response.ok) throw new Error('AI generation failed.');
-  const data = await response.json();
-  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  if(!content) throw new Error('AI generation returned an empty response.');
-  return JSON.parse(content);
+  const content = (message.content || [])
+    .filter(block => block && block.type === 'text')
+    .map(block => block.text || '')
+    .join('\n');
+  return parseClaudeJson(content);
 }
 
 export default async function handler(req, res){
@@ -245,22 +263,19 @@ export default async function handler(req, res){
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const input = normalizePrompt(body);
     if(!input.goal) return res.status(400).json({ ok:false, message:'Goal is required.' });
-    let raw = null;
-    let source = 'fallback';
-    let message = '';
-    if(process.env.OPENAI_API_KEY){
-      try{
-        raw = await callOpenAI(input);
-        source = 'ai';
-      }catch(e){
-        message = 'AI generation failed. A basic starter template was created instead.';
-      }
-    } else {
-      message = 'AI generation requires API configuration. A basic starter template was created instead.';
+    let raw;
+    try{
+      raw = await callAnthropic(input);
+    }catch(e){
+      return res.status(e.status || 502).json({
+        ok:false,
+        code:e.code || 'anthropic_generation_failed',
+        message:e.message || 'Claude generation failed. Please try again.',
+      });
     }
-    const draft = raw ? normalizeDraft(raw, input, source) : basicStarterDraft(input, source);
-    return res.status(200).json({ ok:true, draft, source, message });
+    const draft = normalizeDraft(raw, input, 'anthropic');
+    return res.status(200).json({ ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
   }catch(e){
-    return res.status(400).json({ ok:false, message:e.message || 'Could not generate a path draft.' });
+    return res.status(e.status || 400).json({ ok:false, code:e.code || 'invalid_request', message:e.message || 'Could not generate a path draft.' });
   }
 }

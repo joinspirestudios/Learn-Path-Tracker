@@ -572,9 +572,16 @@ async function generateAIPath(forceBasic){
           body:JSON.stringify(prompt),
         });
         payload = await res.json();
-        if(!res.ok || !payload.ok) throw new Error(payload.message || 'AI generation failed.');
+        if(!res.ok || !payload.ok){
+          const err = new Error(payload.message || 'AI generation failed.');
+          err.code = payload.code || '';
+          throw err;
+        }
       }catch(e){
-        payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'AI generation requires API configuration. A basic starter template was created instead.' };
+        if(e.code === 'invalid_ai_json' || e.code === 'empty_ai_response'){
+          throw e;
+        }
+        payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Anthropic Claude generation requires API configuration. A basic starter template was created instead.' };
       }
     } else {
       payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Basic starter template created without AI.' };
