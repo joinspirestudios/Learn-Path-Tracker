@@ -581,8 +581,10 @@ async function generateAIPath(forceBasic){
       }catch(e){
         if(e.code === 'missing_anthropic_config'){
           payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Anthropic is not configured. A basic starter template was created instead.' };
-        } else if(e.code === 'invalid_ai_json'){
-          throw new Error('Claude returned invalid JSON. Please regenerate.');
+        } else if(e.code === 'missing_tool_use'){
+          throw new Error('Claude did not return the required structured path draft. Please regenerate.');
+        } else if(e.code === 'invalid_ai_output'){
+          throw new Error('Claude returned a path draft that could not be validated. Please regenerate.');
         } else {
           throw e;
         }

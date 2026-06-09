@@ -3,6 +3,86 @@ import Anthropic from '@anthropic-ai/sdk';
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const INTENSITIES = ['light', 'moderate', 'intense'];
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'];
+const TOOL_NAME = 'create_learning_path';
+
+const PATH_DRAFT_TOOL = {
+  name: TOOL_NAME,
+  description: 'Create a structured learning/challenge path draft for the Learn Path Tracker app.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'title', 'description', 'goal', 'category', 'durationDays', 'durationLabel',
+      'difficulty', 'intensity', 'previewTitle', 'previewDescription',
+      'sections', 'tasks', 'resources', 'notes',
+    ],
+    properties: {
+      title: { type: 'string' },
+      description: { type: 'string' },
+      goal: { type: 'string' },
+      category: { type: 'string' },
+      durationDays: { type: 'number', minimum: 1, maximum: 365 },
+      durationLabel: { type: 'string' },
+      difficulty: { type: 'string', enum: LEVELS },
+      intensity: { type: 'string', enum: INTENSITIES },
+      previewTitle: { type: 'string' },
+      previewDescription: { type: 'string' },
+      sections: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'description', 'order'],
+          properties: {
+            title: { type: 'string' },
+            description: { type: 'string' },
+            order: { type: 'number' },
+          },
+        },
+      },
+      tasks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'title', 'description', 'sectionTitle', 'scheduleType', 'startDay',
+            'endDay', 'unlockDay', 'evidenceRequired', 'resourceUrl', 'order',
+          ],
+          properties: {
+            title: { type: 'string' },
+            description: { type: 'string' },
+            sectionTitle: { type: 'string' },
+            scheduleType: { type: 'string', enum: ['once', 'daily'] },
+            startDay: { type: 'number' },
+            endDay: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+            unlockDay: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+            evidenceRequired: { type: 'boolean' },
+            resourceUrl: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+            order: { type: 'number' },
+          },
+        },
+      },
+      resources: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'url', 'description'],
+          properties: {
+            title: { type: 'string' },
+            url: { type: 'string' },
+            description: { type: 'string' },
+          },
+        },
+      },
+      notes: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+  },
+};
 
 function clamp(n, min, max){
   n = Number(n);
@@ -201,13 +281,16 @@ function normalizeDraft(raw, input, source = 'ai'){
 
 function buildPrompt(input){
   return [
-    'Return strict JSON only. Do not include markdown, prose, comments, or citations.',
+    'Use the create_learning_path tool to return the path draft.',
+    'Do not return prose.',
+    'Do not return markdown.',
     'Create an editable learning path draft for this app. Do not claim deep research or cite sources.',
     'Use durationDays and scheduleType instead of generating one task per day.',
     'Use daily recurring tasks for habits and once tasks for milestones.',
+    'Keep durationDays within 1-365.',
+    'Make the path realistic and editable.',
     'Avoid unsafe medical or fitness prescriptions. Include a safety note for fitness/challenge paths.',
     'Set evidenceRequired true only where proof matters: workouts, running/walking, course progress, uploaded work, public posts, project deliverables.',
-    'Schema keys: title, description, goal, category, durationDays, durationLabel, difficulty, intensity, previewTitle, previewDescription, sections, tasks, resources, notes.',
     'Input: ' + JSON.stringify(input),
   ].join('\n');
 }
@@ -219,17 +302,34 @@ function codedError(message, code, status = 400){
   return err;
 }
 
-function parseClaudeJson(content){
-  const trimmed = text(content);
+function parseJsonTextFallback(content){
+  let trimmed = text(content);
   if(!trimmed) throw codedError('Claude returned an empty response.', 'empty_ai_response', 502);
-  if(/^```/m.test(trimmed)){
-    throw codedError('Claude returned formatted text instead of strict JSON. Please regenerate.', 'invalid_ai_json', 502);
-  }
+  trimmed = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const first = trimmed.indexOf('{');
+  const last = trimmed.lastIndexOf('}');
+  if(first >= 0 && last > first) trimmed = trimmed.slice(first, last + 1);
   try{
     return JSON.parse(trimmed);
   }catch(e){
-    throw codedError('Claude returned invalid JSON. Please regenerate the draft.', 'invalid_ai_json', 502);
+    throw codedError('Claude returned a path draft that could not be validated. Please regenerate.', 'invalid_ai_output', 502);
   }
+}
+
+function extractDraftInput(message){
+  const blocks = Array.isArray(message && message.content) ? message.content : [];
+  const toolUse = blocks.find(block => block && block.type === 'tool_use' && block.name === TOOL_NAME);
+  if(toolUse && toolUse.input && typeof toolUse.input === 'object'){
+    return toolUse.input;
+  }
+  const textContent = blocks
+    .filter(block => block && block.type === 'text')
+    .map(block => block.text || '')
+    .join('\n');
+  if(text(textContent)){
+    return parseJsonTextFallback(textContent);
+  }
+  throw codedError('Claude did not return the required structured path draft. Please regenerate.', 'missing_tool_use', 502);
 }
 
 async function callAnthropic(input){
@@ -244,7 +344,9 @@ async function callAnthropic(input){
       model:process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
       max_tokens:6000,
       temperature:0.5,
-      system:'You generate safe, realistic, editable learning path JSON for a habit and skill tracking app. Return strict JSON only.',
+      system:'You generate safe, realistic, editable learning path drafts. You must use the create_learning_path tool. Do not return prose, markdown, fake citations, or claims of real web research.',
+      tools:[PATH_DRAFT_TOOL],
+      tool_choice:{ type:'tool', name:TOOL_NAME },
       messages:[
         { role:'user', content:buildPrompt(input) },
       ],
@@ -252,11 +354,7 @@ async function callAnthropic(input){
   }catch(e){
     throw mapAnthropicError(e);
   }
-  const content = (message.content || [])
-    .filter(block => block && block.type === 'text')
-    .map(block => block.text || '')
-    .join('\n');
-  return parseClaudeJson(content);
+  return extractDraftInput(message);
 }
 
 function mapAnthropicError(error){
@@ -297,7 +395,7 @@ export default async function handler(req, res){
     try{
       draft = normalizeDraft(raw, input, 'anthropic');
     }catch(e){
-      throw codedError('Claude returned invalid JSON. Please regenerate.', 'invalid_ai_json', 502);
+      throw codedError('Claude returned a path draft that could not be validated. Please regenerate.', 'invalid_ai_output', 502);
     }
     return res.status(200).json({ ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
   }catch(e){
