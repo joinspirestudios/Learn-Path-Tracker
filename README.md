@@ -63,6 +63,13 @@ scattered notes and choose **Clarify my goal**. The app calls
 edit the structured brief, answer clarifying questions, and then generate the
 path from the confirmed brief.
 
+Phase 4.5 adds voice memo intake. Users can record a short voice idea in the AI
+Builder, transcribe it with Deepgram through `api/transcribe-voice.js`, edit the
+transcript, and then use that transcript as rough goal input. The transcript
+still goes through the messy-goal interpreter before generation. Raw audio is
+kept only in the current browser session and is not permanently saved by the app
+in this version.
+
 The generator is intentionally a starting-point tool:
 
 - It saves generated paths as private by default.
@@ -70,6 +77,8 @@ The generator is intentionally a starting-point tool:
   `create_learning_path` tool, with defensive JSON parsing only as a fallback.
 - It uses a separate `interpret_goal_brief` tool for messy goal interpretation
   and clarifying questions before path generation.
+- It uses Deepgram only for recorded voice memo transcription. Anthropic still
+  handles goal interpretation and path generation.
 - It creates progressive growth paths, not static generic checklists.
 - It uses `scheduleType: "daily"` tasks for recurring work and
   `scheduleType: "once"` tasks for milestones and reviews.
@@ -93,7 +102,9 @@ The generator is intentionally a starting-point tool:
   visibility.
 
 AI calls use Anthropic Claude server-side through `api/generate-path.js` and
-`api/interpret-goal.js`. The frontend never needs or receives an AI API key.
+`api/interpret-goal.js`. Voice transcription uses Deepgram server-side through
+`api/transcribe-voice.js`. The frontend never needs or receives AI or
+transcription API keys.
 
 Server-side AI configuration:
 
@@ -101,6 +112,9 @@ Server-side AI configuration:
 ANTHROPIC_API_KEY=your_server_side_key
 # Optional:
 ANTHROPIC_MODEL=claude-sonnet-4-6
+
+# Required only for voice memo transcription:
+DEEPGRAM_API_KEY=your_server_side_deepgram_key
 ```
 
 If `ANTHROPIC_API_KEY` is missing, real AI generation is unavailable. The app can
@@ -108,6 +122,10 @@ still create a clearly labeled basic starter template from the prompt, but that
 fallback is not labeled as AI-generated. If Claude does not return the required
 tool output, returns invalid JSON fallback text, or returns a draft that cannot
 be validated, the app shows an error and keeps the prompt open for retry.
+
+`DEEPGRAM_API_KEY` must also be server-side only and must not be prefixed with
+`VITE_`. If it is missing, users can still type or paste goals manually; only
+voice transcription is unavailable.
 
 Limitations:
 
@@ -118,7 +136,8 @@ Limitations:
   deep research.
 - It does not create fake citations or fake sources.
 - The app recommends tasks/resources but does not teach full lessons internally.
-- Voice memo capture is not implemented yet; it is a future input method.
+- Voice memo audio is not stored permanently in this version. It is used to
+  create an editable transcript, then the transcript feeds into clarification.
 - Fitness/challenge plans are not medical advice; users should adapt intensity
   to their health, ability, and professional guidance.
 - AI does not verify whether submitted evidence is truthful.
@@ -132,8 +151,8 @@ not implemented in this phase.
 
 The project uses real folders, not literal backslash filenames:
 
-Current API routes include `api/analyze.js`, `api/generate-path.js`, and
-`api/interpret-goal.js`.
+Current API routes include `api/analyze.js`, `api/generate-path.js`,
+`api/interpret-goal.js`, and `api/transcribe-voice.js`.
 
 ```text
 mastery-tracker/

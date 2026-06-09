@@ -41,6 +41,8 @@ let evidenceProofType = 'url';
 let evidenceBusy = false;
 let evidenceError = '';
 let aiBuilder = null;
+let voiceDurationTimer = null;
+let discardVoiceOnStop = false;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -230,6 +232,26 @@ function aiBriefDefaults(){
     clarifyingQuestions:[],
     confidence:0,
     readyToGenerate:false,
+  };
+}
+
+function makeVoiceState(prev = {}){
+  const supported = typeof MediaRecorder !== 'undefined'
+    && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  return {
+    supported,
+    recording:false,
+    mediaRecorder:null,
+    stream:null,
+    chunks:[],
+    blob:null,
+    audioUrl:'',
+    duration:0,
+    startedAt:null,
+    transcript:prev.transcript || '',
+    loading:false,
+    error:'',
+    mimeType:prev.mimeType || '',
   };
 }
 
@@ -590,6 +612,7 @@ function openAIPathBuilder(){
     message:'',
     brief: aiBuilder?.brief || null,
     clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
+    voice: makeVoiceState(aiBuilder?.voice || {}),
     dirty:false,
   };
   overlay.addEventListener('click', e => { if(e.target === overlay) closeAIBuilder(); });
@@ -597,6 +620,7 @@ function openAIPathBuilder(){
 }
 
 function closeAIBuilder(){
+  cleanupVoiceRecording();
   if(aiBuilder?.overlay) aiBuilder.overlay.remove();
   aiBuilder = null;
 }
@@ -630,6 +654,205 @@ function collectAIPrompt(){
   return aiBuilder.prompt;
 }
 
+function cleanupVoiceRecording(clearTranscript = false){
+  if(voiceDurationTimer){
+    clearInterval(voiceDurationTimer);
+    voiceDurationTimer = null;
+  }
+  const voice = aiBuilder?.voice;
+  if(!voice) return;
+  if(voice.mediaRecorder && voice.recording){
+    discardVoiceOnStop = true;
+    try{ voice.mediaRecorder.stop(); }catch(e){}
+  }
+  if(voice.stream){
+    try{ voice.stream.getTracks().forEach(track => track.stop()); }catch(e){}
+  }
+  if(voice.audioUrl){
+    try{ URL.revokeObjectURL(voice.audioUrl); }catch(e){}
+  }
+  aiBuilder.voice = {
+    ...makeVoiceState({ transcript: clearTranscript ? '' : voice.transcript }),
+    supported: voice.supported,
+  };
+}
+
+function supportedRecordingMimeType(){
+  if(typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(type => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function updateVoiceDurationLabel(){
+  if(!aiBuilder?.voice?.recording || !aiBuilder.voice.startedAt) return;
+  aiBuilder.voice.duration = Math.max(0, Math.round((Date.now() - aiBuilder.voice.startedAt) / 1000));
+  const el = $('voiceDuration');
+  if(el) el.textContent = formatSeconds(aiBuilder.voice.duration);
+}
+
+function formatSeconds(value){
+  const seconds = Math.max(0, Number(value || 0));
+  const m = Math.floor(seconds / 60);
+  const s = String(seconds % 60).padStart(2, '0');
+  return m + ':' + s;
+}
+
+async function startVoiceRecording(){
+  const voice = aiBuilder.voice;
+  if(!voice.supported){
+    voice.error = 'Voice recording is not supported in this browser yet. You can still type or paste your goal.';
+    renderAIBuilder();
+    return;
+  }
+  cleanupVoiceRecording(false);
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    const mimeType = supportedRecordingMimeType();
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks = [];
+    discardVoiceOnStop = false;
+    recorder.ondataavailable = e => {
+      if(e.data && e.data.size) chunks.push(e.data);
+    };
+    recorder.onstop = () => {
+      if(!aiBuilder?.voice) return;
+      if(discardVoiceOnStop){
+        discardVoiceOnStop = false;
+        return;
+      }
+      if(voiceDurationTimer){
+        clearInterval(voiceDurationTimer);
+        voiceDurationTimer = null;
+      }
+      stream.getTracks().forEach(track => track.stop());
+      const blobType = recorder.mimeType || mimeType || 'audio/webm';
+      const blob = new Blob(chunks, { type:blobType });
+      const previousUrl = aiBuilder.voice.audioUrl;
+      if(previousUrl) try{ URL.revokeObjectURL(previousUrl); }catch(e){}
+      aiBuilder.voice = {
+        ...aiBuilder.voice,
+        recording:false,
+        mediaRecorder:null,
+        stream:null,
+        chunks:[],
+        blob,
+        audioUrl:URL.createObjectURL(blob),
+        mimeType:blobType,
+        duration:aiBuilder.voice.duration || Math.max(1, Math.round((Date.now() - aiBuilder.voice.startedAt) / 1000)),
+      };
+      renderAIBuilder();
+    };
+    aiBuilder.voice = {
+      ...voice,
+      recording:true,
+      mediaRecorder:recorder,
+      stream,
+      chunks,
+      blob:null,
+      audioUrl:'',
+      duration:0,
+      startedAt:Date.now(),
+      error:'',
+      loading:false,
+      mimeType:mimeType || '',
+    };
+    recorder.start();
+    voiceDurationTimer = setInterval(updateVoiceDurationLabel, 1000);
+    renderAIBuilder();
+  }catch(e){
+    aiBuilder.voice.error = 'Could not start voice recording. You can still type your goal manually.';
+    renderAIBuilder();
+  }
+}
+
+function stopVoiceRecording(){
+  const voice = aiBuilder.voice;
+  if(!voice?.mediaRecorder || !voice.recording) return;
+  try{ voice.mediaRecorder.stop(); }
+  catch(e){
+    voice.error = 'Could not stop recording. Try clearing the recording.';
+    renderAIBuilder();
+  }
+}
+
+function clearVoiceRecording(){
+  cleanupVoiceRecording(false);
+  renderAIBuilder();
+}
+
+async function transcribeVoiceRecording(){
+  const voice = aiBuilder.voice;
+  if(!voice?.blob){
+    voice.error = 'Record a voice idea before transcribing.';
+    renderAIBuilder();
+    return;
+  }
+  voice.loading = true;
+  voice.error = '';
+  renderAIBuilder();
+  try{
+    const res = await fetch('/api/transcribe-voice', {
+      method:'POST',
+      headers:{ 'Content-Type': voice.blob.type || voice.mimeType || 'audio/webm' },
+      body:voice.blob,
+    });
+    const payload = await res.json();
+    if(!res.ok || !payload.ok){
+      const err = new Error(payload.message || 'Voice transcription failed.');
+      err.code = payload.code || '';
+      throw err;
+    }
+    aiBuilder.voice.transcript = payload.transcript || '';
+    aiBuilder.voice.error = '';
+  }catch(e){
+    aiBuilder.voice.error = voiceErrorCopy(e.code, e.message);
+  }finally{
+    aiBuilder.voice.loading = false;
+    renderAIBuilder();
+  }
+}
+
+function voiceErrorCopy(code, fallback){
+  if(code === 'missing_deepgram_config') return 'Voice transcription requires Deepgram configuration. You can still type your goal manually.';
+  if(code === 'unsupported_audio_type') return 'This audio format is not supported. Please try recording again.';
+  if(code === 'audio_too_large') return 'This recording is too large. Please keep voice memos under 5 minutes.';
+  if(code === 'empty_transcript') return 'We could not detect speech clearly. Try recording again or type your goal manually.';
+  return fallback || 'Voice transcription failed. You can still type your goal manually.';
+}
+
+function useTranscriptAsGoalInput(){
+  const transcript = (aiBuilder.voice?.transcript || '').trim();
+  if(!transcript) return;
+  aiBuilder.prompt.goal = transcript;
+  const goal = $('aiGoal');
+  if(goal) goal.value = transcript;
+  aiBuilder.error = '';
+  aiBuilder.message = 'Transcript added as rough goal input. Edit it, then clarify your goal.';
+  renderAIBuilder();
+}
+
+function voiceMemoHTML(){
+  const voice = aiBuilder.voice || makeVoiceState();
+  return '<div class="ai-voice-box">'
+    + '<div class="ai-voice-copy"><b>Say it naturally.</b><span>You do not need a perfect prompt. The app will help turn your thoughts into a structured goal brief.</span></div>'
+    + '<div class="hint">Audio is only used to create your transcript in this version. Raw audio is not permanently saved by the app.</div>'
+    + (!voice.supported ? '<div class="form-error">Voice recording is not supported in this browser yet. You can still type or paste your goal.</div>' : '')
+    + (voice.error ? '<div class="form-error">' + esc(voice.error) + '</div>' : '')
+    + '<div class="ai-voice-actions">'
+    + '<button class="btn gold voice-primary" id="aiRecordVoice" ' + (!voice.supported || voice.recording ? 'disabled' : '') + '>Record voice idea</button>'
+    + '<button class="btn voice-primary" id="aiStopVoice" ' + (voice.recording ? '' : 'disabled') + '>Stop recording</button>'
+    + '<span class="voice-duration" id="voiceDuration">' + esc(formatSeconds(voice.duration)) + '</span>'
+    + '</div>'
+    + (voice.audioUrl ? '<audio id="aiAudioPreview" src="' + esc(voice.audioUrl) + '" controls></audio>' : '')
+    + '<div class="ai-voice-actions">'
+    + '<button class="btn" id="aiPlayVoice" ' + (voice.audioUrl ? '' : 'disabled') + '>Play recording</button>'
+    + '<button class="btn" id="aiClearVoice" ' + (voice.audioUrl || voice.recording ? '' : 'disabled') + '>Clear recording</button>'
+    + '<button class="btn" id="aiTranscribeVoice" ' + (voice.audioUrl && !voice.loading ? '' : 'disabled') + '>' + (voice.loading ? 'Transcribing...' : 'Transcribe voice') + '</button>'
+    + '</div>'
+    + '<div class="field"><label>Transcript</label><textarea id="aiVoiceTranscript" placeholder="Your transcript will appear here after transcription. You can edit it before using it.">' + esc(voice.transcript || '') + '</textarea></div>'
+    + '<button class="btn" id="aiUseTranscript" ' + ((voice.transcript || '').trim() ? '' : 'disabled') + '>Use transcript as goal input</button>'
+    + '</div>';
+}
+
 function aiPromptHTML(){
   const p = aiBuilder.prompt;
   return '<div class="modal-box ai-modal"><div class="modal-head"><h3>Build path with AI</h3><button class="modal-x">x</button></div>'
@@ -637,6 +860,7 @@ function aiPromptHTML(){
     + '<div class="ai-note">Generate an editable starting point. Review and save only when it fits your plan.</div>'
     + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
     + '<div class="field"><label>Goal</label><textarea id="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
+    + voiceMemoHTML()
     + '<div class="ai-grid">'
     + '<div class="field"><label>Duration in days</label><input type="number" id="aiDuration" min="1" max="365" value="' + esc(p.durationDays) + '"/></div>'
     + '<div class="field"><label>Current level</label><select id="aiLevel">' + selectOptions(['beginner', 'intermediate', 'advanced'], p.currentLevel) + '</select></div>'
@@ -663,9 +887,19 @@ function aiPromptHTML(){
     + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>'
     + goalBriefHTML()
     + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn" id="aiClarify" ' + (aiBuilder.clarifyLoading ? 'disabled' : '') + '>' + (aiBuilder.clarifyLoading ? 'Clarifying...' : 'Clarify my goal') + '</button>'
-    + (aiBuilder.brief ? '<button class="btn gold" id="aiGenerateBrief" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate path from this brief') + '</button>' : '')
-    + '<button class="btn gold" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate draft') + '</button></div>'
+    + goalBriefActionHTML()
+    + '<button class="btn ' + (aiBuilder.brief ? '' : 'gold') + '" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : (aiBuilder.brief ? 'Generate draft directly' : 'Generate draft')) + '</button></div>'
     + '</div></div>';
+}
+
+function goalBriefActionHTML(){
+  if(!aiBuilder.brief) return '';
+  const ready = !!aiBuilder.brief.readyToGenerate;
+  if(ready){
+    return '<button class="btn gold" id="aiGenerateBrief" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate path from this brief') + '</button>';
+  }
+  return '<button class="btn gold" id="aiAnswerFirst" type="button">Answer questions first</button>'
+    + '<button class="btn" id="aiGenerateAnyway" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate anyway') + '</button>';
 }
 
 function goalBriefHTML(){
@@ -674,6 +908,7 @@ function goalBriefHTML(){
   const q = b.clarifyingQuestions || [];
   return '<div class="ai-brief-card">'
     + '<div class="ai-review-head"><b>Here\'s what I understood.</b><span class="muted">Confidence ' + Math.round((b.confidence || 0) * 100) + '%</span></div>'
+    + (!b.readyToGenerate ? '<div class="ai-warning">You can generate now, but this plan may be less accurate because some important details are missing.</div>' : '')
     + '<div class="ai-grid">'
     + '<div class="field"><label>Summary</label><textarea class="ai-brief-field" data-key="summary">' + esc(b.summary) + '</textarea></div>'
     + '<div class="field"><label>Goal</label><textarea class="ai-brief-field" data-key="goal">' + esc(b.goal) + '</textarea></div>'
@@ -694,7 +929,7 @@ function goalBriefHTML(){
     + '<div class="field"><label>Progressive targets</label><textarea class="ai-brief-targets" placeholder="area | current | target | unit | notes">' + esc(progressiveTargetsToText(b.progressiveTargets)) + '</textarea></div>'
     + '<div class="ai-grid">'
     + '<div class="field"><label>Assumptions</label><textarea class="ai-brief-array" data-key="assumptions" placeholder="One per line">' + esc(joinLines(b.assumptions)) + '</textarea></div>'
-    + '<div class="field"><label>Missing information</label><textarea class="ai-brief-array" data-key="missingCriticalInfo" placeholder="One per line">' + esc(joinLines(b.missingCriticalInfo)) + '</textarea></div>'
+    + '<div class="field"><label>Details that would improve your path</label><textarea class="ai-brief-array" data-key="missingCriticalInfo" placeholder="One per line">' + esc(joinLines(b.missingCriticalInfo)) + '</textarea></div>'
     + '</div>'
     + (q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>Clarifying questions</b><button class="add-link" id="aiApplyAnswers" type="button">Update brief with answers</button></div>'
       + q.map((question, i) => '<div class="field"><label>' + esc(question) + '</label><textarea class="ai-answer-field" data-i="' + i + '" placeholder="Your answer">' + esc(aiBuilder.clarifyingAnswers[i] || '') + '</textarea></div>').join('')
@@ -762,7 +997,16 @@ function renderAIBuilder(){
   const generate = $('aiGenerate'); if(generate) generate.onclick = () => generateAIPath(false);
   const clarify = $('aiClarify'); if(clarify) clarify.onclick = () => interpretGoalBrief(false);
   const generateBrief = $('aiGenerateBrief'); if(generateBrief) generateBrief.onclick = generatePathFromBrief;
+  const answerFirst = $('aiAnswerFirst'); if(answerFirst) answerFirst.onclick = focusClarifyingQuestions;
+  const generateAnyway = $('aiGenerateAnyway'); if(generateAnyway) generateAnyway.onclick = generatePathFromBrief;
   const basic = $('aiBasic'); if(basic) basic.onclick = () => generateAIPath(true);
+  const recordVoice = $('aiRecordVoice'); if(recordVoice) recordVoice.onclick = startVoiceRecording;
+  const stopVoice = $('aiStopVoice'); if(stopVoice) stopVoice.onclick = stopVoiceRecording;
+  const playVoice = $('aiPlayVoice'); if(playVoice) playVoice.onclick = () => $('aiAudioPreview')?.play();
+  const clearVoice = $('aiClearVoice'); if(clearVoice) clearVoice.onclick = clearVoiceRecording;
+  const transcribeVoice = $('aiTranscribeVoice'); if(transcribeVoice) transcribeVoice.onclick = transcribeVoiceRecording;
+  const useTranscript = $('aiUseTranscript'); if(useTranscript) useTranscript.onclick = useTranscriptAsGoalInput;
+  const voiceTranscript = $('aiVoiceTranscript'); if(voiceTranscript) voiceTranscript.addEventListener('input', e => { aiBuilder.voice.transcript = e.target.value; });
   const editPrompt = $('aiEditPrompt'); if(editPrompt) editPrompt.onclick = () => { aiBuilder.mode = 'prompt'; renderAIBuilder(); };
   const regenerate = $('aiRegenerate'); if(regenerate) regenerate.onclick = () => {
     if(aiBuilder.dirty && !confirm('Regenerate this draft and replace your edits?')) return;
@@ -902,6 +1146,13 @@ function generatePathFromBrief(){
     resourceLinks:prompt.resourceLinks || '',
   };
   generateAIPath(false, aiBuilder.prompt);
+}
+
+function focusClarifyingQuestions(){
+  const questions = aiBuilder.overlay?.querySelector('.ai-questions') || aiBuilder.overlay?.querySelector('.ai-brief-card');
+  if(questions) questions.scrollIntoView({ behavior:'smooth', block:'start' });
+  const firstAnswer = aiBuilder.overlay?.querySelector('.ai-answer-field');
+  if(firstAnswer) firstAnswer.focus();
 }
 
 async function generateAIPath(forceBasic, promptOverride = null){
