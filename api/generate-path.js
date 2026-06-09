@@ -125,6 +125,18 @@ function normalizePrompt(body = {}){
   const nonNegotiables = Array.isArray(body.nonNegotiables)
     ? body.nonNegotiables.map(x => text(x).slice(0, 100)).filter(Boolean).slice(0, 12)
     : [];
+  const assumptions = Array.isArray(body.assumptions)
+    ? body.assumptions.map(x => text(x).slice(0, 220)).filter(Boolean).slice(0, 12)
+    : [];
+  const progressiveTargets = Array.isArray(body.progressiveTargets)
+    ? body.progressiveTargets.slice(0, 8).map(target => ({
+      area: text(target.area).slice(0, 100),
+      currentValue: Number.isFinite(Number(target.currentValue)) ? Number(target.currentValue) : null,
+      targetValue: Number.isFinite(Number(target.targetValue)) ? Number(target.targetValue) : null,
+      unit: text(target.unit).slice(0, 40) || null,
+      notes: text(target.notes).slice(0, 240) || null,
+    })).filter(target => target.area || target.notes)
+    : [];
   return {
     goal,
     durationDays,
@@ -145,6 +157,9 @@ function normalizePrompt(body = {}){
     visibility: ['private', 'unlisted', 'public'].includes(body.visibility) ? body.visibility : 'private',
     description: text(body.description).slice(0, 500),
     nonNegotiables,
+    assumptions,
+    progressiveTargets,
+    clarifiedBrief: body.clarifiedBrief && typeof body.clarifiedBrief === 'object' ? body.clarifiedBrief : null,
   };
 }
 
@@ -355,6 +370,9 @@ function buildPrompt(input){
     'Create an editable progressive proof-of-growth roadmap for this app. Do not claim deep research or cite sources.',
     'Do not generate generic static paths.',
     'Base the path on the user current stage, baseline, target outcome, constraints, and available time.',
+    'If a clarifiedBrief is provided, treat it as the user-confirmed source of truth.',
+    'Use progressiveTargets as explicit progression requirements when present.',
+    'Include assumptions as labeled notes, not as facts.',
     'If current stage is missing, make a conservative beginner-safe assumption and mention it in notes.',
     'Use durationDays and scheduleType instead of generating one task per day.',
     'Use recurring task structures. Do not generate 365 individual tasks for a 1-year path.',

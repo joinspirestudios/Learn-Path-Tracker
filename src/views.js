@@ -203,6 +203,33 @@ function aiPromptDefaults(){
     visibility:'private',
     description:'',
     nonNegotiables:[],
+    assumptions:[],
+    progressiveTargets:[],
+    clarifiedBrief:null,
+  };
+}
+
+function aiBriefDefaults(){
+  return {
+    summary:'',
+    goal:'',
+    pathType:'custom',
+    currentStage:'',
+    desiredEndState:'',
+    durationDays:null,
+    intensity:'',
+    dailyTimeAvailable:'',
+    knownTasks:[],
+    nonNegotiables:[],
+    constraints:[],
+    resourcesMentioned:[],
+    evidencePreference:'',
+    progressiveTargets:[],
+    assumptions:[],
+    missingCriticalInfo:[],
+    clarifyingQuestions:[],
+    confidence:0,
+    readyToGenerate:false,
   };
 }
 
@@ -220,6 +247,105 @@ function nullableNumber(value){
   if(value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function splitLines(value){
+  return String(value || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+}
+
+function joinLines(value){
+  return (Array.isArray(value) ? value : []).filter(Boolean).join('\n');
+}
+
+function normalizeGoalBrief(raw = {}){
+  const base = aiBriefDefaults();
+  const durationDays = raw.durationDays == null || raw.durationDays === '' ? null : clampDay(raw.durationDays, 75, 365);
+  return {
+    ...base,
+    summary:String(raw.summary || '').slice(0, 700),
+    goal:String(raw.goal || '').slice(0, 700),
+    pathType:['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'].includes(raw.pathType) ? raw.pathType : 'custom',
+    currentStage:String(raw.currentStage || '').slice(0, 700),
+    desiredEndState:String(raw.desiredEndState || '').slice(0, 700),
+    durationDays,
+    intensity:['light', 'moderate', 'intense'].includes(raw.intensity) ? raw.intensity : '',
+    dailyTimeAvailable:String(raw.dailyTimeAvailable || '').slice(0, 120),
+    knownTasks:Array.isArray(raw.knownTasks) ? raw.knownTasks.map(x => String(x || '').trim()).filter(Boolean).slice(0, 16) : [],
+    nonNegotiables:Array.isArray(raw.nonNegotiables) ? raw.nonNegotiables.map(x => String(x || '').trim()).filter(Boolean).slice(0, 16) : [],
+    constraints:Array.isArray(raw.constraints) ? raw.constraints.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
+    resourcesMentioned:Array.isArray(raw.resourcesMentioned) ? raw.resourcesMentioned.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
+    evidencePreference:String(raw.evidencePreference || '').slice(0, 220),
+    progressiveTargets:(Array.isArray(raw.progressiveTargets) ? raw.progressiveTargets : []).slice(0, 8).map(target => ({
+      area:String(target.area || '').slice(0, 100),
+      currentValue:nullableNumber(target.currentValue),
+      targetValue:nullableNumber(target.targetValue),
+      unit:String(target.unit || '').slice(0, 40),
+      notes:String(target.notes || '').slice(0, 240),
+    })).filter(target => target.area || target.notes),
+    assumptions:Array.isArray(raw.assumptions) ? raw.assumptions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
+    missingCriticalInfo:Array.isArray(raw.missingCriticalInfo) ? raw.missingCriticalInfo.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
+    clarifyingQuestions:Array.isArray(raw.clarifyingQuestions) ? raw.clarifyingQuestions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) : [],
+    confidence:Number.isFinite(Number(raw.confidence)) ? Math.max(0, Math.min(1, Number(raw.confidence))) : 0,
+    readyToGenerate:!!raw.readyToGenerate,
+  };
+}
+
+function progressiveTargetsFromText(value){
+  return String(value || '').split(/\n+/).map(line => {
+    const parts = line.split('|').map(x => x.trim());
+    return {
+      area:parts[0] || '',
+      currentValue:nullableNumber(parts[1]),
+      targetValue:nullableNumber(parts[2]),
+      unit:parts[3] || '',
+      notes:parts.slice(4).join(' | '),
+    };
+  }).filter(target => target.area || target.notes);
+}
+
+function progressiveTargetsToText(targets){
+  return (Array.isArray(targets) ? targets : []).map(target => [
+    target.area || '',
+    target.currentValue == null ? '' : target.currentValue,
+    target.targetValue == null ? '' : target.targetValue,
+    target.unit || '',
+    target.notes || '',
+  ].join(' | ')).join('\n');
+}
+
+function briefToPromptPatch(brief){
+  const b = normalizeGoalBrief(brief);
+  const targetLines = (b.progressiveTargets || []).map(target => {
+    const range = [target.currentValue, target.targetValue].filter(v => v != null).join(' to ');
+    return [target.area, range ? '(' + range + (target.unit ? ' ' + target.unit : '') + ')' : '', target.notes].filter(Boolean).join(' ');
+  });
+  const briefText = [
+    b.summary ? 'Summary: ' + b.summary : '',
+    b.goal ? 'Goal: ' + b.goal : '',
+    b.currentStage ? 'Current stage: ' + b.currentStage : '',
+    b.desiredEndState ? 'Desired end state: ' + b.desiredEndState : '',
+    targetLines.length ? 'Progressive targets: ' + targetLines.join('; ') : '',
+    b.assumptions.length ? 'Assumptions: ' + b.assumptions.join('; ') : '',
+  ].filter(Boolean).join('\n');
+  return {
+    goal:b.goal || b.summary,
+    durationDays:b.durationDays || aiBuilder.prompt.durationDays || 75,
+    intensity:b.intensity || aiBuilder.prompt.intensity || 'moderate',
+    pathType:b.pathType || aiBuilder.prompt.pathType || 'custom',
+    currentStage:b.currentStage || aiBuilder.prompt.currentStage || '',
+    desiredEndState:b.desiredEndState || aiBuilder.prompt.desiredEndState || '',
+    baseline:b.progressiveTargets.length ? targetLines.join('; ') : (aiBuilder.prompt.baseline || ''),
+    targetOutcome:b.desiredEndState || aiBuilder.prompt.targetOutcome || '',
+    constraints:b.constraints.join('\n') || aiBuilder.prompt.constraints || '',
+    existingResources:b.resourcesMentioned.join('\n') || aiBuilder.prompt.existingResources || '',
+    dailyTime:b.dailyTimeAvailable || aiBuilder.prompt.dailyTime || '',
+    evidenceStyle:b.evidencePreference || aiBuilder.prompt.evidenceStyle || '',
+    includeTasks:[joinLines(b.knownTasks), briefText].filter(Boolean).join('\n\n'),
+    nonNegotiables:b.nonNegotiables.length ? b.nonNegotiables : aiBuilder.prompt.nonNegotiables,
+    assumptions:b.assumptions,
+    progressiveTargets:b.progressiveTargets,
+    clarifiedBrief:b,
+  };
 }
 
 function normalizeTaskMode(value, scheduleType){
@@ -459,8 +585,11 @@ function openAIPathBuilder(){
     prompt: aiBuilder?.prompt || aiPromptDefaults(),
     draft: aiBuilder?.draft || null,
     loading:false,
+    clarifyLoading:false,
     error:'',
     message:'',
+    brief: aiBuilder?.brief || null,
+    clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
     dirty:false,
   };
   overlay.addEventListener('click', e => { if(e.target === overlay) closeAIBuilder(); });
@@ -494,6 +623,9 @@ function collectAIPrompt(){
     visibility:$('aiVisibility')?.value || 'private',
     description:($('aiDescription')?.value || '').trim(),
     nonNegotiables,
+    assumptions:aiBuilder.brief?.assumptions || [],
+    progressiveTargets:aiBuilder.brief?.progressiveTargets || [],
+    clarifiedBrief:aiBuilder.brief || null,
   };
   return aiBuilder.prompt;
 }
@@ -529,8 +661,45 @@ function aiPromptHTML(){
     + '<div class="field"><label>Tasks to include</label><textarea id="aiInclude" placeholder="Tasks you already know you want">' + esc(p.includeTasks) + '</textarea></div>'
     + '<div class="field"><label>Tasks to avoid</label><textarea id="aiExclude" placeholder="Anything you do not want included">' + esc(p.excludeTasks) + '</textarea></div>'
     + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>'
-    + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn gold" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate draft') + '</button></div>'
+    + goalBriefHTML()
+    + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn" id="aiClarify" ' + (aiBuilder.clarifyLoading ? 'disabled' : '') + '>' + (aiBuilder.clarifyLoading ? 'Clarifying...' : 'Clarify my goal') + '</button>'
+    + (aiBuilder.brief ? '<button class="btn gold" id="aiGenerateBrief" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate path from this brief') + '</button>' : '')
+    + '<button class="btn gold" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate draft') + '</button></div>'
     + '</div></div>';
+}
+
+function goalBriefHTML(){
+  if(!aiBuilder.brief) return '';
+  const b = normalizeGoalBrief(aiBuilder.brief);
+  const q = b.clarifyingQuestions || [];
+  return '<div class="ai-brief-card">'
+    + '<div class="ai-review-head"><b>Here\'s what I understood.</b><span class="muted">Confidence ' + Math.round((b.confidence || 0) * 100) + '%</span></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Summary</label><textarea class="ai-brief-field" data-key="summary">' + esc(b.summary) + '</textarea></div>'
+    + '<div class="field"><label>Goal</label><textarea class="ai-brief-field" data-key="goal">' + esc(b.goal) + '</textarea></div>'
+    + '<div class="field"><label>Path type</label><select class="ai-brief-field" data-key="pathType">' + selectOptions(['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'], b.pathType) + '</select></div>'
+    + '<div class="field"><label>Intensity</label><select class="ai-brief-field" data-key="intensity"><option value="">Unknown</option>' + selectOptions(['light', 'moderate', 'intense'], b.intensity) + '</select></div>'
+    + '<div class="field"><label>Duration days</label><input type="number" class="ai-brief-field" data-key="durationDays" value="' + esc(b.durationDays || '') + '" placeholder="75"/></div>'
+    + '<div class="field"><label>Daily time</label><input type="text" class="ai-brief-field" data-key="dailyTimeAvailable" value="' + esc(b.dailyTimeAvailable) + '" placeholder="30 minutes"/></div>'
+    + '</div>'
+    + '<div class="field"><label>Current stage</label><textarea class="ai-brief-field" data-key="currentStage">' + esc(b.currentStage) + '</textarea></div>'
+    + '<div class="field"><label>Desired end state</label><textarea class="ai-brief-field" data-key="desiredEndState">' + esc(b.desiredEndState) + '</textarea></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Known tasks</label><textarea class="ai-brief-array" data-key="knownTasks" placeholder="One per line">' + esc(joinLines(b.knownTasks)) + '</textarea></div>'
+    + '<div class="field"><label>Non-negotiables</label><textarea class="ai-brief-array" data-key="nonNegotiables" placeholder="One per line">' + esc(joinLines(b.nonNegotiables)) + '</textarea></div>'
+    + '<div class="field"><label>Constraints</label><textarea class="ai-brief-array" data-key="constraints" placeholder="One per line">' + esc(joinLines(b.constraints)) + '</textarea></div>'
+    + '<div class="field"><label>Resources mentioned</label><textarea class="ai-brief-array" data-key="resourcesMentioned" placeholder="One per line">' + esc(joinLines(b.resourcesMentioned)) + '</textarea></div>'
+    + '</div>'
+    + '<div class="field"><label>Evidence preference</label><input type="text" class="ai-brief-field" data-key="evidencePreference" value="' + esc(b.evidencePreference) + '"/></div>'
+    + '<div class="field"><label>Progressive targets</label><textarea class="ai-brief-targets" placeholder="area | current | target | unit | notes">' + esc(progressiveTargetsToText(b.progressiveTargets)) + '</textarea></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Assumptions</label><textarea class="ai-brief-array" data-key="assumptions" placeholder="One per line">' + esc(joinLines(b.assumptions)) + '</textarea></div>'
+    + '<div class="field"><label>Missing information</label><textarea class="ai-brief-array" data-key="missingCriticalInfo" placeholder="One per line">' + esc(joinLines(b.missingCriticalInfo)) + '</textarea></div>'
+    + '</div>'
+    + (q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>Clarifying questions</b><button class="add-link" id="aiApplyAnswers" type="button">Update brief with answers</button></div>'
+      + q.map((question, i) => '<div class="field"><label>' + esc(question) + '</label><textarea class="ai-answer-field" data-i="' + i + '" placeholder="Your answer">' + esc(aiBuilder.clarifyingAnswers[i] || '') + '</textarea></div>').join('')
+      + '</div>' : '')
+    + '</div>';
 }
 
 function aiReviewHTML(){
@@ -591,6 +760,8 @@ function renderAIBuilder(){
   if(close) close.onclick = closeAIBuilder;
   const cancel = $('aiCancel'); if(cancel) cancel.onclick = closeAIBuilder;
   const generate = $('aiGenerate'); if(generate) generate.onclick = () => generateAIPath(false);
+  const clarify = $('aiClarify'); if(clarify) clarify.onclick = () => interpretGoalBrief(false);
+  const generateBrief = $('aiGenerateBrief'); if(generateBrief) generateBrief.onclick = generatePathFromBrief;
   const basic = $('aiBasic'); if(basic) basic.onclick = () => generateAIPath(true);
   const editPrompt = $('aiEditPrompt'); if(editPrompt) editPrompt.onclick = () => { aiBuilder.mode = 'prompt'; renderAIBuilder(); };
   const regenerate = $('aiRegenerate'); if(regenerate) regenerate.onclick = () => {
@@ -598,6 +769,28 @@ function renderAIBuilder(){
     generateAIPath(false);
   };
   const save = $('aiSave'); if(save) save.onclick = saveGeneratedPath;
+  const applyAnswers = $('aiApplyAnswers'); if(applyAnswers) applyAnswers.onclick = () => interpretGoalBrief(true);
+  aiBuilder.overlay.querySelectorAll('.ai-brief-field').forEach(el => {
+    const handler = e => {
+      const key = e.target.dataset.key;
+      if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
+      if(key === 'durationDays') aiBuilder.brief[key] = e.target.value ? clampDay(e.target.value, 75, 365) : null;
+      else aiBuilder.brief[key] = e.target.value;
+    };
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', handler);
+  });
+  aiBuilder.overlay.querySelectorAll('.ai-brief-array').forEach(el => el.addEventListener('input', e => {
+    if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
+    aiBuilder.brief[e.target.dataset.key] = splitLines(e.target.value);
+  }));
+  const targetInput = aiBuilder.overlay.querySelector('.ai-brief-targets');
+  if(targetInput) targetInput.addEventListener('input', e => {
+    if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
+    aiBuilder.brief.progressiveTargets = progressiveTargetsFromText(e.target.value);
+  });
+  aiBuilder.overlay.querySelectorAll('.ai-answer-field').forEach(el => el.addEventListener('input', e => {
+    aiBuilder.clarifyingAnswers[Number(e.target.dataset.i)] = e.target.value;
+  }));
   aiBuilder.overlay.querySelectorAll('.ai-draft-field').forEach(el => el.addEventListener('input', e => {
     const key = e.target.dataset.key;
     aiBuilder.draft[key] = key === 'durationDays' ? clampDay(e.target.value, aiBuilder.draft.durationDays, 365) : e.target.value;
@@ -643,8 +836,76 @@ function runAIAction(action, i){
   renderAIBuilder();
 }
 
-async function generateAIPath(forceBasic){
+async function interpretGoalBrief(withAnswers){
   const prompt = collectAIPrompt();
+  if(!prompt.goal && !aiBuilder.brief){
+    aiBuilder.error = 'Paste rough goal notes before clarifying.';
+    renderAIBuilder();
+    return;
+  }
+  const questions = aiBuilder.brief?.clarifyingQuestions || [];
+  const answers = withAnswers ? questions.map((question, i) => ({
+    question,
+    answer:String(aiBuilder.clarifyingAnswers[i] || '').trim(),
+  })).filter(item => item.answer) : [];
+  if(withAnswers && !answers.length){
+    aiBuilder.error = 'Answer at least one clarifying question first.';
+    renderAIBuilder();
+    return;
+  }
+  aiBuilder.clarifyLoading = true;
+  aiBuilder.error = '';
+  aiBuilder.message = '';
+  renderAIBuilder();
+  try{
+    const res = await fetch('/api/interpret-goal', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body:JSON.stringify({
+        roughGoal:prompt.goal,
+        context:prompt,
+        previousBrief:withAnswers ? aiBuilder.brief : null,
+        answers,
+      }),
+    });
+    const payload = await res.json();
+    if(!res.ok || !payload.ok){
+      const err = new Error(payload.message || 'Could not clarify this goal.');
+      err.code = payload.code || '';
+      throw err;
+    }
+    aiBuilder.brief = normalizeGoalBrief(payload.brief);
+    aiBuilder.clarifyingAnswers = {};
+    aiBuilder.message = payload.message || "Here's what I understood. Review and answer anything missing.";
+  }catch(e){
+    aiBuilder.error = e.message || 'Could not clarify this goal.';
+  }finally{
+    aiBuilder.clarifyLoading = false;
+    renderAIBuilder();
+  }
+}
+
+function generatePathFromBrief(){
+  if(!aiBuilder.brief){
+    generateAIPath(false);
+    return;
+  }
+  const prompt = collectAIPrompt();
+  const patch = briefToPromptPatch(aiBuilder.brief);
+  aiBuilder.prompt = {
+    ...prompt,
+    ...patch,
+    visibility:prompt.visibility || 'private',
+    currentLevel:prompt.currentLevel || 'beginner',
+    description:prompt.description || patch.goal || patch.summary || '',
+    excludeTasks:prompt.excludeTasks || '',
+    resourceLinks:prompt.resourceLinks || '',
+  };
+  generateAIPath(false, aiBuilder.prompt);
+}
+
+async function generateAIPath(forceBasic, promptOverride = null){
+  const prompt = promptOverride || collectAIPrompt();
   if(!prompt.goal){
     aiBuilder.error = 'Add a goal before generating a path.';
     renderAIBuilder();

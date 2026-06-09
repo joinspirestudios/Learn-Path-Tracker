@@ -50,16 +50,26 @@ implemented in this phase.
 ## Phase 4 AI Path Generator
 
 Signed-in users can choose **Build path with AI** from the catalog or the manual
-create-path modal. The guided builder asks for a goal, duration, level, current
-stage, desired end state, baseline, target outcome, constraints, optional
-resources, preferred proof style, and daily non-negotiables. It then creates an
-editable draft that the user must review before saving.
+create-path modal. The guided builder accepts rough goal notes, or a cleaner
+goal, duration, level, current stage, desired end state, baseline, target
+outcome, constraints, optional resources, preferred proof style, and daily
+non-negotiables. It then creates an editable draft that the user must review
+before saving.
+
+Phase 4.4 adds a messy-goal interpreter before generation. Users can paste
+scattered notes and choose **Clarify my goal**. The app calls
+`api/interpret-goal.js` server-side, asks Claude to use the
+`interpret_goal_brief` tool, and shows **Here's what I understood.** The user can
+edit the structured brief, answer clarifying questions, and then generate the
+path from the confirmed brief.
 
 The generator is intentionally a starting-point tool:
 
 - It saves generated paths as private by default.
 - It uses Anthropic tool use / structured output through a
   `create_learning_path` tool, with defensive JSON parsing only as a fallback.
+- It uses a separate `interpret_goal_brief` tool for messy goal interpretation
+  and clarifying questions before path generation.
 - It creates progressive growth paths, not static generic checklists.
 - It uses `scheduleType: "daily"` tasks for recurring work and
   `scheduleType: "once"` tasks for milestones and reviews.
@@ -75,12 +85,15 @@ The generator is intentionally a starting-point tool:
   `startValue`, `targetValue`, `progressionCurve`, and `progressionNotes`.
   The daily journey view displays a day-specific target when those fields are
   present.
+- Clarified briefs can pass current stage, desired end state, progressive
+  targets, fixed non-negotiables, constraints, resources, and labeled
+  assumptions into the generator.
 - It preserves `durationDays`, task schedules, and `evidenceRequired`.
 - It does not publish generated paths publicly unless the user changes
   visibility.
 
-AI calls use Anthropic Claude server-side through `api/generate-path.js`. The
-frontend never needs or receives an AI API key.
+AI calls use Anthropic Claude server-side through `api/generate-path.js` and
+`api/interpret-goal.js`. The frontend never needs or receives an AI API key.
 
 Server-side AI configuration:
 
@@ -99,10 +112,13 @@ be validated, the app shows an error and keeps the prompt open for retry.
 Limitations:
 
 - Generated output must be reviewed and edited by the user before saving.
+- Clarified briefs depend on user confirmation; unclear or missing details can
+  still produce bad plans if the user skips review.
 - The generator does not perform real web research and must not be treated as
   deep research.
 - It does not create fake citations or fake sources.
 - The app recommends tasks/resources but does not teach full lessons internally.
+- Voice memo capture is not implemented yet; it is a future input method.
 - Fitness/challenge plans are not medical advice; users should adapt intensity
   to their health, ability, and professional guidance.
 - AI does not verify whether submitted evidence is truthful.
@@ -115,6 +131,9 @@ not implemented in this phase.
 ## Project structure
 
 The project uses real folders, not literal backslash filenames:
+
+Current API routes include `api/analyze.js`, `api/generate-path.js`, and
+`api/interpret-goal.js`.
 
 ```text
 mastery-tracker/
