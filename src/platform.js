@@ -137,8 +137,15 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         order: ti,
         unlockDay: task.unlockDay == null ? null : Number(task.unlockDay),
         scheduleType: task.scheduleType || (task.unlockDay == null && task.startDay == null ? null : 'once'),
+        taskMode: task.taskMode || null,
         startDay: task.startDay == null ? null : Number(task.startDay),
         endDay: task.endDay == null ? null : Number(task.endDay),
+        progressionMetric: task.progressionMetric || null,
+        progressionUnit: task.progressionUnit || null,
+        startValue: task.startValue == null ? null : Number(task.startValue),
+        targetValue: task.targetValue == null ? null : Number(task.targetValue),
+        progressionCurve: task.progressionCurve || null,
+        progressionNotes: task.progressionNotes || null,
         kind: 'task',
       });
     });
@@ -153,8 +160,15 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         order: 1000 + ri,
         unlockDay: null,
         scheduleType: 'once',
+        taskMode: 'one_off',
         startDay: null,
         endDay: null,
+        progressionMetric: null,
+        progressionUnit: null,
+        startValue: null,
+        targetValue: null,
+        progressionCurve: null,
+        progressionNotes: null,
         kind: 'resource',
       });
     });
@@ -181,8 +195,15 @@ export function platformToLocalPath(record){
         evidenceRequired: !!task.evidenceRequired,
         unlockDay: task.unlockDay == null ? null : task.unlockDay,
         scheduleType: task.scheduleType || (task.unlockDay == null && task.startDay == null ? null : 'once'),
+        taskMode: task.taskMode || null,
         startDay: task.startDay == null ? null : task.startDay,
         endDay: task.endDay == null ? null : task.endDay,
+        progressionMetric: task.progressionMetric || null,
+        progressionUnit: task.progressionUnit || null,
+        startValue: task.startValue == null ? null : task.startValue,
+        targetValue: task.targetValue == null ? null : task.targetValue,
+        progressionCurve: task.progressionCurve || null,
+        progressionNotes: task.progressionNotes || null,
         order: task.order || 0,
       });
     }

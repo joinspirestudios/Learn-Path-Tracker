@@ -3,11 +3,13 @@ import Anthropic from '@anthropic-ai/sdk';
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const INTENSITIES = ['light', 'moderate', 'intense'];
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'];
+const TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequential_learning'];
+const PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 const TOOL_NAME = 'create_learning_path';
 
 const PATH_DRAFT_TOOL = {
   name: TOOL_NAME,
-  description: 'Create a structured learning/challenge path draft for the Learn Path Tracker app.',
+  description: 'Create a structured progressive learning/challenge path draft for the Learn Path Tracker app.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -47,16 +49,25 @@ const PATH_DRAFT_TOOL = {
           additionalProperties: false,
           required: [
             'title', 'description', 'sectionTitle', 'scheduleType', 'startDay',
-            'endDay', 'unlockDay', 'evidenceRequired', 'resourceUrl', 'order',
+            'endDay', 'unlockDay', 'taskMode', 'progressionMetric',
+            'progressionUnit', 'startValue', 'targetValue', 'progressionCurve',
+            'progressionNotes', 'evidenceRequired', 'resourceUrl', 'order',
           ],
           properties: {
             title: { type: 'string' },
             description: { type: 'string' },
             sectionTitle: { type: 'string' },
             scheduleType: { type: 'string', enum: ['once', 'daily'] },
+            taskMode: { type: 'string', enum: TASK_MODES },
             startDay: { type: 'number' },
             endDay: { anyOf: [{ type: 'number' }, { type: 'null' }] },
             unlockDay: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+            progressionMetric: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+            progressionUnit: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+            startValue: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+            targetValue: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+            progressionCurve: { anyOf: [{ type: 'string', enum: PROGRESSION_CURVES }, { type: 'null' }] },
+            progressionNotes: { anyOf: [{ type: 'string' }, { type: 'null' }] },
             evidenceRequired: { type: 'boolean' },
             resourceUrl: { anyOf: [{ type: 'string' }, { type: 'null' }] },
             order: { type: 'number' },
@@ -71,7 +82,7 @@ const PATH_DRAFT_TOOL = {
           required: ['title', 'url', 'description'],
           properties: {
             title: { type: 'string' },
-            url: { type: 'string' },
+            url: { anyOf: [{ type: 'string' }, { type: 'null' }] },
             description: { type: 'string' },
           },
         },
@@ -121,6 +132,12 @@ function normalizePrompt(body = {}){
     intensity,
     pathType,
     resourceLinks: text(body.resourceLinks).slice(0, 1000),
+    currentStage: text(body.currentStage).slice(0, 700),
+    desiredEndState: text(body.desiredEndState).slice(0, 700),
+    baseline: text(body.baseline).slice(0, 700),
+    targetOutcome: text(body.targetOutcome).slice(0, 700),
+    constraints: text(body.constraints).slice(0, 700),
+    existingResources: text(body.existingResources).slice(0, 1000),
     dailyTime: text(body.dailyTime).slice(0, 80),
     evidenceStyle: text(body.evidenceStyle).slice(0, 160),
     includeTasks: text(body.includeTasks).slice(0, 1000),
@@ -160,9 +177,16 @@ function basicStarterDraft(input, source = 'fallback'){
       description:'Repeat this commitment during the path.',
       sectionTitle:'Foundation',
       scheduleType:'daily',
+      taskMode:'fixed_recurring',
       startDay:1,
       endDay:durationDays,
       unlockDay:null,
+      progressionMetric:null,
+      progressionUnit:null,
+      startValue:null,
+      targetValue:null,
+      progressionCurve:null,
+      progressionNotes:null,
       evidenceRequired: proof || /proof/.test(input.evidenceStyle.toLowerCase()),
       resourceUrl:null,
       order:i,
@@ -175,9 +199,16 @@ function basicStarterDraft(input, source = 'fallback'){
       description:'Look at what worked, what got skipped, and what needs to change.',
       sectionTitle:sectionForDay(day, durationDays),
       scheduleType:'once',
+      taskMode:'one_off',
       startDay:day,
       endDay:null,
       unlockDay:day,
+      progressionMetric:null,
+      progressionUnit:null,
+      startValue:null,
+      targetValue:null,
+      progressionCurve:null,
+      progressionNotes:null,
       evidenceRequired:false,
       resourceUrl:null,
       order:tasks.length,
@@ -188,9 +219,16 @@ function basicStarterDraft(input, source = 'fallback'){
     description:'Summarize progress, proof, lessons, and the next commitment.',
     sectionTitle:'Ship and review',
     scheduleType:'once',
+    taskMode:'one_off',
     startDay:durationDays,
     endDay:null,
     unlockDay:durationDays,
+    progressionMetric:null,
+    progressionUnit:null,
+    startValue:null,
+    targetValue:null,
+    progressionCurve:null,
+    progressionNotes:null,
     evidenceRequired:true,
     resourceUrl:null,
     order:tasks.length,
@@ -225,6 +263,28 @@ function parseResources(raw){
   }));
 }
 
+function cleanNullableText(value, max = 160){
+  const cleaned = text(value).slice(0, max);
+  return cleaned || null;
+}
+
+function cleanNullableNumber(value){
+  if(value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeTaskMode(value, scheduleType){
+  if(TASK_MODES.includes(value)) return value;
+  return scheduleType === 'daily' ? 'fixed_recurring' : 'one_off';
+}
+
+function normalizeProgressionCurve(value, taskMode){
+  if(value == null || value === '') return null;
+  if(PROGRESSION_CURVES.includes(value)) return value;
+  return taskMode === 'progressive_recurring' ? 'gradual' : null;
+}
+
 function normalizeDraft(raw, input, source = 'ai'){
   if(!raw || typeof raw !== 'object') throw new Error('Generator returned an invalid draft.');
   const durationDays = clamp(raw.durationDays || input.durationDays, 1, 365);
@@ -241,14 +301,22 @@ function normalizeDraft(raw, input, source = 'ai'){
     const endDay = scheduleType === 'daily' ? clamp(t.endDay || durationDays, startDay, durationDays) : null;
     const unlockDay = scheduleType === 'once' ? clamp(t.unlockDay || startDay, 1, durationDays) : null;
     const sectionTitle = sectionNames.has(t.sectionTitle) ? t.sectionTitle : sections[Math.min(sections.length - 1, Math.floor((startDay - 1) / Math.max(1, Math.ceil(durationDays / sections.length))))].title;
+    const taskMode = normalizeTaskMode(t.taskMode, scheduleType);
     return {
       title:text(t.title, 'Task ' + (i + 1)).slice(0, 140),
       description:text(t.description).slice(0, 500),
       sectionTitle,
       scheduleType,
+      taskMode,
       startDay,
       endDay,
       unlockDay,
+      progressionMetric:cleanNullableText(t.progressionMetric, 80),
+      progressionUnit:cleanNullableText(t.progressionUnit, 40),
+      startValue:cleanNullableNumber(t.startValue),
+      targetValue:cleanNullableNumber(t.targetValue),
+      progressionCurve:normalizeProgressionCurve(t.progressionCurve, taskMode),
+      progressionNotes:cleanNullableText(t.progressionNotes, 300),
       evidenceRequired:!!t.evidenceRequired,
       resourceUrl:cleanUrl(t.resourceUrl),
       order:Number.isFinite(Number(t.order)) ? Number(t.order) : i,
@@ -271,9 +339,9 @@ function normalizeDraft(raw, input, source = 'ai'){
     tasks:tasks.sort((a, b) => a.order - b.order),
     resources:(Array.isArray(raw.resources) ? raw.resources : []).slice(0, 12).map((r, i) => ({
       title:text(r.title, 'Resource ' + (i + 1)).slice(0, 100),
-      url:cleanUrl(r.url) || '',
+      url:cleanUrl(r.url),
       description:text(r.description).slice(0, 300),
-    })).filter(r => r.url),
+    })).filter(r => r.title || r.url || r.description),
     notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => text(n).slice(0, 300)).filter(Boolean).slice(0, 8),
     source,
   };
@@ -284,13 +352,22 @@ function buildPrompt(input){
     'Use the create_learning_path tool to return the path draft.',
     'Do not return prose.',
     'Do not return markdown.',
-    'Create an editable learning path draft for this app. Do not claim deep research or cite sources.',
+    'Create an editable progressive proof-of-growth roadmap for this app. Do not claim deep research or cite sources.',
+    'Do not generate generic static paths.',
+    'Base the path on the user current stage, baseline, target outcome, constraints, and available time.',
+    'If current stage is missing, make a conservative beginner-safe assumption and mention it in notes.',
     'Use durationDays and scheduleType instead of generating one task per day.',
-    'Use daily recurring tasks for habits and once tasks for milestones.',
+    'Use recurring task structures. Do not generate 365 individual tasks for a 1-year path.',
+    'Use fixed_recurring for tasks that truly stay the same daily.',
+    'Use progressive_recurring for habits that should grow over time: running distance, workout difficulty, deep work duration, language speaking complexity, design project complexity, editing practice complexity, and similar work.',
+    'Use sequential_learning for skills where concepts build in order: French speaking, 3D, editing, coding, design, and similar skills.',
+    'Use one_off for milestone checks, reviews, tests, recordings, deliverables, and projects.',
     'Keep durationDays within 1-365.',
-    'Make the path realistic and editable.',
-    'Avoid unsafe medical or fitness prescriptions. Include a safety note for fitness/challenge paths.',
+    'Make the path realistic, current-stage-aware, progressive, and editable.',
+    'For fitness/health challenges, avoid unsafe progression and include a safety note.',
     'Set evidenceRequired true only where proof matters: workouts, running/walking, course progress, uploaded work, public posts, project deliverables.',
+    'Recommend resources only when useful, and do not invent fake URLs. If a resource URL is unknown, use null and describe the kind of resource in the task/resource description.',
+    'The app recommends tasks/resources but does not teach full lessons internally.',
     'Input: ' + JSON.stringify(input),
   ].join('\n');
 }
@@ -312,7 +389,7 @@ function parseJsonTextFallback(content){
   try{
     return JSON.parse(trimmed);
   }catch(e){
-    throw codedError('Claude returned a path draft that could not be validated. Please regenerate.', 'invalid_ai_output', 502);
+    throw codedError('Claude returned invalid JSON. Please regenerate.', 'invalid_ai_json', 502);
   }
 }
 

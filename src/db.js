@@ -604,8 +604,15 @@ export async function dbSavePlatformPath(id){
       order:t.order || 0,
       unlockDay:t.unlockDay == null ? null : t.unlockDay,
       scheduleType:t.scheduleType || null,
+      taskMode:t.taskMode || null,
       startDay:t.startDay == null ? null : t.startDay,
       endDay:t.endDay == null ? null : t.endDay,
+      progressionMetric:t.progressionMetric || null,
+      progressionUnit:t.progressionUnit || null,
+      startValue:t.startValue == null ? null : t.startValue,
+      targetValue:t.targetValue == null ? null : t.targetValue,
+      progressionCurve:t.progressionCurve || null,
+      progressionNotes:t.progressionNotes || null,
       kind:t.kind || 'task',
     }, { merge:true })));
     const record = { id, path:{ ...path, ownerId }, sections, tasks, membership: ownerSaving ? { uid:ownerId, role:'owner' } : local.membership };

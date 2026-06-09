@@ -1,6 +1,8 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const OPEN_STATUSES = ['active', 'completed', 'missed', 'frozen'];
 const SCHEDULE_TYPES = ['once', 'daily'];
+const TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequential_learning'];
+const PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 
 export function localDateString(date = new Date()){
   const d = date instanceof Date ? date : new Date(date);
@@ -72,28 +74,62 @@ function normalizeDay(value){
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+function normalizeNumberOrNull(value){
+  if(value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function cleanTaskMode(value, scheduleType){
+  if(TASK_MODES.includes(value)) return value;
+  return scheduleType === 'daily' ? 'fixed_recurring' : 'one_off';
+}
+
+function cleanProgressionCurve(value, taskMode){
+  if(value == null || value === '') return null;
+  if(PROGRESSION_CURVES.includes(value)) return value;
+  return taskMode === 'progressive_recurring' ? 'gradual' : null;
+}
+
 function normalizeTaskSchedule(task, fallbackDay, durationDays){
   const scheduleType = cleanScheduleType(task);
   const unlockDay = normalizeDay(task.unlockDay);
   const startDay = normalizeDay(task.startDay);
   const endDay = normalizeDay(task.endDay);
+  const mode = cleanTaskMode(task.taskMode, scheduleType || 'once');
   if(scheduleType === 'daily'){
     const start = startDay || unlockDay || 1;
+    const taskMode = cleanTaskMode(task.taskMode, 'daily');
     return {
       ...task,
       scheduleType: 'daily',
+      taskMode,
       startDay: start,
       endDay: endDay || durationDays || start,
       unlockDay: unlockDay || start,
+      progressionMetric: task.progressionMetric || null,
+      progressionUnit: task.progressionUnit || null,
+      startValue: normalizeNumberOrNull(task.startValue),
+      targetValue: normalizeNumberOrNull(task.targetValue),
+      progressionCurve: cleanProgressionCurve(task.progressionCurve, taskMode),
+      progressionNotes: task.progressionNotes || null,
     };
   }
   const onceDay = unlockDay || startDay || fallbackDay || 1;
+  const taskMode = cleanTaskMode(mode, 'once');
   return {
     ...task,
     scheduleType: scheduleType || 'once',
+    taskMode,
     startDay: startDay || onceDay,
     endDay: endDay,
     unlockDay: onceDay,
+    progressionMetric: task.progressionMetric || null,
+    progressionUnit: task.progressionUnit || null,
+    startValue: normalizeNumberOrNull(task.startValue),
+    targetValue: normalizeNumberOrNull(task.targetValue),
+    progressionCurve: cleanProgressionCurve(task.progressionCurve, taskMode),
+    progressionNotes: task.progressionNotes || null,
   };
 }
 
@@ -144,6 +180,57 @@ export function getTasksForDay(pathTasks, dayNumber){
     }
     return Number(task.unlockDay || task.startDay || 1) === day;
   });
+}
+
+function clampRatio(value){
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function roundProgressiveValue(value, unit){
+  const lowerUnit = String(unit || '').toLowerCase();
+  if(/km|mile|mi/.test(lowerUnit)){
+    return Math.round(value * 10) / 10;
+  }
+  if(Math.abs(value) < 10) return Math.round(value * 10) / 10;
+  return Math.round(value);
+}
+
+export function getProgressiveTargetForDay(task, dayNumber){
+  if(!task || task.taskMode !== 'progressive_recurring') return null;
+  const startValue = normalizeNumberOrNull(task.startValue);
+  const targetValue = normalizeNumberOrNull(task.targetValue);
+  if(startValue == null || targetValue == null) return null;
+  const startDay = normalizeDay(task.startDay) || 1;
+  const endDay = normalizeDay(task.endDay) || startDay;
+  if(endDay <= startDay) return {
+    value: roundProgressiveValue(targetValue, task.progressionUnit),
+    label: `${roundProgressiveValue(targetValue, task.progressionUnit)}${task.progressionUnit ? ' ' + task.progressionUnit : ''}`,
+  };
+  const day = Math.max(startDay, Math.min(endDay, Number(dayNumber || startDay)));
+  const rawRatio = clampRatio((day - startDay) / (endDay - startDay));
+  let ratio = rawRatio;
+  if(task.progressionCurve === 'gradual') ratio = Math.pow(rawRatio, 1.15);
+  if(task.progressionCurve === 'stepped'){
+    const totalSteps = Math.max(1, Math.ceil((endDay - startDay + 1) / 7));
+    const currentStep = Math.min(totalSteps, Math.floor((day - startDay) / 7));
+    ratio = currentStep / totalSteps;
+  }
+  if(task.progressionCurve === 'custom') return null;
+  const value = roundProgressiveValue(startValue + ((targetValue - startValue) * ratio), task.progressionUnit);
+  return {
+    value,
+    metric: task.progressionMetric || null,
+    unit: task.progressionUnit || null,
+    label: `${value}${task.progressionUnit ? ' ' + task.progressionUnit : ''}`,
+  };
+}
+
+export function formatProgressiveTaskTitle(task, dayNumber){
+  const title = task?.title || task?.text || 'Task';
+  const target = getProgressiveTargetForDay(task, dayNumber);
+  if(!target) return title;
+  const metric = task.progressionMetric ? `${task.progressionMetric}: ` : '';
+  return `${title} (${metric}${target.label})`;
 }
 
 export function getMaxRoadmapDay(pathOrTasks, enrollment){

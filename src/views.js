@@ -29,7 +29,7 @@ import { configPresent, cloudActive } from './db.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
-  getMaxRoadmapDay, getTasksForDay, journeyDayForDate,
+  formatProgressiveTaskTitle, getMaxRoadmapDay, getTasksForDay, journeyDayForDate,
   localDateString, normalizeDurationDays,
 } from './journey.js';
 
@@ -179,12 +179,20 @@ const AI_NON_NEGOTIABLES = [
   'Course or learning progress',
   'Post on social media',
 ];
+const AI_TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequential_learning'];
+const AI_PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 
 function aiPromptDefaults(){
   return {
     goal:'',
     durationDays:75,
     currentLevel:'beginner',
+    currentStage:'',
+    desiredEndState:'',
+    baseline:'',
+    targetOutcome:'',
+    constraints:'',
+    existingResources:'',
     intensity:'moderate',
     pathType:'skill',
     resourceLinks:'',
@@ -208,6 +216,27 @@ function clampDay(n, fallback = 1, max = 365){
   return Math.max(1, Math.min(max, Math.round(n)));
 }
 
+function nullableNumber(value){
+  if(value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeTaskMode(value, scheduleType){
+  if(AI_TASK_MODES.includes(value)) return value;
+  return scheduleType === 'daily' ? 'fixed_recurring' : 'one_off';
+}
+
+function normalizeProgressionCurve(value, taskMode){
+  if(!value) return null;
+  if(AI_PROGRESSION_CURVES.includes(value)) return value;
+  return taskMode === 'progressive_recurring' ? 'gradual' : null;
+}
+
+function taskTitleForDay(task, day){
+  return formatProgressiveTaskTitle(task, day);
+}
+
 function titleFromGoal(goal){
   const cleaned = String(goal || 'New path').replace(/^i want to\s+/i, '').trim() || 'New path';
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
@@ -228,14 +257,22 @@ function normalizeGeneratedDraft(raw, prompt){
     const startDay = clampDay(t.startDay || t.unlockDay || 1, 1, durationDays);
     const endDay = scheduleType === 'daily' ? clampDay(t.endDay || durationDays, startDay, durationDays) : null;
     const unlockDay = scheduleType === 'once' ? clampDay(t.unlockDay || startDay, startDay, durationDays) : null;
+    const taskMode = normalizeTaskMode(t.taskMode, scheduleType);
     return {
       title:String(t.title || ('Task ' + (i + 1))).slice(0, 140),
       description:String(t.description || '').slice(0, 500),
       sectionTitle:sectionNames.has(t.sectionTitle) ? t.sectionTitle : sections[0].title,
       scheduleType,
+      taskMode,
       startDay,
       endDay,
       unlockDay,
+      progressionMetric:t.progressionMetric ? String(t.progressionMetric).slice(0, 80) : null,
+      progressionUnit:t.progressionUnit ? String(t.progressionUnit).slice(0, 40) : null,
+      startValue:nullableNumber(t.startValue),
+      targetValue:nullableNumber(t.targetValue),
+      progressionCurve:normalizeProgressionCurve(t.progressionCurve, taskMode),
+      progressionNotes:t.progressionNotes ? String(t.progressionNotes).slice(0, 300) : null,
       evidenceRequired:!!t.evidenceRequired,
       resourceUrl:t.resourceUrl || null,
       order:Number.isFinite(Number(t.order)) ? Number(t.order) : i,
@@ -258,9 +295,9 @@ function normalizeGeneratedDraft(raw, prompt){
     tasks:tasks.sort((a, b) => a.order - b.order),
     resources:(Array.isArray(raw.resources) ? raw.resources : []).slice(0, 12).map((r, i) => ({
       title:String(r.title || ('Resource ' + (i + 1))).slice(0, 100),
-      url:String(r.url || '').slice(0, 300),
+      url:r.url ? String(r.url).slice(0, 300) : '',
       description:String(r.description || '').slice(0, 300),
-    })).filter(r => r.url),
+    })).filter(r => r.title || r.url || r.description),
     notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => String(n || '').slice(0, 300)).filter(Boolean).slice(0, 8),
     source:raw.source || 'ai',
   };
@@ -280,9 +317,16 @@ function localGeneratedDraft(prompt){
     description:'Repeat this commitment during the path.',
     sectionTitle:'Foundation',
     scheduleType:'daily',
+    taskMode:'fixed_recurring',
     startDay:1,
     endDay:durationDays,
     unlockDay:null,
+    progressionMetric:null,
+    progressionUnit:null,
+    startValue:null,
+    targetValue:null,
+    progressionCurve:null,
+    progressionNotes:null,
     evidenceRequired:/(run|walk|gym|train|workout|course|post|publish|design|project|deep work|proof|upload)/i.test(name + ' ' + prompt.evidenceStyle),
     resourceUrl:null,
     order:i,
@@ -294,9 +338,16 @@ function localGeneratedDraft(prompt){
       description:'Look at what worked, what slipped, and what needs to change.',
       sectionTitle:day > durationDays * 0.66 ? 'Review' : 'Build',
       scheduleType:'once',
+      taskMode:'one_off',
       startDay:day,
       endDay:null,
       unlockDay:day,
+      progressionMetric:null,
+      progressionUnit:null,
+      startValue:null,
+      targetValue:null,
+      progressionCurve:null,
+      progressionNotes:null,
       evidenceRequired:false,
       resourceUrl:null,
       order:tasks.length,
@@ -307,9 +358,16 @@ function localGeneratedDraft(prompt){
     description:'Summarize progress, proof, lessons, and next steps.',
     sectionTitle:'Review',
     scheduleType:'once',
+    taskMode:'one_off',
     startDay:durationDays,
     endDay:null,
     unlockDay:durationDays,
+    progressionMetric:null,
+    progressionUnit:null,
+    startValue:null,
+    targetValue:null,
+    progressionCurve:null,
+    progressionNotes:null,
     evidenceRequired:true,
     resourceUrl:null,
     order:tasks.length,
@@ -350,9 +408,16 @@ function aiDraftToLocalPath(draft){
       description:task.description || '',
       resourceUrl:task.resourceUrl || null,
       scheduleType:task.scheduleType,
+      taskMode:task.taskMode || null,
       startDay:task.startDay == null ? null : Number(task.startDay),
       endDay:task.endDay == null ? null : Number(task.endDay),
       unlockDay:task.unlockDay == null ? null : Number(task.unlockDay),
+      progressionMetric:task.progressionMetric || null,
+      progressionUnit:task.progressionUnit || null,
+      startValue:task.startValue == null ? null : Number(task.startValue),
+      targetValue:task.targetValue == null ? null : Number(task.targetValue),
+      progressionCurve:task.progressionCurve || null,
+      progressionNotes:task.progressionNotes || null,
       evidenceRequired:!!task.evidenceRequired,
     });
   });
@@ -413,6 +478,12 @@ function collectAIPrompt(){
     goal:($('aiGoal')?.value || '').trim(),
     durationDays:clampDay($('aiDuration')?.value || 75, 75, 365),
     currentLevel:$('aiLevel')?.value || 'beginner',
+    currentStage:($('aiCurrentStage')?.value || '').trim(),
+    desiredEndState:($('aiDesiredEndState')?.value || '').trim(),
+    baseline:($('aiBaseline')?.value || '').trim(),
+    targetOutcome:($('aiTargetOutcome')?.value || '').trim(),
+    constraints:($('aiConstraints')?.value || '').trim(),
+    existingResources:($('aiExistingResources')?.value || '').trim(),
     intensity:$('aiIntensity')?.value || 'moderate',
     pathType:$('aiType')?.value || 'skill',
     resourceLinks:($('aiResources')?.value || '').trim(),
@@ -440,6 +511,13 @@ function aiPromptHTML(){
     + '<div class="field"><label>Intensity</label><select id="aiIntensity">' + selectOptions(['light', 'moderate', 'intense'], p.intensity) + '</select></div>'
     + '<div class="field"><label>Path type</label><select id="aiType">' + selectOptions(['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'], p.pathType) + '</select></div>'
     + '</div>'
+    + '<div class="field"><label>Current ability / stage</label><textarea id="aiCurrentStage" placeholder="Where are you starting from?">' + esc(p.currentStage) + '</textarea></div>'
+    + '<div class="field"><label>Desired end state</label><textarea id="aiDesiredEndState" placeholder="What should you be able to do by the end?">' + esc(p.desiredEndState) + '</textarea></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Current baseline</label><input type="text" id="aiBaseline" value="' + esc(p.baseline) + '" placeholder="Run 1km, A1 French, beginner Blender..."/></div>'
+    + '<div class="field"><label>Target outcome</label><input type="text" id="aiTargetOutcome" value="' + esc(p.targetOutcome) + '" placeholder="Run 15km, 10-minute conversation..."/></div>'
+    + '</div>'
+    + '<div class="field"><label>Constraints / limitations</label><textarea id="aiConstraints" placeholder="Time, equipment, injury limits, days off, budget...">' + esc(p.constraints) + '</textarea></div>'
     + '<div class="ai-nn-wrap"><label>Daily non-negotiables</label><div class="ai-checks">' + AI_NON_NEGOTIABLES.map(item => '<label><input type="checkbox" class="ai-nn" value="' + esc(item) + '" ' + (p.nonNegotiables.includes(item) ? 'checked' : '') + '/>' + esc(item) + '</label>').join('') + '</div></div>'
     + '<div class="ai-grid">'
     + '<div class="field"><label>Daily time available</label><input type="text" id="aiDailyTime" value="' + esc(p.dailyTime) + '" placeholder="30 minutes, 2 hours..."/></div>'
@@ -447,6 +525,7 @@ function aiPromptHTML(){
     + '</div>'
     + '<div class="field"><label>Preferred proof/evidence style</label><input type="text" id="aiEvidenceStyle" value="' + esc(p.evidenceStyle) + '" placeholder="URL posts, screenshots, photos, final files..."/></div>'
     + '<div class="field"><label>Existing resource links</label><textarea id="aiResources" placeholder="Paste links, one or many">' + esc(p.resourceLinks) + '</textarea></div>'
+    + '<div class="field"><label>Resources or courses you want to follow</label><textarea id="aiExistingResources" placeholder="Names, links, books, courses, channels...">' + esc(p.existingResources) + '</textarea></div>'
     + '<div class="field"><label>Tasks to include</label><textarea id="aiInclude" placeholder="Tasks you already know you want">' + esc(p.includeTasks) + '</textarea></div>'
     + '<div class="field"><label>Tasks to avoid</label><textarea id="aiExclude" placeholder="Anything you do not want included">' + esc(p.excludeTasks) + '</textarea></div>'
     + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>'
@@ -488,12 +567,19 @@ function aiTaskRowHTML(t, i, sectionOptions){
     + '<input class="ai-task-field ai-title" data-i="' + i + '" data-key="title" value="' + esc(t.title) + '" placeholder="Task title"/>'
     + '<select class="ai-task-field" data-i="' + i + '" data-key="sectionTitle">' + selectOptions(sectionOptions, t.sectionTitle) + '</select>'
     + '<select class="ai-task-field" data-i="' + i + '" data-key="scheduleType">' + selectOptions(['daily', 'once'], t.scheduleType) + '</select>'
+    + '<select class="ai-task-field" data-i="' + i + '" data-key="taskMode">' + selectOptions(AI_TASK_MODES, t.taskMode || normalizeTaskMode(t.taskMode, t.scheduleType)) + '</select>'
     + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="startDay" value="' + esc(t.startDay || 1) + '" min="1"/>'
     + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="endDay" value="' + esc(t.endDay || '') + '" min="1" placeholder="End"/>'
     + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="unlockDay" value="' + esc(t.unlockDay || '') + '" min="1" placeholder="Unlock"/>'
     + '<label><input type="checkbox" class="ai-task-field" data-i="' + i + '" data-key="evidenceRequired" ' + (t.evidenceRequired ? 'checked' : '') + '/> Proof</label>'
     + '<button class="icon-btn danger" data-ai-act="delTask" data-i="' + i + '">x</button>'
+    + '<input class="ai-task-field" data-i="' + i + '" data-key="progressionMetric" value="' + esc(t.progressionMetric || '') + '" placeholder="Metric"/>'
+    + '<input class="ai-task-field" data-i="' + i + '" data-key="progressionUnit" value="' + esc(t.progressionUnit || '') + '" placeholder="Unit"/>'
+    + '<input type="number" step="any" class="ai-task-field" data-i="' + i + '" data-key="startValue" value="' + esc(t.startValue == null ? '' : t.startValue) + '" placeholder="Start value"/>'
+    + '<input type="number" step="any" class="ai-task-field" data-i="' + i + '" data-key="targetValue" value="' + esc(t.targetValue == null ? '' : t.targetValue) + '" placeholder="Target value"/>'
+    + '<select class="ai-task-field" data-i="' + i + '" data-key="progressionCurve"><option value="">No curve</option>' + selectOptions(AI_PROGRESSION_CURVES, t.progressionCurve || '') + '</select>'
     + '<input class="ai-task-field" data-i="' + i + '" data-key="resourceUrl" value="' + esc(t.resourceUrl || '') + '" placeholder="Task resource URL"/>'
+    + '<textarea class="ai-task-field" data-i="' + i + '" data-key="progressionNotes" placeholder="Progression notes">' + esc(t.progressionNotes || '') + '</textarea>'
     + '<textarea class="ai-task-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(t.description || '') + '</textarea>'
     + '</div>';
 }
@@ -531,8 +617,13 @@ function renderAIBuilder(){
       const key = e.target.dataset.key;
       if(key === 'evidenceRequired') task[key] = e.target.checked;
       else if(['startDay', 'endDay', 'unlockDay'].includes(key)) task[key] = e.target.value ? clampDay(e.target.value, 1, aiBuilder.draft.durationDays) : null;
+      else if(['startValue', 'targetValue'].includes(key)) task[key] = nullableNumber(e.target.value);
+      else if(key === 'progressionCurve') task[key] = e.target.value || null;
       else task[key] = e.target.value;
-      if(key === 'scheduleType') renderAIBuilder();
+      if(key === 'scheduleType'){
+        task.taskMode = normalizeTaskMode(task.taskMode, task.scheduleType);
+        renderAIBuilder();
+      }
       aiBuilder.dirty = true;
     };
     el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
@@ -544,7 +635,7 @@ function runAIAction(action, i){
   const d = aiBuilder.draft;
   if(action === 'addSection') d.sections.push({ title:'New section', description:'', order:d.sections.length });
   if(action === 'delSection' && d.sections.length > 1) d.sections.splice(i, 1);
-  if(action === 'addTask') d.tasks.push({ title:'New task', description:'', sectionTitle:d.sections[0].title, scheduleType:'once', startDay:1, endDay:null, unlockDay:1, evidenceRequired:false, resourceUrl:null, order:d.tasks.length });
+  if(action === 'addTask') d.tasks.push({ title:'New task', description:'', sectionTitle:d.sections[0].title, scheduleType:'once', taskMode:'one_off', startDay:1, endDay:null, unlockDay:1, progressionMetric:null, progressionUnit:null, startValue:null, targetValue:null, progressionCurve:null, progressionNotes:null, evidenceRequired:false, resourceUrl:null, order:d.tasks.length });
   if(action === 'delTask') d.tasks.splice(i, 1);
   if(action === 'addResource') d.resources.push({ title:'Resource', url:'', description:'' });
   if(action === 'delResource') d.resources.splice(i, 1);
@@ -585,6 +676,8 @@ async function generateAIPath(forceBasic){
           throw new Error('Claude did not return the required structured path draft. Please regenerate.');
         } else if(e.code === 'invalid_ai_output'){
           throw new Error('Claude returned a path draft that could not be validated. Please regenerate.');
+        } else if(e.code === 'invalid_ai_json'){
+          throw new Error('Claude returned invalid JSON. Please regenerate.');
         } else {
           throw e;
         }
@@ -682,9 +775,16 @@ function createPath(){
         tasks: (w.tasks || []).map(tk => ({
           text: tk.text,
           scheduleType: tk.scheduleType || null,
+          taskMode: tk.taskMode || null,
           unlockDay: tk.unlockDay == null ? null : tk.unlockDay,
           startDay: tk.startDay == null ? null : tk.startDay,
           endDay: tk.endDay == null ? null : tk.endDay,
+          progressionMetric: tk.progressionMetric || null,
+          progressionUnit: tk.progressionUnit || null,
+          startValue: tk.startValue == null ? null : tk.startValue,
+          targetValue: tk.targetValue == null ? null : tk.targetValue,
+          progressionCurve: tk.progressionCurve || null,
+          progressionNotes: tk.progressionNotes || null,
           evidenceRequired: !!tk.evidenceRequired,
         })),
         resources: (w.resources || []).map(r => ({ label: r.label, url: r.url })),
@@ -965,12 +1065,13 @@ function journeyDetailHTML(id, def){
     h += '<div class="history-list">';
     if(dayTasks.length){
       dayTasks.forEach(task => {
+        const title = taskTitleForDay(task, day);
         const isVerified = verified.has(task.id);
         const isCompleted = completed.has(task.id);
         const label = task.evidenceRequired
           ? (isVerified ? 'Proof submitted' : (isCompleted ? 'Completed before proof tracking' : 'Not completed'))
           : (isCompleted ? 'Completed' : 'Not completed');
-        h += '<div class="history-task ' + (completed.has(task.id) ? 'done' : '') + '"><b>' + esc(task.title || task.text || 'Task') + '</b>'
+        h += '<div class="history-task ' + (completed.has(task.id) ? 'done' : '') + '"><b>' + esc(title) + '</b>'
           + '<span>' + esc(label) + '</span></div>';
       });
     } else {
@@ -995,19 +1096,22 @@ function journeyDetailHTML(id, def){
     if(dayTasks.length){
       h += '<div class="journey-tasks">';
       dayTasks.forEach(task => {
+        const title = taskTitleForDay(task, day);
         if(task.evidenceRequired){
           const isVerified = verified.has(task.id);
           h += '<div class="journey-task proof-required ' + (isVerified ? 'done' : '') + '">'
-            + '<span><b>' + esc(task.title || task.text || 'Task') + '</b>'
+            + '<span><b>' + esc(title) + '</b>'
             + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
+            + (task.progressionNotes ? '<small>' + esc(task.progressionNotes) + '</small>' : '')
             + '<small class="evidence-note">' + (isVerified ? 'Proof submitted' : 'Require proof for this task') + '</small></span>'
             + (isVerified ? '<span class="proof-pill">Verified</span>' : '<button class="btn add-evidence" data-task="' + esc(task.id) + '">Add proof</button>')
             + evidenceFormHTML(task)
             + '</div>';
         } else {
           h += '<label class="journey-task ' + (completed.has(task.id) ? 'done' : '') + '"><input type="checkbox" class="ck journey-ck" data-task="' + esc(task.id) + '" ' + (completed.has(task.id) ? 'checked' : '') + '/>'
-            + '<span><b>' + esc(task.title || task.text || 'Task') + '</b>'
+            + '<span><b>' + esc(title) + '</b>'
             + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
+            + (task.progressionNotes ? '<small>' + esc(task.progressionNotes) + '</small>' : '')
             + (completed.has(task.id) ? '<small class="evidence-note">Completed without proof</small>' : '')
             + '</span></label>';
         }
@@ -1441,7 +1545,7 @@ export function renderPlan(){
   $('content').querySelectorAll('.res-url').forEach(inp   => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url   = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
     const act = btn.dataset.act, wi = +btn.dataset.wi, ti = +btn.dataset.ti, ri = +btn.dataset.ri;
-    if(act === 'addTask'){ (def.weeks[wi].tasks = def.weeks[wi].tasks || []).push({ text:'', scheduleType:'once', startDay:1, endDay:null }); }
+    if(act === 'addTask'){ (def.weeks[wi].tasks = def.weeks[wi].tasks || []).push({ text:'', scheduleType:'once', taskMode:'one_off', startDay:1, endDay:null }); }
     else if(act === 'delTask'){ def.weeks[wi].tasks.splice(ti, 1); }
     else if(act === 'addRes'){ (def.weeks[wi].resources = def.weeks[wi].resources || []).push({ label:'', url:'' }); }
     else if(act === 'delRes'){ def.weeks[wi].resources.splice(ri, 1); }

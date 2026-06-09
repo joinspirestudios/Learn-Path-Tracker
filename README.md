@@ -50,16 +50,31 @@ implemented in this phase.
 ## Phase 4 AI Path Generator
 
 Signed-in users can choose **Build path with AI** from the catalog or the manual
-create-path modal. The guided builder asks for a goal, duration, level,
-intensity, path type, optional resources, preferred proof style, and daily
-non-negotiables. It then creates an editable draft that the user must review
-before saving.
+create-path modal. The guided builder asks for a goal, duration, level, current
+stage, desired end state, baseline, target outcome, constraints, optional
+resources, preferred proof style, and daily non-negotiables. It then creates an
+editable draft that the user must review before saving.
 
 The generator is intentionally a starting-point tool:
 
 - It saves generated paths as private by default.
-- It uses recurring `scheduleType: "daily"` tasks for habits and repeated work.
-- It uses `scheduleType: "once"` tasks for milestones and reviews.
+- It uses Anthropic tool use / structured output through a
+  `create_learning_path` tool, with defensive JSON parsing only as a fallback.
+- It creates progressive growth paths, not static generic checklists.
+- It uses `scheduleType: "daily"` tasks for recurring work and
+  `scheduleType: "once"` tasks for milestones and reviews.
+- It supports task modes:
+  - `fixed_recurring`: a daily task that stays basically the same.
+  - `progressive_recurring`: a daily task that grows toward a target, such as
+    running distance, workout difficulty, deep-work time, or speaking
+    complexity.
+  - `sequential_learning`: ordered skill work where concepts build over time.
+  - `one_off`: milestone checks, reviews, tests, recordings, deliverables, and
+    projects.
+- Progressive tasks can store `progressionMetric`, `progressionUnit`,
+  `startValue`, `targetValue`, `progressionCurve`, and `progressionNotes`.
+  The daily journey view displays a day-specific target when those fields are
+  present.
 - It preserves `durationDays`, task schedules, and `evidenceRequired`.
 - It does not publish generated paths publicly unless the user changes
   visibility.
@@ -77,8 +92,9 @@ ANTHROPIC_MODEL=claude-sonnet-4-6
 
 If `ANTHROPIC_API_KEY` is missing, real AI generation is unavailable. The app can
 still create a clearly labeled basic starter template from the prompt, but that
-fallback is not labeled as AI-generated. If Claude returns malformed JSON, the
-app shows an error and does not create a generated path draft.
+fallback is not labeled as AI-generated. If Claude does not return the required
+tool output, returns invalid JSON fallback text, or returns a draft that cannot
+be validated, the app shows an error and keeps the prompt open for retry.
 
 Limitations:
 
@@ -86,6 +102,7 @@ Limitations:
 - The generator does not perform real web research and must not be treated as
   deep research.
 - It does not create fake citations or fake sources.
+- The app recommends tasks/resources but does not teach full lessons internally.
 - Fitness/challenge plans are not medical advice; users should adapt intensity
   to their health, ability, and professional guidance.
 - AI does not verify whether submitted evidence is truthful.
