@@ -477,7 +477,7 @@ function aiReviewHTML(){
     + '<div class="ai-review-head"><b>Tasks</b><button class="add-link" data-ai-act="addTask">+ Add task</button></div>'
     + '<div class="ai-list tasks">' + d.tasks.map((t, i) => aiTaskRowHTML(t, i, sectionOptions)).join('') + '</div>'
     + '<div class="ai-review-head"><b>Resources</b><button class="add-link" data-ai-act="addResource">+ Add resource</button></div>'
-    + '<div class="ai-list">' + (d.resources || []).map((r, i) => '<div class="ai-edit-row"><input class="ai-resource-field" data-i="' + i + '" data-key="title" value="' + esc(r.title) + '" placeholder="Title"/><input class="ai-resource-field" data-i="' + i + '" data-key="url" value="' + esc(r.url) + '" placeholder="https://..."/><button class="icon-btn danger" data-ai-act="delResource" data-i="' + i + '">x</button></div>').join('') + '</div>'
+    + '<div class="ai-list">' + (d.resources || []).map((r, i) => '<div class="ai-edit-row resource"><input class="ai-resource-field" data-i="' + i + '" data-key="title" value="' + esc(r.title) + '" placeholder="Title"/><input class="ai-resource-field" data-i="' + i + '" data-key="url" value="' + esc(r.url) + '" placeholder="https://..."/><button class="icon-btn danger" data-ai-act="delResource" data-i="' + i + '">x</button><textarea class="ai-resource-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(r.description || '') + '</textarea></div>').join('') + '</div>'
     + (d.notes && d.notes.length ? '<div class="ai-note"><b>Notes</b><ul>' + d.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></div>' : '')
     + '<div class="ai-actions"><button class="btn" id="aiEditPrompt">Edit prompt</button><button class="btn" id="aiRegenerate">Regenerate</button><button class="btn" id="aiCancel">Cancel</button><button class="btn gold" id="aiSave">Save path</button></div>'
     + '</div></div>';
@@ -493,6 +493,7 @@ function aiTaskRowHTML(t, i, sectionOptions){
     + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="unlockDay" value="' + esc(t.unlockDay || '') + '" min="1" placeholder="Unlock"/>'
     + '<label><input type="checkbox" class="ai-task-field" data-i="' + i + '" data-key="evidenceRequired" ' + (t.evidenceRequired ? 'checked' : '') + '/> Proof</label>'
     + '<button class="icon-btn danger" data-ai-act="delTask" data-i="' + i + '">x</button>'
+    + '<input class="ai-task-field" data-i="' + i + '" data-key="resourceUrl" value="' + esc(t.resourceUrl || '') + '" placeholder="Task resource URL"/>'
     + '<textarea class="ai-task-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(t.description || '') + '</textarea>'
     + '</div>';
 }
@@ -578,10 +579,13 @@ async function generateAIPath(forceBasic){
           throw err;
         }
       }catch(e){
-        if(e.code === 'invalid_ai_json' || e.code === 'empty_ai_response'){
+        if(e.code === 'missing_anthropic_config'){
+          payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Anthropic is not configured. A basic starter template was created instead.' };
+        } else if(e.code === 'invalid_ai_json'){
+          throw new Error('Claude returned invalid JSON. Please regenerate.');
+        } else {
           throw e;
         }
-        payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Anthropic Claude generation requires API configuration. A basic starter template was created instead.' };
       }
     } else {
       payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Basic starter template created without AI.' };

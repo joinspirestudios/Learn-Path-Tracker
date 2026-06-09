@@ -420,10 +420,12 @@
 .ai-review-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 8px;border-top:1px solid var(--line);padding-top:14px}
 .ai-list{display:flex;flex-direction:column;gap:8px}
 .ai-edit-row{display:grid;grid-template-columns:1fr 1.4fr auto;gap:8px;align-items:center}
-.ai-edit-row input,.ai-task-row input,.ai-task-row select,.ai-task-row textarea{background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--cream);font-family:inherit;font-size:12.5px;padding:8px 9px;box-sizing:border-box}
+.ai-edit-row input,.ai-edit-row textarea,.ai-task-row input,.ai-task-row select,.ai-task-row textarea{background:var(--ink);border:1px solid var(--line2);border-radius:8px;color:var(--cream);font-family:inherit;font-size:12.5px;padding:8px 9px;box-sizing:border-box}
+.ai-edit-row.resource textarea{grid-column:1/-1;min-height:50px;resize:vertical}
 .ai-task-row{display:grid;grid-template-columns:1.5fr 1fr .75fr .55fr .55fr .55fr auto auto;gap:8px;align-items:center;border:1px solid var(--line2);border-radius:10px;background:rgba(239,231,216,.025);padding:9px}
 .ai-task-row .ai-title{font-weight:700}
 .ai-task-row label{display:flex;gap:6px;align-items:center;color:var(--sand);font-size:12px}
+.ai-task-row input[data-key="resourceUrl"]{grid-column:1/-1}
 .ai-task-row textarea{grid-column:1/-1;min-height:54px;resize:vertical}
 @media(max-width:760px){.ai-grid,.ai-edit-row,.ai-task-row{grid-template-columns:1fr}.ai-actions{justify-content:flex-start}}
 

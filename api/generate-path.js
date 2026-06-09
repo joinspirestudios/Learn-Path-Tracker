@@ -235,23 +235,43 @@ function parseClaudeJson(content){
 async function callAnthropic(input){
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if(!apiKey){
-    throw codedError('AI generation requires Anthropic API configuration.', 'missing_anthropic_config', 503);
+    throw codedError('Anthropic is not configured.', 'missing_anthropic_config', 503);
   }
   const anthropic = new Anthropic({ apiKey });
-  const message = await anthropic.messages.create({
-    model:process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
-    max_tokens:6000,
-    temperature:0.5,
-    system:'You generate safe, realistic, editable learning path JSON for a habit and skill tracking app. Return strict JSON only.',
-    messages:[
-      { role:'user', content:buildPrompt(input) },
-    ],
-  });
+  let message;
+  try{
+    message = await anthropic.messages.create({
+      model:process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+      max_tokens:6000,
+      temperature:0.5,
+      system:'You generate safe, realistic, editable learning path JSON for a habit and skill tracking app. Return strict JSON only.',
+      messages:[
+        { role:'user', content:buildPrompt(input) },
+      ],
+    });
+  }catch(e){
+    throw mapAnthropicError(e);
+  }
   const content = (message.content || [])
     .filter(block => block && block.type === 'text')
     .map(block => block.text || '')
     .join('\n');
   return parseClaudeJson(content);
+}
+
+function mapAnthropicError(error){
+  const status = Number(error && (error.status || error.statusCode));
+  const type = text(error && (error.type || (error.error && error.error.type)));
+  if(status === 401 || status === 403 || /auth|permission/i.test(type)){
+    return codedError('Anthropic authentication failed. Check the server API key.', 'anthropic_auth_error', status || 401);
+  }
+  if(status === 429 || /rate_limit|quota/i.test(type)){
+    return codedError('Anthropic rate limit or quota reached. Please retry later.', 'anthropic_rate_limited', 429);
+  }
+  if(status >= 500 || /api_error|overloaded/i.test(type)){
+    return codedError('Anthropic service error. Please retry later.', 'anthropic_server_error', status || 502);
+  }
+  return codedError('Claude generation failed. Please retry.', 'anthropic_generation_failed', status || 502);
 }
 
 export default async function handler(req, res){
@@ -273,7 +293,12 @@ export default async function handler(req, res){
         message:e.message || 'Claude generation failed. Please try again.',
       });
     }
-    const draft = normalizeDraft(raw, input, 'anthropic');
+    let draft;
+    try{
+      draft = normalizeDraft(raw, input, 'anthropic');
+    }catch(e){
+      throw codedError('Claude returned invalid JSON. Please regenerate.', 'invalid_ai_json', 502);
+    }
     return res.status(200).json({ ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
   }catch(e){
     return res.status(e.status || 400).json({ ok:false, code:e.code || 'invalid_request', message:e.message || 'Could not generate a path draft.' });
