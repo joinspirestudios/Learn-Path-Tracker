@@ -1,0 +1,266 @@
+const LEVELS = ['beginner', 'intermediate', 'advanced'];
+const INTENSITIES = ['light', 'moderate', 'intense'];
+const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'];
+
+function clamp(n, min, max){
+  n = Number(n);
+  if(!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function text(v, fallback = ''){
+  return String(v == null ? fallback : v).trim();
+}
+
+function cleanUrl(v){
+  const value = text(v);
+  if(!value) return null;
+  try{ return new URL(value).toString(); }
+  catch(e){ return null; }
+}
+
+function cleanChoice(value, allowed, fallback){
+  return allowed.includes(value) ? value : fallback;
+}
+
+function normalizePrompt(body = {}){
+  const goal = text(body.goal).slice(0, 500);
+  const durationDays = clamp(body.durationDays, 1, 365);
+  const currentLevel = cleanChoice(body.currentLevel, LEVELS, 'beginner');
+  const intensity = cleanChoice(body.intensity, INTENSITIES, 'moderate');
+  const pathType = cleanChoice(body.pathType, PATH_TYPES, 'custom');
+  const nonNegotiables = Array.isArray(body.nonNegotiables)
+    ? body.nonNegotiables.map(x => text(x).slice(0, 100)).filter(Boolean).slice(0, 12)
+    : [];
+  return {
+    goal,
+    durationDays,
+    currentLevel,
+    intensity,
+    pathType,
+    resourceLinks: text(body.resourceLinks).slice(0, 1000),
+    dailyTime: text(body.dailyTime).slice(0, 80),
+    evidenceStyle: text(body.evidenceStyle).slice(0, 160),
+    includeTasks: text(body.includeTasks).slice(0, 1000),
+    excludeTasks: text(body.excludeTasks).slice(0, 1000),
+    visibility: ['private', 'unlisted', 'public'].includes(body.visibility) ? body.visibility : 'private',
+    description: text(body.description).slice(0, 500),
+    nonNegotiables,
+  };
+}
+
+function titleFromGoal(goal){
+  const cleaned = text(goal, 'New learning path').replace(/^i want to\s+/i, '').replace(/\.$/, '');
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function sectionForDay(day, durationDays){
+  if(day <= Math.ceil(durationDays * 0.33)) return 'Foundation';
+  if(day <= Math.ceil(durationDays * 0.66)) return 'Build';
+  return 'Ship and review';
+}
+
+function basicStarterDraft(input, source = 'fallback'){
+  const title = titleFromGoal(input.goal);
+  const durationDays = input.durationDays;
+  const sections = [
+    { title:'Foundation', description:'Set up the routine, expectations, and first repeatable actions.', order:0 },
+    { title:'Build', description:'Practice consistently and turn the goal into visible work.', order:1 },
+    { title:'Ship and review', description:'Review progress, publish or document outcomes, and decide what continues.', order:2 },
+  ];
+  const tasks = [];
+  const dailyBase = input.nonNegotiables.length ? input.nonNegotiables : ['Work on the goal'];
+  dailyBase.slice(0, 8).forEach((name, i) => {
+    const lower = name.toLowerCase();
+    const proof = /(run|walk|gym|train|workout|course|post|publish|design|project|deep work|proof|record|upload)/.test(lower);
+    tasks.push({
+      title:name,
+      description:'Repeat this commitment during the path.',
+      sectionTitle:'Foundation',
+      scheduleType:'daily',
+      startDay:1,
+      endDay:durationDays,
+      unlockDay:null,
+      evidenceRequired: proof || /proof/.test(input.evidenceStyle.toLowerCase()),
+      resourceUrl:null,
+      order:i,
+    });
+  });
+  const milestoneEvery = durationDays >= 90 ? 30 : durationDays >= 45 ? 15 : 7;
+  for(let day = milestoneEvery; day < durationDays; day += milestoneEvery){
+    tasks.push({
+      title:'Review progress and adjust the next stretch',
+      description:'Look at what worked, what got skipped, and what needs to change.',
+      sectionTitle:sectionForDay(day, durationDays),
+      scheduleType:'once',
+      startDay:day,
+      endDay:null,
+      unlockDay:day,
+      evidenceRequired:false,
+      resourceUrl:null,
+      order:tasks.length,
+    });
+  }
+  tasks.push({
+    title:'Complete a final reflection',
+    description:'Summarize progress, proof, lessons, and the next commitment.',
+    sectionTitle:'Ship and review',
+    scheduleType:'once',
+    startDay:durationDays,
+    endDay:null,
+    unlockDay:durationDays,
+    evidenceRequired:true,
+    resourceUrl:null,
+    order:tasks.length,
+  });
+  const notes = ['Basic starter template. Review and edit before saving.'];
+  if(['fitness', 'challenge'].includes(input.pathType)){
+    notes.push('Adapt intensity to your health, ability, and professional guidance where needed.');
+  }
+  return normalizeDraft({
+    title,
+    description: input.description || input.goal,
+    goal: input.goal,
+    category: input.pathType,
+    durationDays,
+    durationLabel: durationDays + ' days',
+    difficulty: input.currentLevel,
+    intensity: input.intensity,
+    previewTitle:title,
+    previewDescription: input.description || input.goal,
+    sections,
+    tasks,
+    resources: parseResources(input.resourceLinks),
+    notes,
+  }, input, source);
+}
+
+function parseResources(raw){
+  return text(raw).split(/\s+/).map(cleanUrl).filter(Boolean).slice(0, 8).map((url, i) => ({
+    title:'Resource ' + (i + 1),
+    url,
+    description:'',
+  }));
+}
+
+function normalizeDraft(raw, input, source = 'ai'){
+  if(!raw || typeof raw !== 'object') throw new Error('Generator returned an invalid draft.');
+  const durationDays = clamp(raw.durationDays || input.durationDays, 1, 365);
+  const sections = (Array.isArray(raw.sections) ? raw.sections : []).slice(0, 12).map((s, i) => ({
+    title:text(s.title, 'Section ' + (i + 1)).slice(0, 100),
+    description:text(s.description).slice(0, 500),
+    order:Number.isFinite(Number(s.order)) ? Number(s.order) : i,
+  })).filter(s => s.title);
+  if(!sections.length) sections.push({ title:'Foundation', description:'Start here.', order:0 });
+  const sectionNames = new Set(sections.map(s => s.title));
+  const tasks = (Array.isArray(raw.tasks) ? raw.tasks : []).slice(0, 80).map((t, i) => {
+    const scheduleType = t.scheduleType === 'daily' ? 'daily' : 'once';
+    const startDay = clamp(t.startDay || t.unlockDay || 1, 1, durationDays);
+    const endDay = scheduleType === 'daily' ? clamp(t.endDay || durationDays, startDay, durationDays) : null;
+    const unlockDay = scheduleType === 'once' ? clamp(t.unlockDay || startDay, 1, durationDays) : null;
+    const sectionTitle = sectionNames.has(t.sectionTitle) ? t.sectionTitle : sections[Math.min(sections.length - 1, Math.floor((startDay - 1) / Math.max(1, Math.ceil(durationDays / sections.length))))].title;
+    return {
+      title:text(t.title, 'Task ' + (i + 1)).slice(0, 140),
+      description:text(t.description).slice(0, 500),
+      sectionTitle,
+      scheduleType,
+      startDay,
+      endDay,
+      unlockDay,
+      evidenceRequired:!!t.evidenceRequired,
+      resourceUrl:cleanUrl(t.resourceUrl),
+      order:Number.isFinite(Number(t.order)) ? Number(t.order) : i,
+    };
+  }).filter(t => t.title);
+  if(!tasks.length) throw new Error('Generator returned no usable tasks.');
+  return {
+    title:text(raw.title, titleFromGoal(input.goal)).slice(0, 100),
+    description:text(raw.description, input.description || input.goal).slice(0, 1000),
+    goal:text(raw.goal, input.goal).slice(0, 800),
+    category:text(raw.category, input.pathType).slice(0, 80),
+    durationDays,
+    durationLabel:text(raw.durationLabel, durationDays + ' days').slice(0, 80),
+    difficulty:cleanChoice(raw.difficulty, LEVELS, input.currentLevel),
+    intensity:cleanChoice(raw.intensity, INTENSITIES, input.intensity),
+    previewTitle:text(raw.previewTitle, raw.title || titleFromGoal(input.goal)).slice(0, 100),
+    previewDescription:text(raw.previewDescription, raw.description || input.goal).slice(0, 500),
+    visibility:input.visibility,
+    sections:sections.sort((a, b) => a.order - b.order),
+    tasks:tasks.sort((a, b) => a.order - b.order),
+    resources:(Array.isArray(raw.resources) ? raw.resources : []).slice(0, 12).map((r, i) => ({
+      title:text(r.title, 'Resource ' + (i + 1)).slice(0, 100),
+      url:cleanUrl(r.url) || '',
+      description:text(r.description).slice(0, 300),
+    })).filter(r => r.url),
+    notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => text(n).slice(0, 300)).filter(Boolean).slice(0, 8),
+    source,
+  };
+}
+
+function buildPrompt(input){
+  return [
+    'Return strict JSON only. Do not include markdown, prose, comments, or citations.',
+    'Create an editable learning path draft for this app. Do not claim deep research or cite sources.',
+    'Use durationDays and scheduleType instead of generating one task per day.',
+    'Use daily recurring tasks for habits and once tasks for milestones.',
+    'Avoid unsafe medical or fitness prescriptions. Include a safety note for fitness/challenge paths.',
+    'Set evidenceRequired true only where proof matters: workouts, running/walking, course progress, uploaded work, public posts, project deliverables.',
+    'Schema keys: title, description, goal, category, durationDays, durationLabel, difficulty, intensity, previewTitle, previewDescription, sections, tasks, resources, notes.',
+    'Input: ' + JSON.stringify(input),
+  ].join('\n');
+}
+
+async function callOpenAI(input){
+  const apiKey = process.env.OPENAI_API_KEY;
+  if(!apiKey) return null;
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST',
+    headers:{
+      'Authorization':'Bearer ' + apiKey,
+      'Content-Type':'application/json',
+    },
+    body:JSON.stringify({
+      model:process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature:0.5,
+      messages:[
+        { role:'system', content:'You generate safe, realistic, editable learning path JSON for a habit and skill tracking app.' },
+        { role:'user', content:buildPrompt(input) },
+      ],
+      response_format:{ type:'json_object' },
+    }),
+  });
+  if(!response.ok) throw new Error('AI generation failed.');
+  const data = await response.json();
+  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if(!content) throw new Error('AI generation returned an empty response.');
+  return JSON.parse(content);
+}
+
+export default async function handler(req, res){
+  if(req.method !== 'POST'){
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ ok:false, message:'POST only.' });
+  }
+  try{
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const input = normalizePrompt(body);
+    if(!input.goal) return res.status(400).json({ ok:false, message:'Goal is required.' });
+    let raw = null;
+    let source = 'fallback';
+    let message = '';
+    if(process.env.OPENAI_API_KEY){
+      try{
+        raw = await callOpenAI(input);
+        source = 'ai';
+      }catch(e){
+        message = 'AI generation failed. A basic starter template was created instead.';
+      }
+    } else {
+      message = 'AI generation requires API configuration. A basic starter template was created instead.';
+    }
+    const draft = raw ? normalizeDraft(raw, input, source) : basicStarterDraft(input, source);
+    return res.status(200).json({ ok:true, draft, source, message });
+  }catch(e){
+    return res.status(400).json({ ok:false, message:e.message || 'Could not generate a path draft.' });
+  }
+}

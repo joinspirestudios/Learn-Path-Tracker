@@ -40,6 +40,7 @@ let evidenceFormTaskId = null;
 let evidenceProofType = 'url';
 let evidenceBusy = false;
 let evidenceError = '';
+let aiBuilder = null;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -108,6 +109,10 @@ export function renderCatalog(){
       + '<div class="sc-top">Create new path</div>'
       + '<div class="sc-blurb">Build a path you own, keep it private, publish it publicly, or share it by direct link.</div>'
       + '<div class="sc-cta">New path →</div></button>';
+    h += '<button class="skill-card create ai-create" id="aiCreateCard"><div class="sc-plus">AI</div>'
+      + '<div class="sc-top">Build path with AI</div>'
+      + '<div class="sc-blurb">Describe a goal, review the generated draft, edit it, then save it as a private path.</div>'
+      + '<div class="sc-cta">Generate a path</div></button>';
   } else if(configPresent()){
     h += '<button class="skill-card create" id="signinCard"><div class="sc-plus">＋</div>'
       + '<div class="sc-top">Build your own path</div>'
@@ -122,6 +127,7 @@ export function renderCatalog(){
     importLocalPath(b.dataset.import);
   });
   const cc = $('createCard'); if(cc) cc.onclick = createPath;
+  const ai = $('aiCreateCard'); if(ai) ai.onclick = openAIPathBuilder;
   const sc = $('signinCard'); if(sc) sc.onclick = () => openAuthModal('signup');
 }
 
@@ -163,6 +169,458 @@ async function importLocalPath(id){
   }
 }
 
+const AI_NON_NEGOTIABLES = [
+  'Read 10 pages',
+  'Run or walk 1km',
+  'Gym or training',
+  'Deep work',
+  'Sleep 8 hours',
+  'No soda',
+  'Course or learning progress',
+  'Post on social media',
+];
+
+function aiPromptDefaults(){
+  return {
+    goal:'',
+    durationDays:75,
+    currentLevel:'beginner',
+    intensity:'moderate',
+    pathType:'skill',
+    resourceLinks:'',
+    dailyTime:'',
+    evidenceStyle:'',
+    includeTasks:'',
+    excludeTasks:'',
+    visibility:'private',
+    description:'',
+    nonNegotiables:[],
+  };
+}
+
+function selectOptions(values, selected){
+  return values.map(v => '<option value="' + esc(v) + '" ' + (v === selected ? 'selected' : '') + '>' + esc(v) + '</option>').join('');
+}
+
+function clampDay(n, fallback = 1, max = 365){
+  n = Number(n);
+  if(!Number.isFinite(n)) n = fallback;
+  return Math.max(1, Math.min(max, Math.round(n)));
+}
+
+function titleFromGoal(goal){
+  const cleaned = String(goal || 'New path').replace(/^i want to\s+/i, '').trim() || 'New path';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function normalizeGeneratedDraft(raw, prompt){
+  if(!raw || typeof raw !== 'object') throw new Error('The generator returned an invalid draft.');
+  const durationDays = clampDay(raw.durationDays || prompt.durationDays, 1, 365);
+  const sections = (Array.isArray(raw.sections) ? raw.sections : []).slice(0, 12).map((s, i) => ({
+    title:String(s.title || ('Section ' + (i + 1))).slice(0, 100),
+    description:String(s.description || '').slice(0, 500),
+    order:Number.isFinite(Number(s.order)) ? Number(s.order) : i,
+  })).filter(s => s.title);
+  if(!sections.length) sections.push({ title:'Foundation', description:'Start here.', order:0 });
+  const sectionNames = new Set(sections.map(s => s.title));
+  const tasks = (Array.isArray(raw.tasks) ? raw.tasks : []).slice(0, 90).map((t, i) => {
+    const scheduleType = t.scheduleType === 'daily' ? 'daily' : 'once';
+    const startDay = clampDay(t.startDay || t.unlockDay || 1, 1, durationDays);
+    const endDay = scheduleType === 'daily' ? clampDay(t.endDay || durationDays, startDay, durationDays) : null;
+    const unlockDay = scheduleType === 'once' ? clampDay(t.unlockDay || startDay, startDay, durationDays) : null;
+    return {
+      title:String(t.title || ('Task ' + (i + 1))).slice(0, 140),
+      description:String(t.description || '').slice(0, 500),
+      sectionTitle:sectionNames.has(t.sectionTitle) ? t.sectionTitle : sections[0].title,
+      scheduleType,
+      startDay,
+      endDay,
+      unlockDay,
+      evidenceRequired:!!t.evidenceRequired,
+      resourceUrl:t.resourceUrl || null,
+      order:Number.isFinite(Number(t.order)) ? Number(t.order) : i,
+    };
+  }).filter(t => t.title);
+  if(!tasks.length) throw new Error('The generator returned no usable tasks.');
+  return {
+    title:String(raw.title || titleFromGoal(prompt.goal)).slice(0, 100),
+    description:String(raw.description || prompt.description || prompt.goal || '').slice(0, 1000),
+    goal:String(raw.goal || prompt.goal || '').slice(0, 800),
+    category:String(raw.category || prompt.pathType || '').slice(0, 80),
+    durationDays,
+    durationLabel:String(raw.durationLabel || (durationDays + ' days')).slice(0, 80),
+    difficulty:['beginner', 'intermediate', 'advanced'].includes(raw.difficulty) ? raw.difficulty : prompt.currentLevel,
+    intensity:['light', 'moderate', 'intense'].includes(raw.intensity) ? raw.intensity : prompt.intensity,
+    previewTitle:String(raw.previewTitle || raw.title || titleFromGoal(prompt.goal)).slice(0, 100),
+    previewDescription:String(raw.previewDescription || raw.description || prompt.goal || '').slice(0, 500),
+    visibility:['private', 'unlisted', 'public'].includes(raw.visibility || prompt.visibility) ? (raw.visibility || prompt.visibility) : 'private',
+    sections:sections.sort((a, b) => a.order - b.order),
+    tasks:tasks.sort((a, b) => a.order - b.order),
+    resources:(Array.isArray(raw.resources) ? raw.resources : []).slice(0, 12).map((r, i) => ({
+      title:String(r.title || ('Resource ' + (i + 1))).slice(0, 100),
+      url:String(r.url || '').slice(0, 300),
+      description:String(r.description || '').slice(0, 300),
+    })).filter(r => r.url),
+    notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => String(n || '').slice(0, 300)).filter(Boolean).slice(0, 8),
+    source:raw.source || 'ai',
+  };
+}
+
+function localGeneratedDraft(prompt){
+  const durationDays = clampDay(prompt.durationDays, 75, 365);
+  const title = titleFromGoal(prompt.goal);
+  const sections = [
+    { title:'Foundation', description:'Set up the routine and first repeatable actions.', order:0 },
+    { title:'Build', description:'Practice consistently and make visible progress.', order:1 },
+    { title:'Review', description:'Reflect, ship proof, and decide the next step.', order:2 },
+  ];
+  const daily = prompt.nonNegotiables.length ? prompt.nonNegotiables : ['Work on the goal'];
+  const tasks = daily.slice(0, 8).map((name, i) => ({
+    title:name,
+    description:'Repeat this commitment during the path.',
+    sectionTitle:'Foundation',
+    scheduleType:'daily',
+    startDay:1,
+    endDay:durationDays,
+    unlockDay:null,
+    evidenceRequired:/(run|walk|gym|train|workout|course|post|publish|design|project|deep work|proof|upload)/i.test(name + ' ' + prompt.evidenceStyle),
+    resourceUrl:null,
+    order:i,
+  }));
+  const every = durationDays >= 90 ? 30 : durationDays >= 45 ? 15 : 7;
+  for(let day = every; day < durationDays; day += every){
+    tasks.push({
+      title:'Review progress and adjust the next stretch',
+      description:'Look at what worked, what slipped, and what needs to change.',
+      sectionTitle:day > durationDays * 0.66 ? 'Review' : 'Build',
+      scheduleType:'once',
+      startDay:day,
+      endDay:null,
+      unlockDay:day,
+      evidenceRequired:false,
+      resourceUrl:null,
+      order:tasks.length,
+    });
+  }
+  tasks.push({
+    title:'Complete a final reflection',
+    description:'Summarize progress, proof, lessons, and next steps.',
+    sectionTitle:'Review',
+    scheduleType:'once',
+    startDay:durationDays,
+    endDay:null,
+    unlockDay:durationDays,
+    evidenceRequired:true,
+    resourceUrl:null,
+    order:tasks.length,
+  });
+  return normalizeGeneratedDraft({
+    title,
+    description:prompt.description || prompt.goal,
+    goal:prompt.goal,
+    category:prompt.pathType,
+    durationDays,
+    durationLabel:durationDays + ' days',
+    difficulty:prompt.currentLevel,
+    intensity:prompt.intensity,
+    previewTitle:title,
+    previewDescription:prompt.description || prompt.goal,
+    sections,
+    tasks,
+    resources:String(prompt.resourceLinks || '').split(/\s+/).filter(x => /^https?:\/\//i.test(x)).map((url, i) => ({ title:'Resource ' + (i + 1), url, description:'' })),
+    notes:['Basic starter template. Review and edit before saving.'].concat(['fitness', 'challenge'].includes(prompt.pathType) ? ['Adapt intensity to your health, ability, and professional guidance where needed.'] : []),
+    source:'fallback',
+  }, prompt);
+}
+
+function aiDraftToLocalPath(draft){
+  const sections = draft.sections.length ? draft.sections : [{ title:'Foundation', description:'', order:0 }];
+  const weeks = sections.map(section => ({
+    title:section.title,
+    description:section.description || '',
+    tasks:[],
+    resources:[],
+  }));
+  const indexByTitle = {};
+  sections.forEach((section, i) => { indexByTitle[section.title] = i; });
+  (draft.tasks || []).forEach(task => {
+    const i = indexByTitle[task.sectionTitle] == null ? 0 : indexByTitle[task.sectionTitle];
+    weeks[i].tasks.push({
+      text:task.title,
+      description:task.description || '',
+      resourceUrl:task.resourceUrl || null,
+      scheduleType:task.scheduleType,
+      startDay:task.startDay == null ? null : Number(task.startDay),
+      endDay:task.endDay == null ? null : Number(task.endDay),
+      unlockDay:task.unlockDay == null ? null : Number(task.unlockDay),
+      evidenceRequired:!!task.evidenceRequired,
+    });
+  });
+  (draft.resources || []).forEach(resource => {
+    weeks[0].resources.push({ label:resource.title || resource.url, url:resource.url || '', description:resource.description || '' });
+  });
+  return {
+    title:draft.title,
+    goal:draft.goal,
+    description:draft.description,
+    category:draft.category,
+    durationDays:clampDay(draft.durationDays, 1, 365),
+    durationLabel:draft.durationLabel || (draft.durationDays + ' days'),
+    creatorName:store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
+    visibility:draft.visibility || 'private',
+    discoverable:false,
+    previewEnabled:true,
+    previewTitle:draft.previewTitle || draft.title,
+    previewDescription:draft.previewDescription || draft.description || draft.goal,
+    previewIncludesScheme:false,
+    coverImage:null,
+    profileImage:null,
+    created:Date.now(),
+    weeks,
+  };
+}
+
+function openAIPathBuilder(){
+  if(configPresent() && !store.currentUser){
+    openAuthModal('signup');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  document.body.appendChild(overlay);
+  aiBuilder = {
+    overlay,
+    mode:'prompt',
+    prompt: aiBuilder?.prompt || aiPromptDefaults(),
+    draft: aiBuilder?.draft || null,
+    loading:false,
+    error:'',
+    message:'',
+    dirty:false,
+  };
+  overlay.addEventListener('click', e => { if(e.target === overlay) closeAIBuilder(); });
+  renderAIBuilder();
+}
+
+function closeAIBuilder(){
+  if(aiBuilder?.overlay) aiBuilder.overlay.remove();
+  aiBuilder = null;
+}
+
+function collectAIPrompt(){
+  const nonNegotiables = Array.from(aiBuilder.overlay.querySelectorAll('.ai-nn:checked')).map(x => x.value);
+  aiBuilder.prompt = {
+    goal:($('aiGoal')?.value || '').trim(),
+    durationDays:clampDay($('aiDuration')?.value || 75, 75, 365),
+    currentLevel:$('aiLevel')?.value || 'beginner',
+    intensity:$('aiIntensity')?.value || 'moderate',
+    pathType:$('aiType')?.value || 'skill',
+    resourceLinks:($('aiResources')?.value || '').trim(),
+    dailyTime:($('aiDailyTime')?.value || '').trim(),
+    evidenceStyle:($('aiEvidenceStyle')?.value || '').trim(),
+    includeTasks:($('aiInclude')?.value || '').trim(),
+    excludeTasks:($('aiExclude')?.value || '').trim(),
+    visibility:$('aiVisibility')?.value || 'private',
+    description:($('aiDescription')?.value || '').trim(),
+    nonNegotiables,
+  };
+  return aiBuilder.prompt;
+}
+
+function aiPromptHTML(){
+  const p = aiBuilder.prompt;
+  return '<div class="modal-box ai-modal"><div class="modal-head"><h3>Build path with AI</h3><button class="modal-x">x</button></div>'
+    + '<div class="modal-body">'
+    + '<div class="ai-note">Generate an editable starting point. Review and save only when it fits your plan.</div>'
+    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
+    + '<div class="field"><label>Goal</label><textarea id="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Duration in days</label><input type="number" id="aiDuration" min="1" max="365" value="' + esc(p.durationDays) + '"/></div>'
+    + '<div class="field"><label>Current level</label><select id="aiLevel">' + selectOptions(['beginner', 'intermediate', 'advanced'], p.currentLevel) + '</select></div>'
+    + '<div class="field"><label>Intensity</label><select id="aiIntensity">' + selectOptions(['light', 'moderate', 'intense'], p.intensity) + '</select></div>'
+    + '<div class="field"><label>Path type</label><select id="aiType">' + selectOptions(['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'], p.pathType) + '</select></div>'
+    + '</div>'
+    + '<div class="ai-nn-wrap"><label>Daily non-negotiables</label><div class="ai-checks">' + AI_NON_NEGOTIABLES.map(item => '<label><input type="checkbox" class="ai-nn" value="' + esc(item) + '" ' + (p.nonNegotiables.includes(item) ? 'checked' : '') + '/>' + esc(item) + '</label>').join('') + '</div></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Daily time available</label><input type="text" id="aiDailyTime" value="' + esc(p.dailyTime) + '" placeholder="30 minutes, 2 hours..."/></div>'
+    + '<div class="field"><label>Default visibility</label><select id="aiVisibility">' + selectOptions(['private', 'unlisted', 'public'], p.visibility) + '</select></div>'
+    + '</div>'
+    + '<div class="field"><label>Preferred proof/evidence style</label><input type="text" id="aiEvidenceStyle" value="' + esc(p.evidenceStyle) + '" placeholder="URL posts, screenshots, photos, final files..."/></div>'
+    + '<div class="field"><label>Existing resource links</label><textarea id="aiResources" placeholder="Paste links, one or many">' + esc(p.resourceLinks) + '</textarea></div>'
+    + '<div class="field"><label>Tasks to include</label><textarea id="aiInclude" placeholder="Tasks you already know you want">' + esc(p.includeTasks) + '</textarea></div>'
+    + '<div class="field"><label>Tasks to avoid</label><textarea id="aiExclude" placeholder="Anything you do not want included">' + esc(p.excludeTasks) + '</textarea></div>'
+    + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>'
+    + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn gold" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate draft') + '</button></div>'
+    + '</div></div>';
+}
+
+function aiReviewHTML(){
+  const d = aiBuilder.draft;
+  const sectionOptions = d.sections.map(s => s.title);
+  return '<div class="modal-box ai-modal review"><div class="modal-head"><h3>Review generated path</h3><button class="modal-x">x</button></div>'
+    + '<div class="modal-body">'
+    + (aiBuilder.message ? '<div class="ai-note">' + esc(aiBuilder.message) + '</div>' : '')
+    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
+    + '<div class="ai-grid">'
+    + '<div class="field"><label>Title</label><input type="text" class="ai-draft-field" data-key="title" value="' + esc(d.title) + '"/></div>'
+    + '<div class="field"><label>Category</label><input type="text" class="ai-draft-field" data-key="category" value="' + esc(d.category) + '"/></div>'
+    + '<div class="field"><label>Duration days</label><input type="number" class="ai-draft-field" data-key="durationDays" value="' + esc(d.durationDays) + '"/></div>'
+    + '<div class="field"><label>Duration label</label><input type="text" class="ai-draft-field" data-key="durationLabel" value="' + esc(d.durationLabel) + '"/></div>'
+    + '<div class="field"><label>Visibility</label><select class="ai-draft-field" data-key="visibility">' + selectOptions(['private', 'unlisted', 'public'], d.visibility || 'private') + '</select></div>'
+    + '<div class="field"><label>Preview title</label><input type="text" class="ai-draft-field" data-key="previewTitle" value="' + esc(d.previewTitle) + '"/></div>'
+    + '</div>'
+    + '<div class="field"><label>Goal</label><textarea class="ai-draft-field" data-key="goal">' + esc(d.goal) + '</textarea></div>'
+    + '<div class="field"><label>Description</label><textarea class="ai-draft-field" data-key="description">' + esc(d.description) + '</textarea></div>'
+    + '<div class="field"><label>Preview description</label><textarea class="ai-draft-field" data-key="previewDescription">' + esc(d.previewDescription) + '</textarea></div>'
+    + '<div class="ai-review-head"><b>Sections</b><button class="add-link" data-ai-act="addSection">+ Add section</button></div>'
+    + '<div class="ai-list">' + d.sections.map((s, i) => '<div class="ai-edit-row"><input class="ai-section-field" data-i="' + i + '" data-key="title" value="' + esc(s.title) + '"/><input class="ai-section-field" data-i="' + i + '" data-key="description" value="' + esc(s.description || '') + '" placeholder="Description"/><button class="icon-btn danger" data-ai-act="delSection" data-i="' + i + '">x</button></div>').join('') + '</div>'
+    + '<div class="ai-review-head"><b>Tasks</b><button class="add-link" data-ai-act="addTask">+ Add task</button></div>'
+    + '<div class="ai-list tasks">' + d.tasks.map((t, i) => aiTaskRowHTML(t, i, sectionOptions)).join('') + '</div>'
+    + '<div class="ai-review-head"><b>Resources</b><button class="add-link" data-ai-act="addResource">+ Add resource</button></div>'
+    + '<div class="ai-list">' + (d.resources || []).map((r, i) => '<div class="ai-edit-row"><input class="ai-resource-field" data-i="' + i + '" data-key="title" value="' + esc(r.title) + '" placeholder="Title"/><input class="ai-resource-field" data-i="' + i + '" data-key="url" value="' + esc(r.url) + '" placeholder="https://..."/><button class="icon-btn danger" data-ai-act="delResource" data-i="' + i + '">x</button></div>').join('') + '</div>'
+    + (d.notes && d.notes.length ? '<div class="ai-note"><b>Notes</b><ul>' + d.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></div>' : '')
+    + '<div class="ai-actions"><button class="btn" id="aiEditPrompt">Edit prompt</button><button class="btn" id="aiRegenerate">Regenerate</button><button class="btn" id="aiCancel">Cancel</button><button class="btn gold" id="aiSave">Save path</button></div>'
+    + '</div></div>';
+}
+
+function aiTaskRowHTML(t, i, sectionOptions){
+  return '<div class="ai-task-row">'
+    + '<input class="ai-task-field ai-title" data-i="' + i + '" data-key="title" value="' + esc(t.title) + '" placeholder="Task title"/>'
+    + '<select class="ai-task-field" data-i="' + i + '" data-key="sectionTitle">' + selectOptions(sectionOptions, t.sectionTitle) + '</select>'
+    + '<select class="ai-task-field" data-i="' + i + '" data-key="scheduleType">' + selectOptions(['daily', 'once'], t.scheduleType) + '</select>'
+    + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="startDay" value="' + esc(t.startDay || 1) + '" min="1"/>'
+    + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="endDay" value="' + esc(t.endDay || '') + '" min="1" placeholder="End"/>'
+    + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="unlockDay" value="' + esc(t.unlockDay || '') + '" min="1" placeholder="Unlock"/>'
+    + '<label><input type="checkbox" class="ai-task-field" data-i="' + i + '" data-key="evidenceRequired" ' + (t.evidenceRequired ? 'checked' : '') + '/> Proof</label>'
+    + '<button class="icon-btn danger" data-ai-act="delTask" data-i="' + i + '">x</button>'
+    + '<textarea class="ai-task-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(t.description || '') + '</textarea>'
+    + '</div>';
+}
+
+function renderAIBuilder(){
+  if(!aiBuilder?.overlay) return;
+  aiBuilder.overlay.innerHTML = aiBuilder.mode === 'review' && aiBuilder.draft ? aiReviewHTML() : aiPromptHTML();
+  const close = aiBuilder.overlay.querySelector('.modal-x');
+  if(close) close.onclick = closeAIBuilder;
+  const cancel = $('aiCancel'); if(cancel) cancel.onclick = closeAIBuilder;
+  const generate = $('aiGenerate'); if(generate) generate.onclick = () => generateAIPath(false);
+  const basic = $('aiBasic'); if(basic) basic.onclick = () => generateAIPath(true);
+  const editPrompt = $('aiEditPrompt'); if(editPrompt) editPrompt.onclick = () => { aiBuilder.mode = 'prompt'; renderAIBuilder(); };
+  const regenerate = $('aiRegenerate'); if(regenerate) regenerate.onclick = () => {
+    if(aiBuilder.dirty && !confirm('Regenerate this draft and replace your edits?')) return;
+    generateAIPath(false);
+  };
+  const save = $('aiSave'); if(save) save.onclick = saveGeneratedPath;
+  aiBuilder.overlay.querySelectorAll('.ai-draft-field').forEach(el => el.addEventListener('input', e => {
+    const key = e.target.dataset.key;
+    aiBuilder.draft[key] = key === 'durationDays' ? clampDay(e.target.value, aiBuilder.draft.durationDays, 365) : e.target.value;
+    aiBuilder.dirty = true;
+  }));
+  aiBuilder.overlay.querySelectorAll('.ai-section-field').forEach(el => el.addEventListener('input', e => {
+    aiBuilder.draft.sections[Number(e.target.dataset.i)][e.target.dataset.key] = e.target.value;
+    aiBuilder.dirty = true;
+  }));
+  aiBuilder.overlay.querySelectorAll('.ai-resource-field').forEach(el => el.addEventListener('input', e => {
+    aiBuilder.draft.resources[Number(e.target.dataset.i)][e.target.dataset.key] = e.target.value;
+    aiBuilder.dirty = true;
+  }));
+  aiBuilder.overlay.querySelectorAll('.ai-task-field').forEach(el => {
+    const handler = e => {
+      const task = aiBuilder.draft.tasks[Number(e.target.dataset.i)];
+      const key = e.target.dataset.key;
+      if(key === 'evidenceRequired') task[key] = e.target.checked;
+      else if(['startDay', 'endDay', 'unlockDay'].includes(key)) task[key] = e.target.value ? clampDay(e.target.value, 1, aiBuilder.draft.durationDays) : null;
+      else task[key] = e.target.value;
+      if(key === 'scheduleType') renderAIBuilder();
+      aiBuilder.dirty = true;
+    };
+    el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
+  });
+  aiBuilder.overlay.querySelectorAll('[data-ai-act]').forEach(btn => btn.onclick = () => runAIAction(btn.dataset.aiAct, Number(btn.dataset.i)));
+}
+
+function runAIAction(action, i){
+  const d = aiBuilder.draft;
+  if(action === 'addSection') d.sections.push({ title:'New section', description:'', order:d.sections.length });
+  if(action === 'delSection' && d.sections.length > 1) d.sections.splice(i, 1);
+  if(action === 'addTask') d.tasks.push({ title:'New task', description:'', sectionTitle:d.sections[0].title, scheduleType:'once', startDay:1, endDay:null, unlockDay:1, evidenceRequired:false, resourceUrl:null, order:d.tasks.length });
+  if(action === 'delTask') d.tasks.splice(i, 1);
+  if(action === 'addResource') d.resources.push({ title:'Resource', url:'', description:'' });
+  if(action === 'delResource') d.resources.splice(i, 1);
+  aiBuilder.dirty = true;
+  renderAIBuilder();
+}
+
+async function generateAIPath(forceBasic){
+  const prompt = collectAIPrompt();
+  if(!prompt.goal){
+    aiBuilder.error = 'Add a goal before generating a path.';
+    renderAIBuilder();
+    return;
+  }
+  aiBuilder.loading = true;
+  aiBuilder.error = '';
+  aiBuilder.message = '';
+  renderAIBuilder();
+  try{
+    let payload = null;
+    if(!forceBasic){
+      try{
+        const res = await fetch('/api/generate-path', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body:JSON.stringify(prompt),
+        });
+        payload = await res.json();
+        if(!res.ok || !payload.ok) throw new Error(payload.message || 'AI generation failed.');
+      }catch(e){
+        payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'AI generation requires API configuration. A basic starter template was created instead.' };
+      }
+    } else {
+      payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Basic starter template created without AI.' };
+    }
+    aiBuilder.draft = normalizeGeneratedDraft(payload.draft, prompt);
+    aiBuilder.draft.source = payload.source || aiBuilder.draft.source;
+    aiBuilder.message = payload.message || (payload.source === 'ai' ? 'AI draft generated. Review before saving.' : 'Basic starter template created. Review before saving.');
+    aiBuilder.mode = 'review';
+    aiBuilder.dirty = false;
+  }catch(e){
+    aiBuilder.error = e.message || 'Could not generate a draft.';
+  }finally{
+    aiBuilder.loading = false;
+    renderAIBuilder();
+  }
+}
+
+async function saveGeneratedPath(){
+  if(!aiBuilder?.draft) return;
+  const localPath = aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt));
+  let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
+  if(cloudActive()){
+    const cloudId = await dbCreatePlatformPath(localPath);
+    if(!cloudId){
+      aiBuilder.error = 'Could not save this generated path.';
+      renderAIBuilder();
+      return;
+    }
+    id = cloudId;
+  } else if(configPresent()){
+    aiBuilder.error = 'Sign in to save this generated path to the platform. Your draft will stay open.';
+    renderAIBuilder();
+    openAuthModal('signup');
+    return;
+  } else {
+    store.state.userPaths[id] = localPath;
+    await dbSaveState();
+  }
+  ensureSkill(id);
+  closeAIBuilder();
+  await openSkill(id);
+  store.editMode = true;
+  renderPlan();
+  flash('Generated path saved as private');
+}
+
 function createPath(){
   const bySkill = {};
   TEMPLATES.forEach(t => { (bySkill[t.skill] = bySkill[t.skill] || []).push(t); });
@@ -180,13 +638,14 @@ function createPath(){
     + '<div class="tpl-list">' + list + '</div>'
     + '<div class="field" style="margin-top:14px"><label>Path name</label><input type="text" id="npTitle" placeholder="Name your path" maxlength="80"/></div>'
     + '<div class="field" style="margin-top:10px"><label>Your goal (optional)</label><textarea id="npGoal" placeholder="What does finishing this path look like?"></textarea></div>'
-    + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="npCancel">Cancel</button><button class="btn gold" id="npCreate">Create path</button></div>'
+    + '<div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:16px;flex-wrap:wrap"><button class="btn" id="npAi">Build with AI</button><div style="display:flex;gap:10px"><button class="btn" id="npCancel">Cancel</button><button class="btn gold" id="npCreate">Create path</button></div></div>'
     + '</div></div>';
   document.body.appendChild(o);
   const close = () => o.remove();
   o.addEventListener('click', e => { if(e.target === o) close(); });
   o.querySelector('.modal-x').onclick = close;
   o.querySelector('#npCancel').onclick = close;
+  o.querySelector('#npAi').onclick = () => { close(); openAIPathBuilder(); };
   let pick = 'blank';
   const titleIn = o.querySelector('#npTitle'), goalIn = o.querySelector('#npGoal');
   o.querySelectorAll('.tpl-row').forEach(row => row.onclick = () => {

@@ -42,7 +42,54 @@ submissions:
 - New enrollments start with one freeze. A missed day can be changed to
   `frozen` to preserve the streak without counting as a completed day.
 
-AI generation, comments, notifications, payments, and advanced catch-up modes are
+Comments, notifications, payments, and advanced catch-up modes are not
+implemented in this phase.
+
+---
+
+## Phase 4 AI Path Generator
+
+Signed-in users can choose **Build path with AI** from the catalog or the manual
+create-path modal. The guided builder asks for a goal, duration, level,
+intensity, path type, optional resources, preferred proof style, and daily
+non-negotiables. It then creates an editable draft that the user must review
+before saving.
+
+The generator is intentionally a starting-point tool:
+
+- It saves generated paths as private by default.
+- It uses recurring `scheduleType: "daily"` tasks for habits and repeated work.
+- It uses `scheduleType: "once"` tasks for milestones and reviews.
+- It preserves `durationDays`, task schedules, and `evidenceRequired`.
+- It does not publish generated paths publicly unless the user changes
+  visibility.
+
+AI calls run server-side through `api/generate-path.js`. The frontend never needs
+or receives an AI API key.
+
+Server-side AI configuration:
+
+```bash
+OPENAI_API_KEY=your_server_side_key
+# Optional:
+OPENAI_MODEL=gpt-4o-mini
+```
+
+If `OPENAI_API_KEY` is missing, unavailable, or the provider returns invalid
+output, the app shows a clear fallback message and creates a basic starter
+template from the prompt. That fallback is not labeled as AI-generated.
+
+Limitations:
+
+- Generated output must be reviewed and edited by the user before saving.
+- The generator does not perform real web research and must not be treated as
+  deep research.
+- It does not create fake citations or fake sources.
+- Fitness/challenge plans are not medical advice; users should adapt intensity
+  to their health, ability, and professional guidance.
+- AI does not verify whether submitted evidence is truthful.
+
+Comments, notifications, payments, social feeds, and evidence truth review are
 not implemented in this phase.
 
 ---
@@ -112,6 +159,9 @@ files to `dist`, and `npm run preview` serves the built app.
 File evidence uploads require Firebase Storage to be enabled, the Storage rules
 below to be published, and `VITE_FIREBASE_STORAGE_BUCKET` to match your Firebase
 bucket. Without that bucket config, users can still submit URL proof.
+
+To enable AI path generation on Vercel, add `OPENAI_API_KEY` as a server-side
+environment variable. Do not prefix it with `VITE_`.
 
 ### Recommended platform Firestore rules
 
@@ -282,7 +332,9 @@ service cloud.firestore {
    `npm run build` and output directory `dist`.
 3. Add the `VITE_FIREBASE_*` environment variables, including
    `VITE_FIREBASE_STORAGE_BUCKET` if file evidence uploads are enabled.
-4. Deploy. Files in `api/` deploy as serverless functions.
+4. Add `OPENAI_API_KEY` if you want real AI path generation. Without it, the
+   builder uses the basic starter fallback.
+5. Deploy. Files in `api/` deploy as serverless functions.
 
 ---
 
