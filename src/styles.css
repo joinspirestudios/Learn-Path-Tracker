@@ -13,6 +13,10 @@
     color:var(--cream);font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.55;
     -webkit-font-smoothing:antialiased;min-height:100vh;
   }
+  body.booting #tabs, body.booting #startWrap, body.booting #overallWrap{display:none!important}
+  .app-loading{margin:42px auto;padding:24px;max-width:520px;text-align:left;background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line2);border-radius:14px;box-shadow:var(--shadow)}
+  .app-loading h2{font-family:'Fraunces',serif;font-size:24px;margin:10px 0 4px;color:var(--cream)}
+  .app-loading p{color:var(--sand);font-size:13.5px}
   body::before{
     content:"";position:fixed;inset:-12%;z-index:-1;pointer-events:none;
     background:
@@ -440,6 +444,58 @@
 .ai-task-row input[data-key="resourceUrl"]{grid-column:1/-1}
 .ai-task-row textarea{grid-column:1/-1;min-height:54px;resize:vertical}
 @media(max-width:760px){.ai-grid,.ai-edit-row,.ai-task-row{grid-template-columns:1fr}.ai-actions{justify-content:flex-start}}
+
+@media(max-width:900px){
+  .wrap{padding:0 16px 80px}
+  .top-inner{gap:12px;align-items:flex-start}
+  .brand{min-width:0;flex-basis:100%}
+  #auth,.startbar,.overall{flex-wrap:wrap}
+  nav.tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:6px;margin:14px -16px 18px;padding-left:16px;padding-right:16px;scrollbar-width:thin}
+  .tab{white-space:nowrap;padding:8px 12px;font-size:12.5px}
+  .cat-grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .skill-card{min-height:180px;padding:20px 18px;border-radius:14px}
+  .modal-overlay{align-items:flex-start;justify-content:center;overflow:auto;padding:12px}
+  .modal-box{width:min(640px,100%);max-height:none;margin:16px 0;border-radius:14px}
+  .modal-body{max-height:none}
+  .ai-modal{width:100%;max-height:none}
+  .ai-task-row{grid-template-columns:1fr 1fr}
+  .ai-task-row input[data-key="resourceUrl"],.ai-task-row textarea{grid-column:1/-1}
+  .road-days.vertical{max-height:460px}
+  .road-days.vertical .road-day{width:100%}
+  .road-days.vertical .road-day:nth-child(even){align-self:stretch}
+}
+
+@media(max-width:520px){
+  .wrap{padding:0 12px 70px}
+  .top-inner{padding:12px}
+  .brand h1{font-size:22px}
+  .brand .kicker{letter-spacing:.18em}
+  .overall{width:100%;justify-content:space-between}
+  .ring{width:46px;height:46px}
+  .ring svg{width:46px;height:46px}
+  .ring .pct{font-size:12px}
+  .cat-grid{grid-template-columns:1fr}
+  .skill-card .sc-top{font-size:20px}
+  .plan-head{display:block}
+  .plan-head>div:last-child{text-align:left!important;margin-top:12px}
+  .plan-head .progress-bar{width:100%!important;max-width:none!important;margin-left:0!important}
+  .journey-status{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .journey-start{display:block}
+  .journey-start .btn{margin-top:10px}
+  .detail-head,.road-head{align-items:flex-start;flex-direction:column}
+  .journey-task{gap:9px;padding:10px}
+  .journey-task.proof-required .btn{width:100%;justify-content:center}
+  .schedule-edit{grid-template-columns:1fr}
+  .row-edit,.row-edit.res,.ai-edit-row{grid-template-columns:1fr!important}
+  .edit-grid,.ai-grid{grid-template-columns:1fr}
+  .ai-actions,.ai-voice-actions,.preview-actions{justify-content:stretch}
+  .ai-actions .btn,.ai-voice-actions .btn,.preview-actions .btn{justify-content:center;flex:1 1 150px}
+  .modal-overlay{padding:8px}
+  .modal-box{margin:8px 0;width:100%;border-radius:12px}
+  .modal-head,.modal-body{padding:14px}
+  .tpl-list{max-height:260px}
+  .road-days.vertical{max-height:420px;padding-right:0}
+}
 
 /* ---- undo toast (J1) ---- */
 .undo-toast{

@@ -11,6 +11,7 @@ import { normalizeDurationDays } from './journey.js';
 export const STATE_KEY  = 'lpt_state';
 export const CAT_PREFIX = 'lpt_cat:';
 export const LEGACY_KEY = 'dp_state';
+export const LAST_ROUTE_KEY = 'lpt_last_route';
 
 /* ---------- SCHEMA VERSION + MIGRATIONS ----------
    Bump SCHEMA_VERSION and add a numbered migration block below whenever the
@@ -72,6 +73,7 @@ export const store = {
   evidenceSubmissions: {},
   accessRequests:  {},
   route:           { kind:'catalog' },
+  bootReady:       false,
   currentUser:     null,
   authChecked:     false,
   activeTab:       'week',

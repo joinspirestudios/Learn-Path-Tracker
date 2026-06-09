@@ -26,6 +26,7 @@ import {
 import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive } from './db.js';
+import { cachedAuthLabel } from './auth.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
@@ -43,9 +44,25 @@ let evidenceError = '';
 let aiBuilder = null;
 let voiceDurationTimer = null;
 let discardVoiceOnStop = false;
+let isCreatingPath = false;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
+}
+
+function setRoute(hash){
+  try{ localStorage.setItem('lpt_last_route', hash); }catch(e){}
+  if(location.hash !== hash) history.replaceState(null, '', hash);
+}
+
+function pathHash(id, tab = store.activeTab || 'plan', day = null){
+  let hash = '#/path/' + encodeURIComponent(id) + '/' + encodeURIComponent(tab || 'plan');
+  if(day != null) hash += '/roadmap/day/' + encodeURIComponent(day);
+  return hash;
+}
+
+function authRestoring(){
+  return !!(configPresent() && !store.authChecked && cachedAuthLabel());
 }
 function upSave(){     saveCurrentPath(); }
 function upSaveSoft(){ scheduleSave(); }
@@ -77,6 +94,12 @@ export async function toggle(id, val){
 export function renderCatalog(){
   let h = '<div class="cat-intro"><div class="section-title">Discover <em>Learning Paths</em></div>'
     + '<div class="muted" style="max-width:640px">Explore public journeys, keep your own private paths close, and turn local drafts into shareable learning paths when you are ready.</div></div>';
+  if(authRestoring()){
+    h += '<div class="panel card restoring-state"><div class="chip">Restoring</div><h3>Restoring your session...</h3><p class="muted">Loading your workspace before showing account actions.</p></div>';
+    $('content').innerHTML = h;
+    applyHeader();
+    return;
+  }
   h += '<div class="cat-grid">';
   SKILLS.forEach(s => {
     const t = totalsFor(s.id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
@@ -613,9 +636,10 @@ function openAIPathBuilder(){
     brief: aiBuilder?.brief || null,
     clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
     voice: makeVoiceState(aiBuilder?.voice || {}),
+    saving:false,
     dirty:false,
   };
-  overlay.addEventListener('click', e => { if(e.target === overlay) closeAIBuilder(); });
+  overlay.addEventListener('click', e => { if(e.target === overlay && !aiBuilder?.saving) closeAIBuilder(); });
   renderAIBuilder();
 }
 
@@ -962,7 +986,7 @@ function aiReviewHTML(){
     + '<div class="ai-review-head"><b>Resources</b><button class="add-link" data-ai-act="addResource">+ Add resource</button></div>'
     + '<div class="ai-list">' + (d.resources || []).map((r, i) => '<div class="ai-edit-row resource"><input class="ai-resource-field" data-i="' + i + '" data-key="title" value="' + esc(r.title) + '" placeholder="Title"/><input class="ai-resource-field" data-i="' + i + '" data-key="url" value="' + esc(r.url) + '" placeholder="https://..."/><button class="icon-btn danger" data-ai-act="delResource" data-i="' + i + '">x</button><textarea class="ai-resource-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(r.description || '') + '</textarea></div>').join('') + '</div>'
     + (d.notes && d.notes.length ? '<div class="ai-note"><b>Notes</b><ul>' + d.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></div>' : '')
-    + '<div class="ai-actions"><button class="btn" id="aiEditPrompt">Edit prompt</button><button class="btn" id="aiRegenerate">Regenerate</button><button class="btn" id="aiCancel">Cancel</button><button class="btn gold" id="aiSave">Save path</button></div>'
+    + '<div class="ai-actions"><button class="btn" id="aiEditPrompt" ' + (aiBuilder.saving ? 'disabled' : '') + '>Edit prompt</button><button class="btn" id="aiRegenerate" ' + (aiBuilder.saving ? 'disabled' : '') + '>Regenerate</button><button class="btn" id="aiCancel" ' + (aiBuilder.saving ? 'disabled' : '') + '>Cancel</button><button class="btn gold" id="aiSave" ' + (aiBuilder.saving ? 'disabled' : '') + '>' + (aiBuilder.saving ? 'Saving path...' : 'Save path') + '</button></div>'
     + '</div></div>';
 }
 
@@ -1211,32 +1235,41 @@ async function generateAIPath(forceBasic, promptOverride = null){
 }
 
 async function saveGeneratedPath(){
-  if(!aiBuilder?.draft) return;
-  const localPath = aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt));
-  let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
-  if(cloudActive()){
-    const cloudId = await dbCreatePlatformPath(localPath);
-    if(!cloudId){
-      aiBuilder.error = 'Could not save this generated path.';
+  if(!aiBuilder?.draft || aiBuilder.saving) return;
+  aiBuilder.saving = true;
+  aiBuilder.error = '';
+  aiBuilder.message = 'Saving generated path...';
+  renderAIBuilder();
+  try{
+    const localPath = aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt));
+    let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);
+    if(cloudActive()){
+      const cloudId = await dbCreatePlatformPath(localPath);
+      if(!cloudId){
+        throw new Error('Could not save generated path. Check your connection or permissions.');
+      }
+      id = cloudId;
+    } else if(configPresent()){
+      aiBuilder.error = 'Sign in to save this generated path to the platform. Your draft will stay open.';
+      aiBuilder.saving = false;
       renderAIBuilder();
+      openAuthModal('signup');
       return;
+    } else {
+      store.state.userPaths[id] = localPath;
+      await dbSaveState();
     }
-    id = cloudId;
-  } else if(configPresent()){
-    aiBuilder.error = 'Sign in to save this generated path to the platform. Your draft will stay open.';
+    ensureSkill(id);
+    closeAIBuilder();
+    await openSkill(id, { tab:'plan' });
+    store.editMode = true;
+    renderPlan();
+    flash('Generated path saved as private');
+  }catch(e){
+    aiBuilder.saving = false;
+    aiBuilder.error = e.message || 'Could not save generated path. Check your connection or permissions.';
     renderAIBuilder();
-    openAuthModal('signup');
-    return;
-  } else {
-    store.state.userPaths[id] = localPath;
-    await dbSaveState();
   }
-  ensureSkill(id);
-  closeAIBuilder();
-  await openSkill(id);
-  store.editMode = true;
-  renderPlan();
-  flash('Generated path saved as private');
 }
 
 function createPath(){
@@ -1252,6 +1285,7 @@ function createPath(){
   const o = document.createElement('div'); o.className = 'modal-overlay';
   o.innerHTML = '<div class="modal-box wide"><div class="modal-head"><h3>Create a new path</h3><button class="modal-x">×</button></div>'
     + '<div class="modal-body">'
+    + '<div class="form-error" id="npErr" style="display:none"></div>'
     + '<div class="muted" style="font-size:12px;margin-bottom:10px">Start from a template or blank. Everything stays fully editable after you create it.</div>'
     + '<div class="tpl-list">' + list + '</div>'
     + '<div class="field" style="margin-top:14px"><label>Path name</label><input type="text" id="npTitle" placeholder="Name your path" maxlength="80"/></div>'
@@ -1259,11 +1293,26 @@ function createPath(){
     + '<div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:16px;flex-wrap:wrap"><button class="btn" id="npAi">Build with AI</button><div style="display:flex;gap:10px"><button class="btn" id="npCancel">Cancel</button><button class="btn gold" id="npCreate">Create path</button></div></div>'
     + '</div></div>';
   document.body.appendChild(o);
-  const close = () => o.remove();
+  let busy = false;
+  const close = () => { if(!busy) o.remove(); };
+  const setErr = msg => {
+    const el = o.querySelector('#npErr');
+    if(el){ el.textContent = msg || ''; el.style.display = msg ? 'block' : 'none'; }
+  };
+  const setBusy = val => {
+    busy = val;
+    const createBtn = o.querySelector('#npCreate');
+    const cancelBtn = o.querySelector('#npCancel');
+    const aiBtn = o.querySelector('#npAi');
+    if(createBtn){ createBtn.disabled = val; createBtn.textContent = val ? 'Creating...' : 'Create path'; }
+    if(cancelBtn) cancelBtn.disabled = val;
+    if(aiBtn) aiBtn.disabled = val;
+    o.querySelectorAll('.tpl-row').forEach(row => row.disabled = val);
+  };
   o.addEventListener('click', e => { if(e.target === o) close(); });
   o.querySelector('.modal-x').onclick = close;
   o.querySelector('#npCancel').onclick = close;
-  o.querySelector('#npAi').onclick = () => { close(); openAIPathBuilder(); };
+  o.querySelector('#npAi').onclick = () => { if(busy) return; close(); openAIPathBuilder(); };
   let pick = 'blank';
   const titleIn = o.querySelector('#npTitle'), goalIn = o.querySelector('#npGoal');
   o.querySelectorAll('.tpl-row').forEach(row => row.onclick = () => {
@@ -1274,6 +1323,8 @@ function createPath(){
     else { const t = TEMPLATES.find(x => x.id === pick); if(t){ titleIn.value = t.title; goalIn.value = t.goal; } }
   });
   o.querySelector('#npCreate').onclick = async () => {
+    if(busy || isCreatingPath) return;
+    setErr('');
     let title = titleIn.value.trim(); const goal = goalIn.value.trim();
     let weeks;
     if(pick === 'blank'){
@@ -1313,25 +1364,41 @@ function createPath(){
       previewTitle: title, previewDescription: goal, previewIncludesScheme: false,
       coverImage: null, profileImage: null, created: Date.now(), weeks,
     };
-    if(cloudActive()){
-      const cloudId = await dbCreatePlatformPath(localPath);
-      if(!cloudId) return;
-      id = cloudId;
-    } else {
-      store.state.userPaths[id] = localPath;
-      await dbSaveState();
+    setBusy(true);
+    isCreatingPath = true;
+    try{
+      if(cloudActive()){
+        const cloudId = await dbCreatePlatformPath(localPath);
+        if(!cloudId) throw new Error('Could not create path. Please try again.');
+        id = cloudId;
+      } else {
+        store.state.userPaths[id] = localPath;
+        await dbSaveState();
+      }
+      ensureSkill(id);
+      busy = false;
+      close(); await openSkill(id, { tab:'plan' });
+      if(pick === 'blank'){ store.editMode = true; }
+      store.nav.switchTab('plan');
+      flash('Path created');
+    }catch(e){
+      setErr(e.message || 'Could not create path. Please try again.');
+      setBusy(false);
+    }finally{
+      isCreatingPath = false;
     }
-    ensureSkill(id);
-    close(); await openSkill(id);
-    if(pick === 'blank'){ store.editMode = true; }
-    store.nav.switchTab('plan');
   };
 }
 
 /* ---- enter / leave a skill ---- */
-export async function openSkill(id){
+export async function openSkill(id, options = {}){
   store.state.current = id; ensureSkill(id); store.editMode = false;
+  selectedJourneyDay = options.day ? (Number(options.day) || null) : null;
   if(isUserPath(id)){
+    const existingDef = store.state.userPaths[id];
+    if(existingDef?.platform && (!(existingDef.weeks || []).length) && configPresent()){
+      await dbLoadPlatformPath(id);
+    }
     await dbEnsureEnrollment(id);
     const def = store.state.userPaths[id];
     const enrollment = currentEnrollmentForPath(id);
@@ -1343,20 +1410,23 @@ export async function openSkill(id){
   }
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
-  const startTab = isUserPath(id) ? 'plan' : 'today';
+  const allowedUserTabs = ['plan', 'log'];
+  const allowedBuiltInTabs = ['today', 'week', 'map', 'ladders', 'drills', 'res', 'log'];
+  const requestedTab = options.tab || curState().meta.lastTab;
+  const startTab = isUserPath(id)
+    ? (allowedUserTabs.includes(requestedTab) ? requestedTab : 'plan')
+    : (allowedBuiltInTabs.includes(requestedTab) ? requestedTab : 'today');
   store.activeTab = startTab;
   await dbSaveState(); applyHeader();
   if(!isUserPath(id)) refreshSuggest();
   updateOverall(); store.nav.switchTab(startTab);
-  if(location.hash !== '#/path/' + encodeURIComponent(id)){
-    history.replaceState(null, '', '#/path/' + encodeURIComponent(id));
-  }
+  setRoute(pathHash(id, startTab, selectedJourneyDay));
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 export function goCatalog(){
   store.state.current = null; store.editMode = false;
   dbSaveState(); applyHeader(); renderCatalog();
-  if(location.hash !== '#/discover') history.replaceState(null, '', '#/discover');
+  setRoute('#/discover');
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 
@@ -1369,16 +1439,19 @@ export async function handleHashRoute(){
   }
   const parts = hash.split('/').map(decodeURIComponent);
   if(parts[0] !== 'path' || !parts[1]) return false;
-  await openPathRoute(parts[1], parts[2] === 'preview');
+  const tab = parts[2] === 'preview' ? null : parts[2];
+  const dayIdx = parts.indexOf('day');
+  const day = dayIdx >= 0 ? Number(parts[dayIdx + 1] || 0) : null;
+  await openPathRoute(parts[1], parts[2] === 'preview', { tab, day });
   return true;
 }
 
-async function openPathRoute(id, forcePreview){
+async function openPathRoute(id, forcePreview, options = {}){
   if(isUserPath(id) || SKILLS.some(s => s.id === id)){
     if(forcePreview && isUserPath(id)){
       const def = store.state.userPaths[id];
       renderPathPreview({ id, path:def.platformData || def, membership:def.membership || null, sections:[], tasks:[] });
-    } else await openSkill(id);
+    } else await openSkill(id, options);
     return;
   }
   const record = await dbLoadPlatformPath(id);
@@ -1387,7 +1460,7 @@ async function openPathRoute(id, forcePreview){
     return;
   }
   if(!forcePreview && canViewPath(record.path, record.membership, store.currentUser)){
-    await openSkill(id);
+    await openSkill(id, options);
     return;
   }
   if(canPreviewPath(record.path, store.currentUser)){
@@ -1859,6 +1932,7 @@ function wireJourneyControls(id, def){
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
     btn.onclick = async () => {
       selectedJourneyDay = Number(btn.dataset.roadDay || 1);
+      setRoute(pathHash(id, 'plan', selectedJourneyDay));
       evidenceFormTaskId = null;
       evidenceProofType = 'url';
       evidenceError = '';

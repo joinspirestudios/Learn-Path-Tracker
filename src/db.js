@@ -494,6 +494,10 @@ export async function dbEnsureEnrollment(pathId){
 function upsertPlatformPath(record){
   if(!record || !record.id) return null;
   const local = platformToLocalPath(record);
+  const existing = store.state.userPaths[record.id];
+  if((!record.sections || !record.sections.length) && existing && existing.weeks && existing.weeks.length){
+    local.weeks = existing.weeks;
+  }
   store.platformPaths[record.id] = record;
   store.state.userPaths[record.id] = local;
   return local;
@@ -516,11 +520,11 @@ async function loadPathChildren(pathId){
   return { sections, tasks };
 }
 
-async function loadPlatformRecordFromDoc(docSnap){
+async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
   const path = normalizePathDoc(docSnap.id, docSnap.data());
-  const membership = await loadMembership(docSnap.id);
+  const membership = includeChildren ? await loadMembership(docSnap.id) : null;
   let children = { sections:[], tasks:[] };
-  if(canViewPath(path, membership, store.currentUser)){
+  if(includeChildren && canViewPath(path, membership, store.currentUser)){
     children = await loadPathChildren(docSnap.id);
   }
   return { id:docSnap.id, path, membership, ...children };
@@ -531,7 +535,7 @@ export async function dbLoadPlatformPath(id){
   try{
     const snap = await fb.getDoc(pathRef(id));
     if(!snap.exists()) return null;
-    const record = await loadPlatformRecordFromDoc(snap);
+    const record = await loadPlatformRecordFromDoc(snap, true);
     if(canViewPath(record.path, record.membership, store.currentUser)) upsertPlatformPath(record);
     else store.platformPaths[id] = record;
     return record;
@@ -551,7 +555,7 @@ export async function dbLoadPlatformPaths(){
       for(const d of snap.docs){
         if(seen.has(d.id)) continue;
         seen.add(d.id);
-        records.push(await loadPlatformRecordFromDoc(d));
+        records.push(await loadPlatformRecordFromDoc(d, false));
       }
     }catch(e){ console.warn('load platform paths:', e); }
   }
@@ -629,6 +633,7 @@ export async function dbCreatePlatformPath(localPath, sourceId){
   if(!cloudActive()) return null;
   const ref = fb.doc(fb.collection(fb.db, 'paths'));
   const id = ref.id;
+  const previous = store.state.userPaths[id];
   store.state.userPaths[id] = {
     ...localPath,
     visibility: localPath.visibility || 'private',
@@ -637,7 +642,14 @@ export async function dbCreatePlatformPath(localPath, sourceId){
     platform: true,
     ownerId: store.currentUser.uid,
   };
-  await dbSavePlatformPath(id);
+  const saved = await dbSavePlatformPath(id);
+  if(!saved){
+    if(previous) store.state.userPaths[id] = previous;
+    else delete store.state.userPaths[id];
+    delete store.platformPaths[id];
+    await dbSaveState();
+    return null;
+  }
   return id;
 }
 

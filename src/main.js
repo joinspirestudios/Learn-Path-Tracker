@@ -9,7 +9,7 @@
 
 import './styles.css';
 import { fb } from './firebase.js';
-import { store, CAT_PREFIX } from './store.js';
+import { store, CAT_PREFIX, LAST_ROUTE_KEY } from './store.js';
 import { $, Store } from './helpers.js';
 import {
   dbLoadState, dbLoadRenders, dbSaveState, dbSaveRender,
@@ -30,11 +30,27 @@ import {
 } from './views.js';
 
 /* ---- tab router ---- */
+function routeHashForCurrent(tab = store.activeTab){
+  if(!store.state.current) return '#/discover';
+  return '#/path/' + encodeURIComponent(store.state.current) + '/' + encodeURIComponent(tab || 'plan');
+}
+
+function persistRoute(hash){
+  try{ localStorage.setItem(LAST_ROUTE_KEY, hash); }catch(e){}
+}
+
+function updateRouteHashForTab(tab){
+  const hash = routeHashForCurrent(tab);
+  persistRoute(hash);
+  if(location.hash !== hash) history.replaceState(null, '', hash);
+}
+
 function switchTab(t){
   // User paths only have Plan + Log tabs.
   if(store.state.current && isUserPath(store.state.current) && t !== 'plan' && t !== 'log') t = 'plan';
   store.activeTab = t;
   if(store.state.current){ curState().meta.lastTab = t; dbSaveState(); }
+  updateRouteHashForTab(t);
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   if(t === 'plan')         renderPlan();
   else if(t === 'today')   renderToday();
@@ -59,7 +75,12 @@ async function finishLoad(){
   store.enrollments = store.state.enrollments || {};
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   applyHeader(); updateLogDot();
-  if(await handleHashRoute()) return;
+  const hash = location.hash || (() => { try{ return localStorage.getItem(LAST_ROUTE_KEY) || ''; }catch(e){ return ''; } })();
+  if(hash && hash !== location.hash) history.replaceState(null, '', hash);
+  if(await handleHashRoute()){
+    markBootReady();
+    return;
+  }
   if(store.state.current && (skillDef(store.state.current) || isUserPath(store.state.current))){
     ensureSkill(store.state.current);
     store.currentWeek = curState().meta.lastWeek || 1;
@@ -71,6 +92,7 @@ async function finishLoad(){
     store.state.current = null;
     renderCatalog();
   }
+  markBootReady();
 }
 
 async function loadLocalAndRender(){
@@ -89,6 +111,18 @@ async function loadAndRender(){
   store.catalogue = await dbLoadRenders();
   await dbLoadPlatformPaths();
   await finishLoad();
+}
+
+function renderBootState(message = 'Restoring your workspace...'){
+  const content = $('content');
+  if(content){
+    content.innerHTML = '<div class="app-loading"><div class="chip">Loading</div><h2>' + message + '</h2><p>Getting your paths and session ready.</p></div>';
+  }
+}
+
+function markBootReady(){
+  store.bootReady = true;
+  document.body.classList.remove('booting');
 }
 
 /* ---- the post-sign-in reconciliation (cloud vs local merge) ---- */
@@ -137,6 +171,7 @@ function mergeLocalPrivateState(cloudState, localState){
 }
 
 async function onSignIn(){
+  renderBootState('Syncing your paths...');
   const cloudState   = await dbLoadState();    // already migrated
   const cloudRenders = await dbLoadRenders();
   const local = loadLocalState();              // already migrated
@@ -167,10 +202,11 @@ async function onSignIn(){
 
 /* ---- wire auth callbacks into the auth module ---- */
 setSignInHandler(onSignIn);
-setSignOutHandler(() => applyHeader()); // local view already rendered; just refresh the header
+setSignOutHandler(() => { applyHeader(); if(store.state.current == null) renderCatalog(); }); // local view already rendered; refresh chrome/catalog
 
 /* ---- bootstrap ---- */
 async function init(){
+  renderBootState();
   document.querySelectorAll('.tab').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
   const bt = $('brandTitle'); if(bt) bt.onclick = goCatalog;
   const ac = $('allSkills');  if(ac) ac.onclick = goCatalog;
