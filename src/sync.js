@@ -3,6 +3,7 @@ export const WRITE_TIMEOUT_MS = 12000;
 export const PATH_OPEN_TIMEOUT_MS = 10000;
 export const ENROLLMENT_TIMEOUT_MS = 8000;
 export const AI_SAVE_TIMEOUT_MS = 20000;
+export const FIRESTORE_PREFLIGHT_TIMEOUT_MS = 8000;
 
 const SLOW_WARN_MS = 5000;
 
@@ -39,11 +40,52 @@ export async function trackOperation(label, promise, warnMs = SLOW_WARN_MS){
 }
 
 export function userSyncMessage(error, fallback = 'This is taking too long. Check your connection and try again.'){
-  const code = error && error.code;
-  const message = String((error && error.message) || '');
-  if(code === 'permission-denied' || message.includes('permission-denied')){
-    return 'Firebase rules blocked this action. Check Firestore rules.';
-  }
-  if(code === 'operation_timeout') return fallback;
+  const classified = classifyFirebaseError(error);
+  if(classified.status !== 'unknown_error') return classified.message;
   return fallback;
+}
+
+export function cloudStatusMessage(status){
+  return ({
+    connected:'',
+    permission_denied:'Firestore is connected, but security rules blocked this action. Check the published Firestore rules.',
+    database_missing:"Firestore's default database was not found for the configured Firebase project. Confirm the Vercel project ID and Firestore database.",
+    network_blocked:'Firestore requests appear to be blocked by a browser extension or network filter. Try Incognito or disable privacy/ad blockers for this site.',
+    timeout:'Firestore did not respond in time. Your local data remains available. Retry cloud connection.',
+    offline:'Firestore is unavailable or offline. Your local data remains available. Retry cloud connection.',
+    configuration_error:'Firebase configuration is incomplete or points to the wrong project.',
+    unknown_error:'Could not connect to Firestore. Your local data remains available. Retry cloud connection.',
+    checking:'Checking Firestore connection...',
+  })[status] || 'Could not connect to Firestore. Your local data remains available. Retry cloud connection.';
+}
+
+export function classifyFirebaseError(error){
+  const rawCode = String((error && error.code) || '').toLowerCase();
+  const code = rawCode.replace(/^firestore\//, '');
+  const message = String((error && error.message) || error || '');
+  const lower = message.toLowerCase();
+
+  if(code === 'permission_denied') return { status:'permission_denied', message:cloudStatusMessage('permission_denied') };
+  if(code === 'database_missing') return { status:'database_missing', message:cloudStatusMessage('database_missing') };
+  if(code === 'network_blocked') return { status:'network_blocked', message:cloudStatusMessage('network_blocked') };
+  if(code === 'configuration_error') return { status:'configuration_error', message:cloudStatusMessage('configuration_error') };
+  if(code === 'offline') return { status:'offline', message:cloudStatusMessage('offline') };
+  if(code === 'timeout') return { status:'timeout', message:cloudStatusMessage('timeout') };
+  if(code === 'operation_timeout') return { status:'timeout', message:cloudStatusMessage('timeout') };
+  if(code === 'permission-denied' || lower.includes('missing or insufficient permissions') || lower.includes('permission-denied')){
+    return { status:'permission_denied', message:cloudStatusMessage('permission_denied') };
+  }
+  if(lower.includes("database '(default)' not found") || lower.includes('please check your project configuration')){
+    return { status:'database_missing', message:cloudStatusMessage('database_missing') };
+  }
+  if(lower.includes('err_blocked_by_client') || lower.includes('blocked_by_client') || lower.includes('blocked by client')){
+    return { status:'network_blocked', message:cloudStatusMessage('network_blocked') };
+  }
+  if(code === 'unavailable' || lower.includes('client is offline') || lower.includes('network is unavailable') || lower.includes('failed to get document because the client is offline')){
+    return { status:'offline', message:cloudStatusMessage('offline') };
+  }
+  if(code === 'invalid-argument' || code === 'failed-precondition' || lower.includes('invalid firebase') || lower.includes('project id')){
+    return { status:'configuration_error', message:cloudStatusMessage('configuration_error') };
+  }
+  return { status:'unknown_error', message:cloudStatusMessage('unknown_error') };
 }

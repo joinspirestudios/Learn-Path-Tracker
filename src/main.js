@@ -13,7 +13,7 @@ import { store, CAT_PREFIX, LAST_ROUTE_KEY } from './store.js';
 import { $, Store } from './helpers.js';
 import {
   dbLoadState, dbLoadRenders, dbSaveState, dbSaveRender,
-  loadLocalState, dbLoadPlatformPaths,
+  loadLocalState, dbLoadPlatformPaths, checkFirestoreConnection, cloudAvailable,
 } from './db.js';
 import {
   initFirebase, setSignInHandler, setSignOutHandler,
@@ -28,7 +28,13 @@ import {
   openSkill, goCatalog, goWeek, editPath,
   refreshSuggest, updateLogDot, handleHashRoute,
 } from './views.js';
-import { READ_TIMEOUT_MS, trackOperation, withTimeout } from './sync.js';
+import { trackOperation } from './sync.js';
+
+let preflightPromise = null;
+let platformSyncPromise = null;
+let platformSyncKey = null;
+let reconciliationPromise = null;
+let reconciledUserId = null;
 
 /* ---- tab router ---- */
 function routeHashForCurrent(tab = store.activeTab){
@@ -70,6 +76,7 @@ store.nav.goCatalog = goCatalog;
 store.nav.goWeek    = goWeek;
 store.nav.openSkill = openSkill;
 store.nav.handleHash = handleHashRoute;
+store.nav.retryCloud = retryCloudConnection;
 
 /* ---- boot / load helpers ---- */
 async function finishLoad(){
@@ -102,16 +109,6 @@ async function loadLocalAndRender(){
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   store.catalogue = await dbLoadRenders();   // local renders (signed-out path)
   await finishLoad();
-  startPlatformSync('platform summaries load');
-}
-
-async function loadAndRender(){
-  store.state     = await dbLoadState();     // already migrated
-  store.enrollments = store.state.enrollments || {};
-  store.evidenceSubmissions = store.state.evidenceSubmissions || {};
-  store.catalogue = await dbLoadRenders();
-  await finishLoad();
-  startPlatformSync('platform summaries load');
 }
 
 function refreshVisibleRoute(){
@@ -121,18 +118,24 @@ function refreshVisibleRoute(){
 }
 
 function startPlatformSync(label = 'platform summaries load'){
-  if(!fb.ready) return;
+  if(!cloudAvailable()) return Promise.resolve([]);
+  const key = (store.currentUser && store.currentUser.uid) || 'public';
+  if(platformSyncPromise) return platformSyncPromise;
+  if(platformSyncKey === key) return Promise.resolve([]);
   store.syncStatus = 'Syncing in background...';
-  trackOperation(label, withTimeout(dbLoadPlatformPaths(), READ_TIMEOUT_MS, label))
+  platformSyncPromise = trackOperation(label, dbLoadPlatformPaths())
     .then(() => {
+      platformSyncKey = key;
       store.syncStatus = '';
       refreshVisibleRoute();
     })
     .catch(e => {
-      store.syncStatus = 'Sync issue';
+      store.syncStatus = '';
       console.warn(label + ':', e && e.message ? e.message : e);
       refreshVisibleRoute();
-    });
+    })
+    .finally(() => { platformSyncPromise = null; });
+  return platformSyncPromise;
 }
 
 function renderBootState(message = 'Restoring your workspace...'){
@@ -192,51 +195,99 @@ function mergeLocalPrivateState(cloudState, localState){
   return merged;
 }
 
+function reconcileSignedInWorkspace(){
+  const uid = store.currentUser && store.currentUser.uid;
+  if(!uid || !cloudAvailable()) return Promise.resolve();
+  if(reconciliationPromise) return reconciliationPromise;
+  if(reconciledUserId === uid) return Promise.resolve();
+  const local = loadLocalState();
+  const routeAtStart = location.hash;
+  store.syncStatus = 'Syncing your cloud paths...';
+  refreshVisibleRoute();
+  reconciliationPromise = (async () => {
+    const cloudState = await trackOperation('cloud state load', dbLoadState());
+    const cloudRenders = await trackOperation('render log load', dbLoadRenders());
+    const cloudEmpty = !hasOwnData(cloudState);
+    const localHasData = hasOwnData(local);
+    if(cloudEmpty && localHasData) store.state = local;
+    else if(localHasData) store.state = mergeLocalPrivateState(cloudState, local);
+    else store.state = cloudState;
+    store.enrollments = store.state.enrollments || {};
+    store.evidenceSubmissions = store.state.evidenceSubmissions || {};
+    if(localHasData || cloudEmpty) await dbSaveState();
+    if(cloudRenders.length === 0){
+      const lkeys = await Store.list(CAT_PREFIX);
+      if(lkeys.length){
+        const arr = [];
+        for(const k of lkeys){
+          try{
+            const v = await Store.get(k);
+            if(v){ const entry = JSON.parse(v); arr.push(entry); await dbSaveRender(entry); }
+          }catch(e){}
+        }
+        store.catalogue = arr;
+      }
+    } else store.catalogue = cloudRenders;
+    reconciledUserId = uid;
+    store.syncStatus = '';
+    if(location.hash === routeAtStart) refreshVisibleRoute();
+  })().catch(e => {
+    store.syncStatus = '';
+    console.warn('cloud reconciliation:', e && e.message ? e.message : e);
+    refreshVisibleRoute();
+  }).finally(() => { reconciliationPromise = null; });
+  return reconciliationPromise;
+}
+
+function startConnectedCloudWork(){
+  if(!cloudAvailable()) return;
+  if(store.currentUser){
+    reconcileSignedInWorkspace().then(() => startPlatformSync());
+  } else {
+    startPlatformSync();
+  }
+}
+
+function runCloudPreflight(force = false){
+  if(preflightPromise) return preflightPromise;
+  if(!force && store.cloudStatus === 'connected'){
+    startConnectedCloudWork();
+    return Promise.resolve(store.cloudCheck);
+  }
+  store.cloudStatus = 'checking';
+  store.cloudMessage = 'Checking Firestore connection...';
+  refreshVisibleRoute();
+  preflightPromise = checkFirestoreConnection()
+    .then(result => {
+      store.syncStatus = '';
+      refreshVisibleRoute();
+      if(result.ok) startConnectedCloudWork();
+      return result;
+    })
+    .finally(() => { preflightPromise = null; });
+  return preflightPromise;
+}
+
+function retryCloudConnection(){
+  platformSyncKey = null;
+  reconciledUserId = null;
+  return runCloudPreflight(true);
+}
+
 async function onSignIn(){
-  const local = loadLocalState();              // already migrated
+  store.authSoftTimedOut = false;
+  const local = loadLocalState();
   store.state = local;
   store.enrollments = store.state.enrollments || {};
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   await finishLoad();
-  store.syncStatus = 'Syncing your cloud paths...';
-  refreshVisibleRoute();
-  const routeAtStart = location.hash;
-  (async () => {
-    try{
-      const cloudState = await trackOperation('cloud state load', withTimeout(dbLoadState(), READ_TIMEOUT_MS, 'cloud state load'));
-      const cloudRenders = await withTimeout(dbLoadRenders(), READ_TIMEOUT_MS, 'render log load');
-      const cloudEmpty = !hasOwnData(cloudState);
-      const localHasData = hasOwnData(local);
-      if(cloudEmpty && localHasData) store.state = local;
-      else if(localHasData) store.state = mergeLocalPrivateState(cloudState, local);
-      else store.state = cloudState;
-      store.enrollments = store.state.enrollments || {};
-      store.evidenceSubmissions = store.state.evidenceSubmissions || {};
-      if(localHasData || cloudEmpty) await dbSaveState();
-      if(cloudRenders.length === 0){
-        const lkeys = await Store.list(CAT_PREFIX);
-        if(lkeys.length){
-          const arr = [];
-          for(const k of lkeys){
-            try{
-              const v = await Store.get(k);
-              if(v){ const e = JSON.parse(v); arr.push(e); await dbSaveRender(e); }
-            }catch(e){}
-          }
-          store.catalogue = arr;
-        }
-      } else store.catalogue = cloudRenders;
-      await withTimeout(dbLoadPlatformPaths(), READ_TIMEOUT_MS, 'platform summaries load');
-      store.syncStatus = '';
-      if(location.hash === routeAtStart) await finishLoad();
-      else refreshVisibleRoute();
-    }catch(e){
-      store.syncStatus = 'Sync issue';
-      console.warn('cloud reconciliation:', e && e.message ? e.message : e);
-      refreshVisibleRoute();
-      if($('saved')) $('saved').textContent = 'Sync issue';
-    }
-  })();
+  const shouldRecheck = store.cloudStatus !== 'connected';
+  const pending = runCloudPreflight(shouldRecheck);
+  if(preflightPromise){
+    pending.then(result => {
+      if(result && result.status === 'permission_denied' && store.currentUser) runCloudPreflight(true);
+    });
+  }
 }
 
 function armAuthSoftTimeout(){
@@ -252,7 +303,13 @@ function armAuthSoftTimeout(){
 
 /* ---- wire auth callbacks into the auth module ---- */
 setSignInHandler(onSignIn);
-setSignOutHandler(() => { applyHeader(); if(store.state.current == null) renderCatalog(); }); // local view already rendered; refresh chrome/catalog
+setSignOutHandler(() => {
+  reconciledUserId = null;
+  platformSyncKey = null;
+  applyHeader();
+  if(store.state.current == null) renderCatalog();
+  if(cloudAvailable()) startPlatformSync();
+});
 
 /* ---- bootstrap ---- */
 async function init(){
@@ -261,6 +318,10 @@ async function init(){
   const bt = $('brandTitle'); if(bt) bt.onclick = goCatalog;
   const ac = $('allSkills');  if(ac) ac.onclick = goCatalog;
   const ep = $('editPathBtn'); if(ep) ep.onclick = editPath;
+  document.addEventListener('click', e => {
+    const retry = e.target.closest('[data-retry-cloud]');
+    if(retry){ e.preventDefault(); retryCloudConnection(); }
+  });
   window.addEventListener('hashchange', () => { if(store.nav.handleHash) store.nav.handleHash(); });
   $('startDate').addEventListener('change', e => {
     if(!store.state.current) return;
@@ -273,5 +334,6 @@ async function init(){
   armAuthSoftTimeout();
   await loadLocalAndRender();
   if(fb.present) initFirebase();
+  runCloudPreflight();
 }
 init();

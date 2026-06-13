@@ -19,8 +19,12 @@ const cfg = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
 };
 
-const present = !!(cfg.apiKey && cfg.projectId);
+export const EXPECTED_FIREBASE_PROJECT_ID = 'learn-path-tracker';
+
+const configComplete = !!(cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId);
+const present = configComplete;
 let auth = null, db = null, storage = null;
+let initializationError = null;
 if (present) {
   try {
     const app = initializeApp(cfg);
@@ -30,13 +34,39 @@ if (present) {
     // Keep the user signed in across refreshes (localStorage-backed).
     setPersistence(auth, browserLocalPersistence).catch(e => console.warn('persistence:', e));
   } catch (e) {
+    initializationError = e;
     console.warn('Firebase init failed - running in local mode.', e);
   }
 }
 
+export const firebaseDiagnostics = {
+  projectId: cfg.projectId || null,
+  expectedProjectId: EXPECTED_FIREBASE_PROJECT_ID,
+  configComplete,
+  firebaseInitialized: !!(auth || db),
+  authInitialized: !!auth,
+  firestoreInitialized: !!db,
+  storageConfigured: !!cfg.storageBucket,
+  initializationError: initializationError ? String(initializationError.message || initializationError) : null,
+};
+
+if(import.meta.env.DEV){
+  console.info('[firebase diagnostics]', {
+    projectId: firebaseDiagnostics.projectId,
+    expectedProjectId: firebaseDiagnostics.expectedProjectId,
+    configComplete: firebaseDiagnostics.configComplete,
+    firebaseInitialized: firebaseDiagnostics.firebaseInitialized,
+    firestoreInitialized: firebaseDiagnostics.firestoreInitialized,
+    storageConfigured: firebaseDiagnostics.storageConfigured,
+  });
+}
+
 export const fb = {
-  present,
-  ready: !!auth,
+  present, configComplete,
+  ready: !!(auth && db),
+  firestoreReady: !!db,
+  projectId: cfg.projectId || null,
+  initializationError,
   auth, db,
   storage, storageReady: !!(storage && cfg.storageBucket),
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,

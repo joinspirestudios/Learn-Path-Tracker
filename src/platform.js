@@ -38,6 +38,7 @@ export function normalizePathDoc(id, data = {}){
     discoverable: visibility === 'public' ? data.discoverable !== false : !!data.discoverable,
     migratedFromLocal: !!data.migratedFromLocal,
     clientSaveId: data.clientSaveId || null,
+    intentionallyEmpty: data.intentionallyEmpty === true,
     createdAt: data.createdAt || nowStamp(),
     updatedAt: data.updatedAt || nowStamp(),
   };
@@ -107,6 +108,7 @@ export function localPathDefaults(localPath = {}, user){
     discoverable: visibility === 'public' ? localPath.discoverable !== false : !!localPath.discoverable,
     migratedFromLocal: !!localPath.migratedFromLocal,
     clientSaveId: localPath.clientSaveId || null,
+    intentionallyEmpty: localPath.intentionallyEmpty === true,
   };
 }
 

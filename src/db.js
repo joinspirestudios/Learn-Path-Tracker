@@ -3,7 +3,7 @@
 // so the rest of the app can stay storage-agnostic. Cloud writes are debounced;
 // local mirror is instant.
 
-import { fb } from './firebase.js';
+import { EXPECTED_FIREBASE_PROJECT_ID, fb, firebaseDiagnostics } from './firebase.js';
 import { store, STATE_KEY, CAT_PREFIX, LEGACY_KEY, migrateState } from './store.js';
 import { Store, flash } from './helpers.js';
 import {
@@ -13,17 +13,72 @@ import {
   dateForJourneyDay, journeyDayForDate, localDateString,
 } from './journey.js';
 import {
-  ENROLLMENT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
-  trackOperation, userSyncMessage, withTimeout,
+  ENROLLMENT_TIMEOUT_MS, FIRESTORE_PREFLIGHT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
+  classifyFirebaseError, cloudStatusMessage, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
 
 export function configPresent(){ return fb.present; }
-export function cloudActive(){ return fb.ready && !!store.currentUser; }
+export function cloudAvailable(){ return fb.ready && store.cloudStatus === 'connected'; }
+export function cloudActive(){ return cloudAvailable() && !!store.currentUser; }
+
+function applyCloudResult(result, elapsedMs){
+  store.cloudStatus = result.status;
+  store.cloudMessage = result.message;
+  store.cloudCheck = { ...result, elapsedMs, checkedAt:Date.now() };
+  store.cloudDiagnostics = {
+    ...store.cloudDiagnostics,
+    projectId:firebaseDiagnostics.projectId,
+    firebaseInitialized:firebaseDiagnostics.firebaseInitialized,
+    firestoreInitialized:firebaseDiagnostics.firestoreInitialized,
+    preflightElapsedMs:elapsedMs,
+    latestErrorStatus:result.ok ? null : result.status,
+    latestErrorMessage:result.ok ? null : result.message,
+  };
+  return store.cloudCheck;
+}
+
+export function cloudConnectionError(){
+  const status = store.cloudStatus === 'checking' ? 'timeout' : (store.cloudStatus || 'unknown_error');
+  const error = new Error(store.cloudMessage || cloudStatusMessage(status));
+  error.code = status;
+  return error;
+}
+
+export function cloudFailureMessage(){
+  return store.cloudMessage || cloudStatusMessage(store.cloudStatus || 'unknown_error');
+}
+
+export async function checkFirestoreConnection(){
+  const started = Date.now();
+  store.cloudStatus = 'checking';
+  store.cloudMessage = cloudStatusMessage('checking');
+  if(
+    !fb.configComplete || !fb.ready || !fb.firestoreReady ||
+    !fb.projectId || fb.projectId !== EXPECTED_FIREBASE_PROJECT_ID || fb.initializationError
+  ){
+    return applyCloudResult({ ok:false, status:'configuration_error', message:cloudStatusMessage('configuration_error') }, Date.now() - started);
+  }
+  try{
+    const ref = fb.doc(fb.db, 'healthCheck', 'ping');
+    await trackOperation('firestore preflight', withTimeout(fb.getDoc(ref), FIRESTORE_PREFLIGHT_TIMEOUT_MS, 'firestore preflight'));
+    const result = applyCloudResult({ ok:true, status:'connected', message:'' }, Date.now() - started);
+    if(import.meta.env.DEV) console.info('[firestore preflight]', { status:result.status, projectId:fb.projectId, elapsedMs:result.elapsedMs });
+    return result;
+  }catch(error){
+    const classified = classifyFirebaseError(error);
+    const result = applyCloudResult({ ok:false, ...classified }, Date.now() - started);
+    if(import.meta.env.DEV) console.warn('[firestore preflight]', { status:result.status, projectId:fb.projectId, elapsedMs:result.elapsedMs });
+    return result;
+  }
+}
 
 let _cloudSaveTimer = null;
 
 function syncErrorMessage(error, fallback){
-  return userSyncMessage(error, fallback);
+  const classified = classifyFirebaseError(error);
+  const message = classified.status === 'unknown_error' ? fallback : classified.message;
+  applyCloudResult({ ok:false, status:classified.status, message }, store.cloudCheck?.elapsedMs || null);
+  return message;
 }
 
 export async function dbLoadState(){
@@ -32,8 +87,10 @@ export async function dbLoadState(){
       const ref = fb.doc(fb.db, 'users', store.currentUser.uid, 'state', 'main');
       const snap = await trackOperation('cloud state load', withTimeout(fb.getDoc(ref), READ_TIMEOUT_MS, 'cloud state load'));
       if(snap.exists()) return migrateState(snap.data().bundle || {});
-    }catch(e){ console.warn('cloud state load:', syncErrorMessage(e, 'This is taking too long. Check your connection and try again.')); }
-    return migrateState({});
+    }catch(e){
+      console.warn('cloud state load:', syncErrorMessage(e, 'Could not load cloud state. Your local data remains available.'));
+      throw e;
+    }
   }
   return loadLocalState();
 }
@@ -46,6 +103,7 @@ export async function dbSaveState(){
   if(cloudActive()){
     clearTimeout(_cloudSaveTimer);
     _cloudSaveTimer = setTimeout(async () => {
+      if(!cloudActive()) return;
       try{
         const ref = fb.doc(fb.db, 'users', store.currentUser.uid, 'state', 'main');
         await trackOperation('cloud state save', withTimeout(fb.setDoc(ref, { bundle: store.state }, { merge: true }), WRITE_TIMEOUT_MS, 'cloud state save'));
@@ -62,7 +120,10 @@ export async function dbLoadRenders(){
       const snap = await trackOperation('render log load', withTimeout(fb.getDocs(col), READ_TIMEOUT_MS, 'render log load'));
       const arr = []; snap.forEach(d => arr.push(d.data()));
       return arr;
-    }catch(e){ console.warn('render log load:', syncErrorMessage(e, 'This is taking too long. Check your connection and try again.')); return []; }
+    }catch(e){
+      console.warn('render log load:', syncErrorMessage(e, 'Could not load cloud render logs. Your local data remains available.'));
+      throw e;
+    }
   }
   const keys = await Store.list(CAT_PREFIX);
   const arr = [];
@@ -77,8 +138,7 @@ export async function dbSaveRender(en){
     try{
       const ref = fb.doc(fb.db, 'users', store.currentUser.uid, 'renders', en.id);
       await withTimeout(fb.setDoc(ref, en), WRITE_TIMEOUT_MS, 'render save');
-    }catch(e){ console.warn('render save:', syncErrorMessage(e, 'This is taking too long. Check your connection and try again.')); }
-    return;
+    }catch(e){ console.warn('render save:', syncErrorMessage(e, 'Could not sync this render. Your local data is still safe.')); }
   }
   await Store.set(CAT_PREFIX + en.id, JSON.stringify(en));
 }
@@ -88,8 +148,7 @@ export async function dbDelRender(id){
     try{
       const ref = fb.doc(fb.db, 'users', store.currentUser.uid, 'renders', id);
       await withTimeout(fb.deleteDoc(ref), WRITE_TIMEOUT_MS, 'render delete');
-    }catch(e){ console.warn('render delete:', syncErrorMessage(e, 'This is taking too long. Check your connection and try again.')); }
-    return;
+    }catch(e){ console.warn('render delete:', syncErrorMessage(e, 'Could not sync this change. Your local data remains available.')); }
   }
   await Store.del(CAT_PREFIX + id);
 }
@@ -265,31 +324,35 @@ async function loadDayLogs(enrollmentId){
   return logs;
 }
 
-export async function dbSaveEnrollment(enrollment){
+export async function dbSaveEnrollment(enrollment, options = {}){
   if(!enrollment || !enrollment.id) return null;
   const next = makeEnrollment(enrollment.pathId, enrollment.userId, { ...enrollment, updatedAt: stamp() });
   delete next.dayLogs;
+  let cloudError = null;
   if(cloudActive()){
     try{ await withTimeout(fb.setDoc(enrollmentRef(next.id), next, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'save enrollment'); }
-    catch(e){ console.warn('save enrollment:', syncErrorMessage(e, 'Could not start this path. Try again.')); }
+    catch(e){ cloudError = e; console.warn('save enrollment:', syncErrorMessage(e, 'Could not start this path. Try again.')); }
   }
   cacheEnrollment(next);
-  if(!cloudActive()) await dbSaveState();
+  await dbSaveState();
+  if(cloudError && options.throwOnCloudError) throw cloudError;
   return store.enrollments[next.id];
 }
 
-export async function dbSaveDayLog(enrollmentId, dayLog){
+export async function dbSaveDayLog(enrollmentId, dayLog, options = {}){
   if(!enrollmentId || !dayLog) return null;
   const next = makeDayLog(dayLog.dayNumber, { ...dayLog, updatedAt: stamp() });
+  let cloudError = null;
   if(cloudActive()){
     try{ await withTimeout(fb.setDoc(dayLogRef(enrollmentId, next.dayNumber), next, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'save day log'); }
-    catch(e){ console.warn('save day log:', syncErrorMessage(e, 'Could not start this path. Try again.')); }
+    catch(e){ cloudError = e; console.warn('save day log:', syncErrorMessage(e, 'Could not start this path. Try again.')); }
   }
   const enrollment = store.enrollments[enrollmentId] || cacheEnrollment({ id: enrollmentId });
   enrollment.dayLogs = enrollment.dayLogs || {};
   enrollment.dayLogs[next.dayNumber] = next;
   cacheEnrollment(enrollment, enrollment.dayLogs);
-  if(!cloudActive()) await dbSaveState();
+  await dbSaveState();
+  if(cloudError && options.throwOnCloudError) throw cloudError;
   return next;
 }
 
@@ -300,7 +363,7 @@ export async function createEvidenceSubmission(enrollmentId, payload){
     try{
       await withTimeout(fb.setDoc(submissionRef(enrollmentId, submission.id), submission, { merge:true }), WRITE_TIMEOUT_MS, 'create evidence submission');
     }catch(e){
-      console.warn('create evidence submission:', e);
+      console.warn('create evidence submission:', syncErrorMessage(e, 'Could not submit proof. Your local path remains available.'));
       throw e;
     }
   }
@@ -316,7 +379,7 @@ export async function listEvidenceSubmissions(enrollmentId, dayNumber = null){
       const snap = await withTimeout(fb.getDocs(submissionsCol(enrollmentId)), READ_TIMEOUT_MS, 'load evidence');
       snap.forEach(d => cacheEvidenceSubmission(enrollmentId, makeEvidenceSubmission(enrollmentId, { id:d.id, ...d.data() })));
     }catch(e){
-      console.warn('list evidence submissions:', e);
+      console.warn('list evidence submissions:', syncErrorMessage(e, 'Could not load cloud evidence. Cached evidence remains available.'));
     }
   }
   return cachedEvidenceSubmissions(enrollmentId, dayNumber);
@@ -365,7 +428,7 @@ export async function uploadEvidenceFile(userId, enrollmentId, dayNumber, taskId
 }
 
 export async function dbStartEnrollment(pathId, totalTaskCount = 0){
-  const enrollment = await dbEnsureEnrollment(pathId);
+  const enrollment = await dbEnsureEnrollment(pathId, { throwOnCloudError:true });
   if(!enrollment) return null;
   const today = localDateString();
   const next = {
@@ -377,14 +440,14 @@ export async function dbStartEnrollment(pathId, totalTaskCount = 0){
     lastCompletedDay: enrollment.lastCompletedDay == null ? null : enrollment.lastCompletedDay,
     missedDate: null,
   };
-  await dbSaveEnrollment(next);
+  await dbSaveEnrollment(next, { throwOnCloudError:true });
   await dbSaveDayLog(next.id, makeDayLog(1, {
     ...(enrollment.dayLogs && enrollment.dayLogs[1] ? enrollment.dayLogs[1] : {}),
     dayNumber: 1,
     date: next.startDate,
     status: 'active',
     totalTaskCount,
-  }));
+  }), { throwOnCloudError:true });
   return store.enrollments[next.id];
 }
 
@@ -449,7 +512,7 @@ export async function dbReconcileEnrollment(pathId, totalTaskCount = 0){
   return store.enrollments[enrollment.id] || enrollment;
 }
 
-export async function dbEnsureEnrollment(pathId){
+export async function dbEnsureEnrollment(pathId, options = {}){
   const userId = (store.currentUser && store.currentUser.uid) || 'local';
   const enrollmentId = enrollmentIdFor(pathId, userId);
   if(cloudActive()){
@@ -482,6 +545,7 @@ export async function dbEnsureEnrollment(pathId){
       return cacheEnrollment(enrollment, dayLogs);
     }catch(e){
       console.warn('ensure enrollment:', syncErrorMessage(e, 'Could not start this path. Try again.'));
+      if(options.throwOnCloudError) throw e;
     }
   }
   const local = store.state.enrollments && store.state.enrollments[enrollmentId];
@@ -527,7 +591,10 @@ async function loadMembership(pathId){
   try{
     const snap = await withTimeout(fb.getDoc(memberRef(pathId, store.currentUser.uid)), READ_TIMEOUT_MS, 'load path membership');
     return snap.exists() ? snap.data() : null;
-  }catch(e){ return null; }
+  }catch(e){
+    syncErrorMessage(e, 'Could not verify path access. Retry cloud connection.');
+    throw e;
+  }
 }
 
 async function loadPathChildren(pathId){
@@ -550,41 +617,53 @@ async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
 }
 
 export async function dbLoadPlatformPath(id){
-  if(!fb.ready) return null;
+  if(!cloudAvailable()) throw cloudConnectionError();
+  store.cloudDiagnostics.selectedPathChildrenStatus = 'loading';
   try{
     const snap = await trackOperation('path children load', withTimeout(fb.getDoc(pathRef(id)), PATH_OPEN_TIMEOUT_MS, 'load platform path'));
-    if(!snap.exists()) return null;
+    if(!snap.exists()){
+      store.cloudDiagnostics.selectedPathChildrenStatus = 'missing';
+      return null;
+    }
     const record = await loadPlatformRecordFromDoc(snap, true);
     if(canViewPath(record.path, record.membership, store.currentUser)) upsertPlatformPath(record);
     else store.platformPaths[id] = record;
+    store.cloudDiagnostics.selectedPathChildrenStatus = 'loaded';
     return record;
   }catch(e){
     console.warn('load platform path:', syncErrorMessage(e, 'Could not load path tasks. Try again.'));
+    store.cloudDiagnostics.selectedPathChildrenStatus = 'error';
     throw e;
   }
 }
 
 export async function dbLoadPlatformPaths(){
-  if(!fb.ready) return [];
+  if(!cloudAvailable()) return [];
+  const started = Date.now();
   const seen = new Set();
   const records = [];
   async function collect(q){
-    try{
-      const snap = await withTimeout(fb.getDocs(q), READ_TIMEOUT_MS, 'platform summaries load');
-      for(const d of snap.docs){
-        if(seen.has(d.id)) continue;
-        seen.add(d.id);
-        records.push(await loadPlatformRecordFromDoc(d, false));
-      }
-    }catch(e){ console.warn('load platform paths:', e); }
+    const snap = await withTimeout(fb.getDocs(q), READ_TIMEOUT_MS, 'platform summaries load');
+    for(const d of snap.docs){
+      if(seen.has(d.id)) continue;
+      seen.add(d.id);
+      records.push(await loadPlatformRecordFromDoc(d, false));
+    }
   }
-  const pathsCol = fb.collection(fb.db, 'paths');
-  await collect(fb.query(pathsCol, fb.where('visibility', '==', 'public')));
-  if(store.currentUser){
-    await collect(fb.query(pathsCol, fb.where('ownerId', '==', store.currentUser.uid)));
+  try{
+    const pathsCol = fb.collection(fb.db, 'paths');
+    await collect(fb.query(pathsCol, fb.where('visibility', '==', 'public')));
+    if(store.currentUser){
+      await collect(fb.query(pathsCol, fb.where('ownerId', '==', store.currentUser.uid)));
+    }
+    records.forEach(upsertPlatformPath);
+    store.cloudDiagnostics.platformSummaryElapsedMs = Date.now() - started;
+    return records;
+  }catch(e){
+    store.cloudDiagnostics.platformSummaryElapsedMs = Date.now() - started;
+    console.warn('load platform paths:', syncErrorMessage(e, 'Could not load platform paths. Your cached paths remain available.'));
+    throw e;
   }
-  records.forEach(upsertPlatformPath);
-  return records;
 }
 
 export async function dbSavePlatformPath(id){
@@ -653,28 +732,16 @@ export async function dbSavePlatformPath(id){
   }
 }
 
-async function findPathByClientSaveId(clientSaveId){
-  if(!cloudActive() || !clientSaveId) return null;
-  const pathsCol = fb.collection(fb.db, 'paths');
-  const q = fb.query(pathsCol, fb.where('ownerId', '==', store.currentUser.uid), fb.where('clientSaveId', '==', clientSaveId));
-  const snap = await withTimeout(fb.getDocs(q), READ_TIMEOUT_MS, 'find saved path');
-  return snap.docs[0] || null;
+function pathIdForClientSaveId(clientSaveId){
+  const safe = String(clientSaveId || '').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 180);
+  return safe ? ('client_' + safe) : null;
 }
 
 export async function dbCreatePlatformPath(localPath, sourceId){
   if(!cloudActive()) return null;
   const clientSaveId = localPath.clientSaveId || null;
-  if(clientSaveId){
-    try{
-      const existingSnap = await findPathByClientSaveId(clientSaveId);
-      if(existingSnap){
-        const existingRecord = await loadPlatformRecordFromDoc(existingSnap, true);
-        upsertPlatformPath(existingRecord);
-        return existingSnap.id;
-      }
-    }catch(e){ console.warn('find saved path:', syncErrorMessage(e, 'This is taking too long. Check your connection and try again.')); }
-  }
-  const ref = fb.doc(fb.collection(fb.db, 'paths'));
+  const deterministicId = pathIdForClientSaveId(clientSaveId);
+  const ref = deterministicId ? pathRef(deterministicId) : fb.doc(fb.collection(fb.db, 'paths'));
   const id = ref.id;
   const previous = store.state.userPaths[id];
   store.state.userPaths[id] = {
@@ -712,7 +779,7 @@ export async function dbRequestAccess(pathId){
     flash('Access requested');
     return true;
   }catch(e){
-    console.warn('request access:', e);
+    console.warn('request access:', syncErrorMessage(e, 'Could not request access. Retry cloud connection.'));
     return false;
   }
 }
@@ -724,5 +791,8 @@ export async function dbLoadMyAccessRequest(pathId){
     const req = snap.exists() ? snap.data() : null;
     if(req) store.accessRequests[pathId] = req;
     return req;
-  }catch(e){ return null; }
+  }catch(e){
+    syncErrorMessage(e, 'Could not load the access request. Retry cloud connection.');
+    return null;
+  }
 }

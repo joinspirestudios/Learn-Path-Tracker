@@ -268,6 +268,11 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data.userId == request.auth.uid;
     }
 
+    match /healthCheck/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /users/{uid}/{document=**} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
@@ -393,6 +398,32 @@ service cloud.firestore {
    add `ANTHROPIC_MODEL`. Without an Anthropic key, the builder uses the basic
    starter fallback.
 5. Deploy. Files in `api/` deploy as serverless functions.
+
+---
+
+## Troubleshooting Firestore connection
+
+The `(default)` Firestore database for this project has been created. The app
+checks `healthCheck/ping` before starting broad cloud synchronization. The
+document may exist or be absent; either result confirms that Firestore answered.
+The recommended rules above allow this diagnostic read while preventing client
+writes to the health-check collection.
+
+- Confirm `VITE_FIREBASE_PROJECT_ID` is exactly `learn-path-tracker` in local
+  and Vercel environment variables.
+- After publishing Firestore rules, allow several minutes for changes to
+  propagate before testing again.
+- If developer tools show `ERR_BLOCKED_BY_CLIENT`, test in an Incognito window
+  and disable privacy or ad-blocking extensions for the deployed site.
+- Redeploy Vercel when a `VITE_FIREBASE_*` environment variable changes because
+  Vite embeds those public values at build time.
+- Creating the Firestore database or adding `healthCheck/ping` does not require
+  a Vercel redeploy when the environment variables are already correct.
+- A permission-denied result means Firestore responded but the published rules
+  blocked the read. It is not evidence that the database is missing.
+
+When cloud preflight fails, the app keeps local/cache data usable and pauses
+automatic Firestore reads and writes until **Retry cloud connection** is used.
 
 ---
 

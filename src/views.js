@@ -25,7 +25,7 @@ import {
 } from './plan.js';
 import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
-import { configPresent, cloudActive } from './db.js';
+import { configPresent, cloudActive, cloudAvailable, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 import {
@@ -73,7 +73,30 @@ function authRestoring(){
 }
 
 function syncStatusHTML(){
-  return store.syncStatus ? '<div class="sync-banner">' + esc(store.syncStatus) + '</div>' : '';
+  const status = store.cloudStatus || 'checking';
+  let h = '';
+  if(status !== 'connected'){
+    const checking = status === 'checking';
+    h += '<div class="sync-banner ' + esc(status) + '"><span>' + esc(store.cloudMessage || (checking ? 'Checking Firestore connection...' : cloudFailureMessage())) + '</span>'
+      + (checking ? '' : '<button class="btn" type="button" data-retry-cloud>Retry cloud connection</button>') + '</div>';
+  } else if(store.syncStatus){
+    h += '<div class="sync-banner subtle"><span>' + esc(store.syncStatus) + '</span></div>';
+  }
+  if(import.meta.env.DEV){
+    const d = store.cloudDiagnostics || {};
+    h += '<details class="cloud-diagnostics"><summary>Cloud diagnostics</summary>'
+      + '<dl><div><dt>Project</dt><dd>' + esc(d.projectId || 'not configured') + '</dd></div>'
+      + '<div><dt>Firebase</dt><dd>' + esc(d.firebaseInitialized ? 'initialized' : 'not initialized') + '</dd></div>'
+      + '<div><dt>Firestore</dt><dd>' + esc(d.firestoreInitialized ? 'initialized' : 'not initialized') + '</dd></div>'
+      + '<div><dt>Auth</dt><dd>' + esc(!store.authChecked ? 'checking' : (store.currentUser ? 'signed in' : 'signed out')) + '</dd></div>'
+      + '<div><dt>Cloud status</dt><dd>' + esc(status) + '</dd></div>'
+      + '<div><dt>Preflight</dt><dd>' + esc(d.preflightElapsedMs == null ? '-' : (d.preflightElapsedMs + 'ms')) + '</dd></div>'
+      + '<div><dt>Summaries</dt><dd>' + esc(d.platformSummaryElapsedMs == null ? '-' : (d.platformSummaryElapsedMs + 'ms')) + '</dd></div>'
+      + '<div><dt>Path children</dt><dd>' + esc(d.selectedPathChildrenStatus || 'idle') + '</dd></div>'
+      + '<div><dt>Latest error</dt><dd>' + esc(d.latestErrorStatus || 'none') + '</dd></div>'
+      + '<div><dt>Error detail</dt><dd>' + esc(d.latestErrorMessage || 'none') + '</dd></div></dl></details>';
+  }
+  return h;
 }
 
 function pathTasksReady(def){
@@ -86,6 +109,10 @@ function pathHasTasks(def){
   return !!((def?.weeks || []).some(w => (w.tasks || []).length));
 }
 
+function pathCanStart(def){
+  return pathTasksReady(def) && (getTasksForDay(def, 1).length > 0 || def?.intentionallyEmpty === true);
+}
+
 function renderPathOpening(title = 'Opening path...', message = 'Loading path details.'){
   applyHeader();
   $('content').innerHTML = '<div class="panel card path-loading"><div class="chip">Loading</div><h3>' + esc(title) + '</h3><p class="muted">' + esc(message) + '</p></div>';
@@ -93,9 +120,12 @@ function renderPathOpening(title = 'Opening path...', message = 'Loading path de
 
 function renderPathLoadError(id, title = 'Could not load path tasks. Try again.'){
   applyHeader();
-  $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">Path loading issue</div><div class="muted">' + esc(title) + '</div><button class="btn gold" id="retryPathLoad" style="margin-top:14px">Retry</button></div>';
+  $('content').innerHTML = syncStatusHTML() + '<div class="panel card empty-state"><div class="section-title">Path loading issue</div><div class="muted">' + esc(title) + '</div><button class="btn gold" id="retryPathLoad" style="margin-top:14px">Retry</button></div>';
   const retry = $('retryPathLoad');
-  if(retry) retry.onclick = () => openSkill(id, { tab:'plan' });
+  if(retry) retry.onclick = async () => {
+    if(!cloudAvailable() && store.nav.retryCloud) await store.nav.retryCloud();
+    if(cloudAvailable()) openSkill(id, { tab:'plan' });
+  };
 }
 
 function upSave(){     saveCurrentPath(); }
@@ -213,6 +243,7 @@ function pathCardBlurb(def, total){
   if(def.durationLabel) bits.push(esc(def.durationLabel));
   if(def.visibility) bits.push(esc(def.visibility));
   const meta = bits.length ? bits.join(' · ') + '. ' : '';
+  if(def.platform && !pathTasksReady(def)) return meta + 'Open to load sections and tasks.';
   return meta + (total ? (total + ' tasks across ' + (def.weeks || []).length + ' sections') : 'Empty path. Open it to add sections, tasks, and resources.');
 }
 
@@ -1291,6 +1322,7 @@ async function saveGeneratedPath(){
   aiSaveClientId = aiSaveClientId || ('ai_' + Date.now().toString(36) + Math.floor(Math.random()*99999).toString(36));
   renderAIBuilder();
   try{
+    if(configPresent() && store.currentUser && !cloudAvailable()) throw new Error(cloudFailureMessage());
     const localPath = {
       ...aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt)),
       clientSaveId: aiSaveClientId,
@@ -1350,6 +1382,7 @@ function createPath(){
     + '</div></div>';
   document.body.appendChild(o);
   let busy = false;
+  const creationClientId = 'tpl_' + Date.now().toString(36) + Math.floor(Math.random()*99999).toString(36);
   const close = () => { if(!busy) o.remove(); };
   const setErr = msg => {
     const el = o.querySelector('#npErr');
@@ -1419,11 +1452,13 @@ function createPath(){
       visibility: 'private', discoverable: false, previewEnabled: true,
       previewTitle: title, previewDescription: goal, previewIncludesScheme: false,
       coverImage: null, profileImage: null, created: Date.now(), weeks,
-      clientSaveId: 'tpl_' + Date.now().toString(36) + Math.floor(Math.random()*99999).toString(36),
+      clientSaveId: creationClientId,
+      intentionallyEmpty: false,
     };
     setBusy(true);
     isCreatingPath = true;
     try{
+      if(configPresent() && store.currentUser && !cloudAvailable()) throw new Error(cloudFailureMessage());
       if(cloudActive()){
         const cloudId = await trackOperation('create template path', withTimeout(dbCreatePlatformPath(localPath), AI_SAVE_TIMEOUT_MS, 'create template path'));
         if(!cloudId) throw new Error('Could not create path. Please try again.');
@@ -1503,6 +1538,11 @@ export async function openSkill(id, options = {}){
     if(existingDef?.platform && !pathTasksReady(existingDef)){
       renderPathOpening('Opening path...', 'Loading path tasks before enabling the roadmap.');
       setRoute(pathHash(id, options.tab || 'plan', selectedJourneyDay));
+      if(!cloudAvailable()){
+        openingPathId = null;
+        renderPathLoadError(id, cloudFailureMessage());
+        return;
+      }
       trackOperation('path children load', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load path tasks'))
         .then(() => {
           if(store.state.current === id){
@@ -1518,6 +1558,7 @@ export async function openSkill(id, options = {}){
         });
       return;
     }
+    if(existingDef?.platform) store.cloudDiagnostics.selectedPathChildrenStatus = 'cached';
   }
   renderOpenedPath(id, options);
   syncOpenedPathInBackground(id);
@@ -1556,9 +1597,10 @@ async function openPathRoute(id, forcePreview, options = {}){
   let record = null;
   try{
     renderPathOpening('Opening path...', 'Loading platform path details.');
+    if(!cloudAvailable()) throw new Error(cloudFailureMessage());
     record = await trackOperation('path children load', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load platform path'));
   }catch(e){
-    renderPathLoadError(id, userSyncMessage(e, 'Could not load path tasks. Try again.'));
+    renderPathLoadError(id, !cloudAvailable() ? cloudFailureMessage() : userSyncMessage(e, 'Could not load path tasks. Try again.'));
     return;
   }
   if(!record){
@@ -1718,7 +1760,10 @@ function roadmapHTML(id, def){
     h += '<div class="journey-start"><div><b>Loading tasks...</b><p>Roadmap controls will unlock once this platform path finishes loading.</p></div><button class="btn" disabled>Loading...</button></div>';
   } else if(!enrollment?.startDate){
     const starting = startingJourneyId === id;
-    h += '<div class="journey-start"><div><b>Start this path</b><p>Set today as Day 1 and begin tracking daily progress.</p></div><button class="btn gold" id="startJourney" ' + (starting ? 'disabled' : '') + '>' + (starting ? 'Starting...' : 'Start this path') + '</button></div>';
+    const canStart = pathCanStart(def);
+    h += '<div class="journey-start"><div><b>' + (canStart ? 'Start this path' : 'Day 1 tasks are unavailable') + '</b><p>'
+      + (canStart ? 'Set today as Day 1 and begin tracking daily progress.' : 'Add or load at least one Day 1 task before starting this path.')
+      + '</p></div><button class="btn gold" id="startJourney" ' + (starting || !canStart ? 'disabled' : '') + '>' + (starting ? 'Starting...' : 'Start this path') + '</button></div>';
   }
   h += '<div class="road-days vertical">';
   for(let day = 1; day <= totalDays; day++){
@@ -1819,7 +1864,7 @@ function journeyDetailHTML(id, def){
     } else {
       h += '<div class="muted">No tasks assigned to this day. You can still complete the day.</div>';
     }
-    const ready = (dayTasks.length === 0 && tasksReady) || completeCount === dayTasks.length;
+    const ready = (dayTasks.length === 0 && def.intentionallyEmpty === true) || (dayTasks.length > 0 && completeCount === dayTasks.length);
     const canComplete = canCompleteDay(day, enrollment, today);
     h += '<button class="btn gold" id="completeDay" data-day="' + day + '" ' + (ready && canComplete ? '' : 'disabled') + '>Complete day</button>';
     if(!canComplete && status === 'active') h += '<div class="hint">This day is not eligible for completion today.</div>';
@@ -1957,7 +2002,7 @@ async function completeJourneyDay(id, def, day){
     return;
   }
   const dayTasks = getTasksForDay(def, day);
-  if(def.platform && !pathHasTasks(def)){
+  if(dayTasks.length === 0 && def.intentionallyEmpty !== true){
     flash('Could not load path tasks. Try again.');
     return;
   }
@@ -2049,7 +2094,7 @@ async function resetMissedDay(id, def, day){
 function wireJourneyControls(id, def){
   const start = $('startJourney');
   if(start) start.onclick = async () => {
-    if(!pathTasksReady(def)){
+    if(!pathCanStart(def)){
       flash('Loading tasks. Try again in a moment.');
       return;
     }
@@ -2084,6 +2129,12 @@ function wireJourneyControls(id, def){
     evidenceFormTaskId = null;
     evidenceProofType = 'url';
     renderPlan();
+    if(configPresent() && store.currentUser && !cloudAvailable()){
+      startingJourneyId = null;
+      flash(cloudFailureMessage());
+      renderPlan();
+      return;
+    }
     trackOperation('start enrollment', withTimeout(dbStartEnrollment(id, getTasksForDay(def, 1).length), ENROLLMENT_TIMEOUT_MS, 'start enrollment'))
       .then(() => {
         startingJourneyId = null;
@@ -2303,17 +2354,28 @@ export function renderPlan(){
   $('content').querySelectorAll('.res-url').forEach(inp   => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url   = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
     const act = btn.dataset.act, wi = +btn.dataset.wi, ti = +btn.dataset.ti, ri = +btn.dataset.ri;
-    if(act === 'addTask'){ (def.weeks[wi].tasks = def.weeks[wi].tasks || []).push({ text:'', scheduleType:'once', taskMode:'one_off', startDay:1, endDay:null }); }
-    else if(act === 'delTask'){ def.weeks[wi].tasks.splice(ti, 1); }
+    if(act === 'addTask'){
+      (def.weeks[wi].tasks = def.weeks[wi].tasks || []).push({ text:'', scheduleType:'once', taskMode:'one_off', startDay:1, endDay:null });
+      def.intentionallyEmpty = false;
+    }
+    else if(act === 'delTask'){
+      def.weeks[wi].tasks.splice(ti, 1);
+      def.intentionallyEmpty = !pathHasTasks(def);
+    }
     else if(act === 'addRes'){ (def.weeks[wi].resources = def.weeks[wi].resources || []).push({ label:'', url:'' }); }
     else if(act === 'delRes'){ def.weeks[wi].resources.splice(ri, 1); }
-    else if(act === 'addWeek'){ def.weeks.push({ title:'Week ' + (def.weeks.length+1), tasks:[{text:''}], resources:[] }); }
+    else if(act === 'addWeek'){
+      def.weeks.push({ title:'Week ' + (def.weeks.length+1), tasks:[{text:''}], resources:[] });
+      def.intentionallyEmpty = false;
+    }
     else if(act === 'delWeek'){
       // Snapshot the week so Undo can reinsert it at the same index.
       const snap = JSON.parse(JSON.stringify(def.weeks[wi]));
+      const wasIntentionallyEmpty = def.intentionallyEmpty === true;
       def.weeks.splice(wi, 1);
+      def.intentionallyEmpty = !pathHasTasks(def);
       upSave(); renderPlan();
-      undoToast('Week removed', () => { def.weeks.splice(wi, 0, snap); upSave(); renderPlan(); });
+      undoToast('Week removed', () => { def.weeks.splice(wi, 0, snap); def.intentionallyEmpty = wasIntentionallyEmpty; upSave(); renderPlan(); });
       return;
     }
     else if(act === 'delPath'){

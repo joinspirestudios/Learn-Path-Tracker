@@ -35,6 +35,11 @@ export function migrateState(s){
         if(task.scheduleType && !['once', 'daily'].includes(task.scheduleType)) task.scheduleType = null;
       });
     });
+    if(path.platform && path.childrenLoaded == null){
+      path.childrenLoaded = (path.weeks || []).some(week =>
+        (week.tasks || []).length || (week.resources || []).length
+      );
+    }
     s.userPaths[id] = path;
   });
   s.enrollments = s.enrollments || {};
@@ -76,6 +81,19 @@ export const store = {
   bootReady:       false,
   authSoftTimedOut:false,
   syncStatus:      '',
+  cloudStatus:     'checking',
+  cloudMessage:    '',
+  cloudCheck:      null,
+  cloudDiagnostics:{
+    projectId:null,
+    firebaseInitialized:false,
+    firestoreInitialized:false,
+    preflightElapsedMs:null,
+    platformSummaryElapsedMs:null,
+    selectedPathChildrenStatus:'idle',
+    latestErrorStatus:null,
+    latestErrorMessage:null,
+  },
   currentUser:     null,
   authChecked:     false,
   activeTab:       'week',
@@ -89,5 +107,6 @@ export const store = {
     goWeek:     null,  // (weekNumber) => void
     openSkill:  null,  // (skillId) => void
     handleHash: null,  // () => boolean
+    retryCloud:null,   // () => void
   },
 };
