@@ -4,6 +4,86 @@
 
 export const $ = (id) => document.getElementById(id);
 
+function accessibilityToken(value, fallback = 'field'){
+  const token = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return token || fallback;
+}
+
+function accessibilityLabel(field){
+  const wrapped = field.closest('label');
+  if(wrapped) return wrapped;
+  const parent = field.parentElement;
+  if(!parent) return null;
+  return Array.from(parent.children).find(child => child.tagName === 'LABEL') || null;
+}
+
+export function enhanceFormAccessibility(root = document){
+  const fields = Array.from(root.querySelectorAll('input, textarea, select'));
+  const occurrences = new Map();
+  fields.forEach((field, index) => {
+    const label = accessibilityLabel(field);
+    const scope = field.closest('[id]')?.id || (field.closest('.modal-overlay') ? 'modal' : 'content');
+    const identity = field.dataset.key
+      || field.dataset.task
+      || field.dataset.id
+      || field.dataset.wi
+      || field.getAttribute('placeholder')
+      || label?.textContent
+      || field.classList[0]
+      || field.type
+      || `field-${index + 1}`;
+    const base = `lpt-${accessibilityToken(scope, 'view')}-${accessibilityToken(identity)}`;
+    const count = (occurrences.get(base) || 0) + 1;
+    occurrences.set(base, count);
+    if(!field.id){
+      let candidate = count === 1 ? base : `${base}-${count}`;
+      let suffix = count;
+      while(document.getElementById(candidate) && document.getElementById(candidate) !== field){
+        suffix += 1;
+        candidate = `${base}-${suffix}`;
+      }
+      field.id = candidate;
+    }
+    if(!field.name) field.name = field.id;
+    if(label && !label.contains(field)) label.htmlFor = field.id;
+    if(!label && !field.getAttribute('aria-label')){
+      field.setAttribute('aria-label', field.getAttribute('placeholder') || field.name);
+    }
+  });
+
+  root.querySelectorAll('button').forEach(button => {
+    if(button.hasAttribute('aria-label')) return;
+    const text = String(button.textContent || '').trim();
+    const iconOnly = button.classList.contains('icon-btn')
+      || button.classList.contains('modal-x')
+      || button.classList.contains('ut-x')
+      || /^[x+\-\u00d7\u2190\u2192\u22ee\u2026]$/i.test(text);
+    if(!iconOnly) return;
+    const action = button.dataset.act || '';
+    const fallback = action.startsWith('del') ? 'Remove' : (button.classList.contains('modal-x') ? 'Close' : 'Action');
+    button.setAttribute('aria-label', button.title || fallback);
+  });
+}
+
+export function installFormAccessibility(){
+  enhanceFormAccessibility(document);
+  let queued = false;
+  const observer = new MutationObserver(() => {
+    if(queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      enhanceFormAccessibility(document);
+    });
+  });
+  observer.observe(document.documentElement, { childList:true, subtree:true });
+  return observer;
+}
+
 /* HTML escape — apply to every user-controlled string going into innerHTML.
    For new render code, prefer the `html` tagged template below which escapes
    automatically. */

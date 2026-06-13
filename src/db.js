@@ -210,6 +210,52 @@ function cleanDayLogStatus(status){
 
 function stamp(){ return new Date(); }
 
+function enrollmentFailure(code, message){
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function hasOwn(value, key){
+  return Object.prototype.hasOwnProperty.call(value || {}, key);
+}
+
+function validateEnrollmentRecord(raw, enrollmentId, pathId, userId){
+  if(raw.userId !== userId){
+    throw enrollmentFailure(
+      'enrollment_ownership_mismatch',
+      'This enrollment record has an ownership mismatch and must be repaired.'
+    );
+  }
+  if(raw.pathId !== pathId){
+    throw enrollmentFailure('malformed_enrollment', 'This enrollment record has a path mismatch and must be repaired.');
+  }
+  if(raw.id != null && raw.id !== enrollmentId){
+    throw enrollmentFailure('malformed_enrollment', 'This enrollment record has an invalid ID and must be repaired.');
+  }
+  if(raw.currentDay != null && (!Number.isFinite(Number(raw.currentDay)) || Number(raw.currentDay) < 1)){
+    throw enrollmentFailure('malformed_enrollment', 'This enrollment record has an invalid current day and must be repaired.');
+  }
+  if(raw.status != null && !['active', 'paused', 'completed'].includes(raw.status)){
+    throw enrollmentFailure('malformed_enrollment', 'This enrollment record has an invalid status and must be repaired.');
+  }
+}
+
+function enrollmentRepair(raw, normalized){
+  const repair = {};
+  const safeDefaults = [
+    'startDate', 'currentDay', 'streak', 'freezeCount', 'status',
+    'lastCompletedDay', 'lastActivityDate', 'missedDate',
+  ];
+  safeDefaults.forEach(key => {
+    if(!hasOwn(raw, key)) repair[key] = normalized[key];
+  });
+  const identityOnly = Object.keys(raw).every(key => ['id', 'pathId', 'userId'].includes(key));
+  if(identityOnly && !hasOwn(raw, 'createdAt')) repair.createdAt = normalized.createdAt;
+  if(Object.keys(repair).length) repair.updatedAt = stamp();
+  return repair;
+}
+
 function cleanEvidenceType(type){
   return type === 'file' ? 'file' : 'url';
 }
@@ -516,34 +562,39 @@ export async function dbEnsureEnrollment(pathId, options = {}){
   const userId = (store.currentUser && store.currentUser.uid) || 'local';
   const enrollmentId = enrollmentIdFor(pathId, userId);
   if(cloudActive()){
+    let diagnostic = { enrollmentId, authUid:userId, documentExists:'unknown', ownershipMatches:'unknown' };
     try{
       const ref = enrollmentRef(enrollmentId);
+      await withTimeout(fb.setDoc(ref, {
+        id: enrollmentId,
+        pathId,
+        userId,
+      }, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'bootstrap enrollment');
       const snap = await withTimeout(fb.getDoc(ref), ENROLLMENT_TIMEOUT_MS, 'load enrollment');
-      let enrollment;
-      if(snap.exists()){
-        enrollment = makeEnrollment(pathId, userId, { id: enrollmentId, ...snap.data() });
-        if(
-          snap.data().pathId == null ||
-          snap.data().userId == null ||
-          snap.data().currentDay == null ||
-          snap.data().status == null
-        ){
-          await withTimeout(fb.setDoc(ref, enrollment, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'repair enrollment');
-        }
-      } else {
-        enrollment = makeEnrollment(pathId, userId, {
-          id: enrollmentId,
-          status: 'active',
-          currentDay: 1,
-          streak: 0,
-          freezeCount: 1,
-          lastCompletedDay: null,
-        });
-        await withTimeout(fb.setDoc(ref, enrollment, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'create enrollment');
+      diagnostic = {
+        enrollmentId,
+        authUid:userId,
+        documentExists:snap.exists(),
+        ownershipMatches:snap.exists() ? snap.data().userId === userId : false,
+      };
+      if(import.meta.env.DEV) console.info('[enrollment diagnostic]', diagnostic);
+      if(!snap.exists()){
+        throw enrollmentFailure('malformed_enrollment', 'The enrollment bootstrap did not create a readable record.');
+      }
+      const raw = snap.data();
+      validateEnrollmentRecord(raw, enrollmentId, pathId, userId);
+      let enrollment = makeEnrollment(pathId, userId, { id: enrollmentId, ...raw });
+      const repair = enrollmentRepair(raw, enrollment);
+      if(Object.keys(repair).length){
+        await withTimeout(fb.setDoc(ref, repair, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'repair enrollment');
+        enrollment = makeEnrollment(pathId, userId, { id:enrollmentId, ...raw, ...repair });
       }
       const dayLogs = await withTimeout(loadDayLogs(enrollmentId), ENROLLMENT_TIMEOUT_MS, 'load day logs');
       return cacheEnrollment(enrollment, dayLogs);
     }catch(e){
+      if(import.meta.env.DEV && diagnostic.documentExists === 'unknown'){
+        console.warn('[enrollment diagnostic]', diagnostic);
+      }
       console.warn('ensure enrollment:', syncErrorMessage(e, 'Could not start this path. Try again.'));
       if(options.throwOnCloudError) throw e;
     }

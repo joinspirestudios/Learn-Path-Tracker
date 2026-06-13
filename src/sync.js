@@ -53,6 +53,10 @@ export function cloudStatusMessage(status){
     network_blocked:'Firestore requests appear to be blocked by a browser extension or network filter. Try Incognito or disable privacy/ad blockers for this site.',
     timeout:'Firestore did not respond in time. Your local data remains available. Retry cloud connection.',
     offline:'Firestore is unavailable or offline. Your local data remains available. Retry cloud connection.',
+    unauthenticated:'Sign in again before starting this path.',
+    invalid_argument:'The enrollment request is invalid. Reload the path and try again.',
+    malformed_enrollment:'This enrollment record is incomplete and must be repaired.',
+    enrollment_ownership_mismatch:'This enrollment record has an ownership mismatch and must be repaired.',
     configuration_error:'Firebase configuration is incomplete or points to the wrong project.',
     unknown_error:'Could not connect to Firestore. Your local data remains available. Retry cloud connection.',
     checking:'Checking Firestore connection...',
@@ -72,6 +76,15 @@ export function classifyFirebaseError(error){
   if(code === 'offline') return { status:'offline', message:cloudStatusMessage('offline') };
   if(code === 'timeout') return { status:'timeout', message:cloudStatusMessage('timeout') };
   if(code === 'operation_timeout') return { status:'timeout', message:cloudStatusMessage('timeout') };
+  if(code === 'unauthenticated' || lower.includes('unauthenticated')){
+    return { status:'unauthenticated', message:cloudStatusMessage('unauthenticated') };
+  }
+  if(code === 'enrollment_ownership_mismatch'){
+    return { status:'enrollment_ownership_mismatch', message:cloudStatusMessage('enrollment_ownership_mismatch') };
+  }
+  if(code === 'malformed_enrollment'){
+    return { status:'malformed_enrollment', message:cloudStatusMessage('malformed_enrollment') };
+  }
   if(code === 'permission-denied' || lower.includes('missing or insufficient permissions') || lower.includes('permission-denied')){
     return { status:'permission_denied', message:cloudStatusMessage('permission_denied') };
   }
@@ -84,8 +97,30 @@ export function classifyFirebaseError(error){
   if(code === 'unavailable' || lower.includes('client is offline') || lower.includes('network is unavailable') || lower.includes('failed to get document because the client is offline')){
     return { status:'offline', message:cloudStatusMessage('offline') };
   }
-  if(code === 'invalid-argument' || code === 'failed-precondition' || lower.includes('invalid firebase') || lower.includes('project id')){
+  if(code === 'invalid-argument'){
+    return { status:'invalid_argument', message:cloudStatusMessage('invalid_argument') };
+  }
+  if(code === 'failed-precondition' || lower.includes('invalid firebase') || lower.includes('project id')){
     return { status:'configuration_error', message:cloudStatusMessage('configuration_error') };
   }
   return { status:'unknown_error', message:cloudStatusMessage('unknown_error') };
+}
+
+export function isTemporaryFirebaseError(error){
+  const status = classifyFirebaseError(error).status;
+  return ['offline', 'timeout', 'network_blocked'].includes(status);
+}
+
+export function enrollmentStartErrorMessage(error){
+  const classified = classifyFirebaseError(error);
+  if(classified.status === 'permission_denied'){
+    return "Firestore blocked enrollment creation. The app's enrollment rules or document ownership do not match the signed-in user.";
+  }
+  if(classified.status === 'offline' || classified.status === 'timeout' || classified.status === 'network_blocked'){
+    return 'Started locally \u2014 waiting to sync';
+  }
+  if(classified.status === 'unknown_error'){
+    return 'Could not start this path. Please try again.';
+  }
+  return classified.message;
 }

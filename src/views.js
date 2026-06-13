@@ -6,7 +6,7 @@
 
 import { SKILLS } from './data.js';
 import { TEMPLATES } from './templates.js';
-import { store } from './store.js';
+import { store, STATE_KEY } from './store.js';
 import { $, esc, flash, undoToast } from './helpers.js';
 import {
   dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
@@ -25,7 +25,7 @@ import {
 } from './plan.js';
 import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
-import { configPresent, cloudActive, cloudAvailable, cloudFailureMessage } from './db.js';
+import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
 import {
@@ -35,7 +35,7 @@ import {
 } from './journey.js';
 import {
   AI_SAVE_TIMEOUT_MS, ENROLLMENT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS,
-  trackOperation, userSyncMessage, withTimeout,
+  enrollmentStartErrorMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
@@ -110,7 +110,7 @@ function pathHasTasks(def){
 }
 
 function pathCanStart(def){
-  return pathTasksReady(def) && (getTasksForDay(def, 1).length > 0 || def?.intentionallyEmpty === true);
+  return pathTasksReady(def) && getTasksForDay(def, 1).length > 0;
 }
 
 function renderPathOpening(title = 'Opening path...', message = 'Loading path details.'){
@@ -1674,6 +1674,59 @@ function currentEnrollmentForPath(id){
   return store.enrollments[enrollmentId] || (store.state.enrollments && store.state.enrollments[enrollmentId]) || null;
 }
 
+function cloneJourneyEnrollment(enrollment){
+  if(!enrollment) return null;
+  const clone = { ...enrollment };
+  clone.dayLogs = {};
+  Object.entries(enrollment.dayLogs || {}).forEach(([day, log]) => {
+    clone.dayLogs[day] = {
+      ...log,
+      completedTaskIds:[...(log?.completedTaskIds || [])],
+      verifiedTaskIds:[...(log?.verifiedTaskIds || [])],
+      unverifiedTaskIds:[...(log?.unverifiedTaskIds || [])],
+    };
+  });
+  return clone;
+}
+
+function snapshotJourneyStart(enrollmentId){
+  let savedLocalState = null;
+  try{ savedLocalState = localStorage.getItem(STATE_KEY); }catch(e){}
+  return {
+    live:cloneJourneyEnrollment(store.enrollments[enrollmentId]),
+    persisted:cloneJourneyEnrollment(store.state.enrollments && store.state.enrollments[enrollmentId]),
+    selectedJourneyDay,
+    evidenceFormTaskId,
+    evidenceProofType,
+    evidenceError,
+    savedLocalState,
+  };
+}
+
+function restoreJourneyStart(enrollmentId, snapshot){
+  if(snapshot.live) store.enrollments[enrollmentId] = snapshot.live;
+  else delete store.enrollments[enrollmentId];
+  store.state.enrollments = store.state.enrollments || {};
+  if(snapshot.persisted) store.state.enrollments[enrollmentId] = snapshot.persisted;
+  else delete store.state.enrollments[enrollmentId];
+  selectedJourneyDay = snapshot.selectedJourneyDay;
+  evidenceFormTaskId = snapshot.evidenceFormTaskId;
+  evidenceProofType = snapshot.evidenceProofType;
+  evidenceError = snapshot.evidenceError;
+  try{
+    if(snapshot.savedLocalState == null) localStorage.removeItem(STATE_KEY);
+    else localStorage.setItem(STATE_KEY, snapshot.savedLocalState);
+  }catch(e){}
+}
+
+function setJourneyPending(enrollmentId, pending){
+  [store.enrollments, store.state.enrollments || {}].forEach(bucket => {
+    if(!bucket[enrollmentId]) return;
+    if(pending) bucket[enrollmentId].syncPending = true;
+    else delete bucket[enrollmentId].syncPending;
+  });
+}
+
 function dayLogFor(enrollment, day){
   return (enrollment && enrollment.dayLogs && (enrollment.dayLogs[day] || enrollment.dayLogs[String(day)])) || null;
 }
@@ -1756,6 +1809,9 @@ function roadmapHTML(id, def){
   let h = '<div class="panel card roadmap-foundation">'
     + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Daily journey</h3></div>'
     + '<div class="road-stats"><span>Streak ' + esc(enrollment?.streak || 0) + '</span><span>Freezes ' + esc(enrollment?.freezeCount ?? 1) + '</span></div></div>';
+  if(enrollment?.syncPending){
+    h += '<div class="sync-banner offline"><span>Started locally &mdash; waiting to sync</span></div>';
+  }
   if(!tasksReady){
     h += '<div class="journey-start"><div><b>Loading tasks...</b><p>Roadmap controls will unlock once this platform path finishes loading.</p></div><button class="btn" disabled>Loading...</button></div>';
   } else if(!enrollment?.startDate){
@@ -1862,9 +1918,9 @@ function journeyDetailHTML(id, def){
       });
       h += '</div>';
     } else {
-      h += '<div class="muted">No tasks assigned to this day. You can still complete the day.</div>';
+      h += '<div class="muted">No tasks are available for this day. Completion stays disabled until task data is available.</div>';
     }
-    const ready = (dayTasks.length === 0 && def.intentionallyEmpty === true) || (dayTasks.length > 0 && completeCount === dayTasks.length);
+    const ready = dayTasks.length > 0 && completeCount === dayTasks.length;
     const canComplete = canCompleteDay(day, enrollment, today);
     h += '<button class="btn gold" id="completeDay" data-day="' + day + '" ' + (ready && canComplete ? '' : 'disabled') + '>Complete day</button>';
     if(!canComplete && status === 'active') h += '<div class="hint">This day is not eligible for completion today.</div>';
@@ -2002,8 +2058,8 @@ async function completeJourneyDay(id, def, day){
     return;
   }
   const dayTasks = getTasksForDay(def, day);
-  if(dayTasks.length === 0 && def.intentionallyEmpty !== true){
-    flash('Could not load path tasks. Try again.');
+  if(dayTasks.length === 0){
+    flash('Day tasks are unavailable. Completion remains disabled.');
     return;
   }
   const existing = dayLogFor(enrollment, day);
@@ -2105,6 +2161,7 @@ function wireJourneyControls(id, def){
     const userId = (store.currentUser && store.currentUser.uid) || 'local';
     const enrollmentId = enrollmentIdFor(id, userId);
     const existing = currentEnrollmentForPath(id);
+    const snapshot = snapshotJourneyStart(enrollmentId);
     const next = makeEnrollment(id, userId, {
       ...(existing || {}),
       id: enrollmentId,
@@ -2124,28 +2181,36 @@ function wireJourneyControls(id, def){
     store.enrollments[enrollmentId] = next;
     store.state.enrollments = store.state.enrollments || {};
     store.state.enrollments[enrollmentId] = next;
-    dbSaveState();
+    await dbSaveState();
     selectedJourneyDay = 1;
     evidenceFormTaskId = null;
     evidenceProofType = 'url';
     renderPlan();
-    if(configPresent() && store.currentUser && !cloudAvailable()){
+    try{
+      if(configPresent() && store.currentUser && !cloudAvailable()) throw cloudConnectionError();
+      await trackOperation(
+        'start enrollment',
+        withTimeout(dbStartEnrollment(id, getTasksForDay(def, 1).length), ENROLLMENT_TIMEOUT_MS, 'start enrollment')
+      );
+      setJourneyPending(enrollmentId, false);
+      store.syncStatus = '';
+      await dbSaveState();
+    }catch(e){
+      console.warn('start enrollment:', e && e.message ? e.message : e);
+      if(isTemporaryFirebaseError(e)){
+        setJourneyPending(enrollmentId, true);
+        store.syncStatus = 'Started locally \u2014 waiting to sync';
+        await dbSaveState();
+      } else {
+        restoreJourneyStart(enrollmentId, snapshot);
+        store.syncStatus = '';
+        await dbSaveState();
+      }
+      flash(enrollmentStartErrorMessage(e));
+    }finally{
       startingJourneyId = null;
-      flash(cloudFailureMessage());
-      renderPlan();
-      return;
+      if(store.state.current === id && store.activeTab === 'plan') renderPlan();
     }
-    trackOperation('start enrollment', withTimeout(dbStartEnrollment(id, getTasksForDay(def, 1).length), ENROLLMENT_TIMEOUT_MS, 'start enrollment'))
-      .then(() => {
-        startingJourneyId = null;
-        if(store.state.current === id && store.activeTab === 'plan') renderPlan();
-      })
-      .catch(e => {
-        startingJourneyId = null;
-        console.warn('start enrollment:', e && e.message ? e.message : e);
-        flash(userSyncMessage(e, 'Could not sync start yet. We will retry when online.'));
-        if(store.state.current === id && store.activeTab === 'plan') renderPlan();
-      });
   };
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
     btn.onclick = async () => {

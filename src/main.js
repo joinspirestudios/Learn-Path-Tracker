@@ -10,7 +10,7 @@
 import './styles.css';
 import { fb } from './firebase.js';
 import { store, CAT_PREFIX, LAST_ROUTE_KEY } from './store.js';
-import { $, Store } from './helpers.js';
+import { $, Store, installFormAccessibility } from './helpers.js';
 import {
   dbLoadState, dbLoadRenders, dbSaveState, dbSaveRender,
   loadLocalState, dbLoadPlatformPaths, checkFirestoreConnection, cloudAvailable,
@@ -313,6 +313,7 @@ setSignOutHandler(() => {
 
 /* ---- bootstrap ---- */
 async function init(){
+  installFormAccessibility();
   renderBootState();
   document.querySelectorAll('.tab').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
   const bt = $('brandTitle'); if(bt) bt.onclick = goCatalog;

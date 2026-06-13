@@ -292,6 +292,14 @@ service cloud.firestore {
         ).data.userId == request.auth.uid;
     }
 
+    function ownsEnrollmentId(enrollmentId) {
+      return signedIn()
+        && enrollmentId.size() > request.auth.uid.size()
+        && enrollmentId[
+          0:request.auth.uid.size() + 1
+        ] == request.auth.uid + "_";
+    }
+
     // Supports a parent enrollment and its child documents being
     // created together in a future transaction or batch.
     function ownsEnrollmentAfterWrite(enrollmentId) {
@@ -448,18 +456,33 @@ service cloud.firestore {
     // User-specific journey enrollment and progress.
     match /enrollments/{enrollmentId} {
 
-      allow create: if signedIn()
-        && request.resource.data.userId == request.auth.uid;
+      // Permit a direct lookup only when the deterministic document ID
+      // belongs to the authenticated user.
+      //
+      // This allows getDoc() to return a non-existent snapshot during
+      // first-time enrollment without exposing another user's document.
+      allow get: if ownsEnrollmentId(enrollmentId)
+        && (
+          !exists(
+            /databases/$(database)/documents/enrollments/$(enrollmentId)
+          )
+          || resource.data.userId == request.auth.uid
+        );
 
-      allow read: if signedIn()
-        && resource.data.userId == request.auth.uid;
+      // The app does not currently need unrestricted top-level enrollment
+      // collection listing.
+      allow list: if false;
 
-      // The userId must not be transferable after enrollment creation.
-      allow update: if signedIn()
+      allow create: if ownsEnrollmentId(enrollmentId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.pathId is string;
+
+      allow update: if ownsEnrollmentId(enrollmentId)
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == resource.data.userId;
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.pathId == resource.data.pathId;
 
-      allow delete: if signedIn()
+      allow delete: if ownsEnrollmentId(enrollmentId)
         && resource.data.userId == request.auth.uid;
 
       match /dayLogs/{dayNumber} {
@@ -481,6 +504,35 @@ service cloud.firestore {
   }
 }
 ```
+
+The enrollment ID is deterministic: `{authUid}_{sanitizedPathId}`. The client
+first merges only `id`, `pathId`, and `userId`, then reads the document and
+repairs missing safe defaults. The rules permit that owner-scoped direct
+lookup, prohibit top-level enrollment listing, and prevent `userId` or
+`pathId` from changing after creation.
+
+Run the focused Firestore Rules tests with Java and the Firebase CLI installed:
+
+```bash
+npm run test:rules
+```
+
+If the emulator is unavailable, use **Firebase Console -> Cloud Firestore ->
+Rules -> Rules Playground** with these manual checks:
+
+1. Authenticate as `user-a`. Allow `get` on the nonexistent document
+   `enrollments/user-a_path-1`.
+2. As `user-a`, allow `create` at that path with `userId: "user-a"` and
+   `pathId: "path-1"`; then allow `get` and an update that changes only
+   `currentDay`.
+3. As `user-a`, allow create/read for
+   `enrollments/user-a_path-1/dayLogs/1` and
+   `enrollments/user-a_path-1/submissions/proof-1` after the parent exists.
+4. Deny the same enrollment read/create while unauthenticated.
+5. Deny `user-a` reading `enrollments/user-b_path-1`, creating an enrollment
+   with `userId: "user-b"`, or changing the created `userId` or `pathId`.
+6. Deny `user-a` reading `user-b` day logs/submissions and deny a list request
+   against the top-level `enrollments` collection.
 
 ### Firebase Storage rules
 
@@ -524,6 +576,14 @@ Firebase CLI deployment can overwrite rules published in the Console, so the
 repository and Console copies must stay synchronized. These are development and
 startup rules. Add stricter field validation and abuse protection before a
 public production launch.
+
+Changing `firestore.rules` in this repository does not update the live Firebase
+project. Publish it in **Firebase Console -> Cloud Firestore -> Rules**, or
+authenticate the Firebase CLI, select the intended project, and run:
+
+```bash
+firebase deploy --only firestore:rules,storage
+```
 
 ### Obsolete legacy rules
 

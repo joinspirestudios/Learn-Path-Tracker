@@ -63,6 +63,14 @@ service cloud.firestore {
         ).data.userId == request.auth.uid;
     }
 
+    function ownsEnrollmentId(enrollmentId) {
+      return signedIn()
+        && enrollmentId.size() > request.auth.uid.size()
+        && enrollmentId[
+          0:request.auth.uid.size() + 1
+        ] == request.auth.uid + "_";
+    }
+
     // Supports a parent enrollment and its child documents being
     // created together in a future transaction or batch.
     function ownsEnrollmentAfterWrite(enrollmentId) {
@@ -219,18 +227,33 @@ service cloud.firestore {
     // User-specific journey enrollment and progress.
     match /enrollments/{enrollmentId} {
 
-      allow create: if signedIn()
-        && request.resource.data.userId == request.auth.uid;
+      // Permit a direct lookup only when the deterministic document ID
+      // belongs to the authenticated user.
+      //
+      // This allows getDoc() to return a non-existent snapshot during
+      // first-time enrollment without exposing another user's document.
+      allow get: if ownsEnrollmentId(enrollmentId)
+        && (
+          !exists(
+            /databases/$(database)/documents/enrollments/$(enrollmentId)
+          )
+          || resource.data.userId == request.auth.uid
+        );
 
-      allow read: if signedIn()
-        && resource.data.userId == request.auth.uid;
+      // The app does not currently need unrestricted top-level enrollment
+      // collection listing.
+      allow list: if false;
 
-      // The userId must not be transferable after enrollment creation.
-      allow update: if signedIn()
+      allow create: if ownsEnrollmentId(enrollmentId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.pathId is string;
+
+      allow update: if ownsEnrollmentId(enrollmentId)
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == resource.data.userId;
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.pathId == resource.data.pathId;
 
-      allow delete: if signedIn()
+      allow delete: if ownsEnrollmentId(enrollmentId)
         && resource.data.userId == request.auth.uid;
 
       match /dayLogs/{dayNumber} {
