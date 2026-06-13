@@ -220,131 +220,286 @@ To enable AI path generation on Vercel, add `ANTHROPIC_API_KEY` as a server-side
 environment variable. Optionally add `ANTHROPIC_MODEL`; if omitted, the server
 uses `claude-sonnet-4-6`. Do not prefix Anthropic variables with `VITE_`.
 
-### Recommended platform Firestore rules
+### Cloud Firestore rules
 
-Use these starter rules for this version. Platform path definitions live in
-`paths/{pathId}`. User progress lives separately in
-`enrollments/{enrollmentId}`, `dayLogs`, and `submissions`, not inside path
-definitions. These rules allow the owner of an enrollment to read/write their
-daily journey logs and private proof submissions.
+[`firestore.rules`](firestore.rules) is the repository source of truth for
+Cloud Firestore. Publish it under **Firebase Console -> Cloud Firestore ->
+Rules**. Never paste `service firebase.storage` rules into Cloud Firestore.
 
 ```text
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
-    function path(pathId) {
-      return get(/databases/$(database)/documents/paths/$(pathId)).data;
-    }
-    function isOwner(pathId) {
-      return signedIn() && path(pathId).ownerId == request.auth.uid;
-    }
-    function memberRole(pathId) {
-      return signedIn()
-        && exists(/databases/$(database)/documents/paths/$(pathId)/members/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/paths/$(pathId)/members/$(request.auth.uid)).data.role
-        : null;
-    }
-    function canReadPath(pathId) {
-      let p = path(pathId);
-      return p.visibility == "public"
-        || p.previewEnabled == true
-        || isOwner(pathId)
-        || memberRole(pathId) in ["editor", "commenter", "viewer", "owner"];
-    }
-    function canReadFullPath(pathId) {
-      let p = path(pathId);
-      return p.visibility == "public"
-        || isOwner(pathId)
-        || memberRole(pathId) in ["editor", "commenter", "viewer", "owner"];
-    }
-    function canEditContent(pathId) {
-      return isOwner(pathId) || memberRole(pathId) == "editor";
-    }
-    function ownsEnrollment(enrollmentId) {
-      return signedIn()
-        && get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data.userId == request.auth.uid;
+
+    function pathDoc(pathId) {
+      return get(
+        /databases/$(database)/documents/paths/$(pathId)
+      );
     }
 
+    function pathDocAfterWrite(pathId) {
+      return getAfter(
+        /databases/$(database)/documents/paths/$(pathId)
+      );
+    }
+
+    function memberPath(pathId, uid) {
+      return /databases/$(database)/documents/paths/$(pathId)/members/$(uid);
+    }
+
+    function isOwner(pathId) {
+      return signedIn()
+        && pathDoc(pathId).data.ownerId == request.auth.uid;
+    }
+
+    // Required when a new path and its child documents are created
+    // together in one Firestore writeBatch.
+    function isOwnerAfterWrite(pathId) {
+      return signedIn()
+        && pathDocAfterWrite(pathId).data.ownerId == request.auth.uid;
+    }
+
+    function isMember(pathId) {
+      return signedIn()
+        && exists(memberPath(pathId, request.auth.uid));
+    }
+
+    function memberRole(pathId) {
+      return isMember(pathId)
+        ? get(memberPath(pathId, request.auth.uid)).data.role
+        : null;
+    }
+
+    function isEditor(pathId) {
+      return memberRole(pathId) == "editor";
+    }
+
+    function canReadFullPath(pathId) {
+      return pathDoc(pathId).data.visibility == "public"
+        || isOwner(pathId)
+        || isMember(pathId);
+    }
+
+    function ownsEnrollment(enrollmentId) {
+      return signedIn()
+        && get(
+          /databases/$(database)/documents/enrollments/$(enrollmentId)
+        ).data.userId == request.auth.uid;
+    }
+
+    // Supports a parent enrollment and its child documents being
+    // created together in a future transaction or batch.
+    function ownsEnrollmentAfterWrite(enrollmentId) {
+      return signedIn()
+        && getAfter(
+          /databases/$(database)/documents/enrollments/$(enrollmentId)
+        ).data.userId == request.auth.uid;
+    }
+
+    // Lightweight public read used by the Firestore connection preflight.
     match /healthCheck/{documentId} {
       allow read: if true;
       allow write: if false;
     }
 
+    // Private user state and render logs.
+    // Current code writes under:
+    // users/{uid}/state/main
+    // users/{uid}/renders/{renderId}
     match /users/{uid}/{document=**} {
-      allow read, write: if signedIn() && request.auth.uid == uid;
+      allow read, write: if signedIn()
+        && request.auth.uid == uid;
     }
 
+    // Platform path metadata.
     match /paths/{pathId} {
-      allow read: if canReadPath(pathId);
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if canEditContent(pathId)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          "ownerId", "visibility", "discoverable", "previewEnabled"
-        ]) || isOwner(pathId));
+
+      // Public paths are readable.
+      // Preview-enabled paths expose only their main path document.
+      // Owners and approved members can read their assigned paths.
+      allow read: if resource.data.visibility == "public"
+        || resource.data.previewEnabled == true
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+        )
+        || isMember(pathId);
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      // Owners can update all path metadata.
+      // Editors may update content metadata but cannot alter ownership
+      // or creator-controlled visibility settings.
+      allow update: if
+        isOwner(pathId)
+        || (
+          isEditor(pathId)
+          && !request.resource.data
+            .diff(resource.data)
+            .affectedKeys()
+            .hasAny([
+              "ownerId",
+              "visibility",
+              "discoverable",
+              "previewEnabled"
+            ])
+        );
+
       allow delete: if isOwner(pathId);
 
       match /sections/{sectionId} {
         allow read: if canReadFullPath(pathId);
-        allow write: if canEditContent(pathId);
+
+        allow create, update, delete: if
+          isOwner(pathId)
+          || isOwnerAfterWrite(pathId)
+          || isEditor(pathId);
       }
 
       match /tasks/{taskId} {
         allow read: if canReadFullPath(pathId);
-        allow write: if canEditContent(pathId);
+
+        allow create, update, delete: if
+          isOwner(pathId)
+          || isOwnerAfterWrite(pathId)
+          || isEditor(pathId);
       }
 
       match /members/{uid} {
-        allow read: if canReadFullPath(pathId);
-        allow create, update, delete: if isOwner(pathId)
-          && request.resource.data.uid == uid;
+
+        // Owners can inspect memberships.
+        // A member can read their own membership document.
+        allow read: if isOwner(pathId)
+          || (
+            signedIn()
+            && request.auth.uid == uid
+          );
+
+        // Supports creating the owner's membership in the same batch
+        // as the parent path.
+        allow create, update: if
+          (
+            isOwner(pathId)
+            || isOwnerAfterWrite(pathId)
+          )
+          && request.resource.data.uid == uid
+          && request.resource.data.role in [
+            "owner",
+            "editor",
+            "commenter",
+            "viewer"
+          ];
+
+        // Delete rules must not depend on request.resource because a
+        // deleted document has no post-write resource.
+        allow delete: if isOwner(pathId);
       }
 
       match /accessRequests/{requestId} {
+
         allow read: if isOwner(pathId)
-          || (signedIn() && requestId == request.auth.uid);
-        allow create, update: if signedIn()
+          || (
+            signedIn()
+            && requestId == request.auth.uid
+          );
+
+        allow create: if signedIn()
           && requestId == request.auth.uid
           && request.resource.data.requesterId == request.auth.uid
           && request.resource.data.status == "pending";
-        allow delete: if isOwner(pathId);
+
+        // Owners may approve or deny.
+        // Requesters may update only their own request while it remains pending.
+        allow update: if
+          (
+            isOwner(pathId)
+            && request.resource.data.requesterId
+              == resource.data.requesterId
+            && request.resource.data.status in [
+              "pending",
+              "approved",
+              "denied"
+            ]
+          )
+          || (
+            signedIn()
+            && requestId == request.auth.uid
+            && resource.data.requesterId == request.auth.uid
+            && request.resource.data.requesterId
+              == request.auth.uid
+            && request.resource.data.status == "pending"
+          );
+
+        allow delete: if isOwner(pathId)
+          || (
+            signedIn()
+            && requestId == request.auth.uid
+            && resource.data.requesterId == request.auth.uid
+          );
       }
     }
 
+    // User-specific journey enrollment and progress.
     match /enrollments/{enrollmentId} {
+
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid;
-      allow read, update, delete: if signedIn()
+
+      allow read: if signedIn()
+        && resource.data.userId == request.auth.uid;
+
+      // The userId must not be transferable after enrollment creation.
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId;
+
+      allow delete: if signedIn()
         && resource.data.userId == request.auth.uid;
 
       match /dayLogs/{dayNumber} {
-        allow read, write: if ownsEnrollment(enrollmentId);
+        allow read: if ownsEnrollment(enrollmentId);
+
+        allow create, update, delete: if
+          ownsEnrollment(enrollmentId)
+          || ownsEnrollmentAfterWrite(enrollmentId);
       }
 
       match /submissions/{submissionId} {
-        allow read, write: if ownsEnrollment(enrollmentId);
+        allow read: if ownsEnrollment(enrollmentId);
+
+        allow create, update, delete: if
+          ownsEnrollment(enrollmentId)
+          || ownsEnrollmentAfterWrite(enrollmentId);
       }
     }
   }
 }
 ```
 
-### Recommended Storage rules for evidence files
+### Firebase Storage rules
 
-File evidence is stored under
+[`storage.rules`](storage.rules) is the repository source of truth for evidence
+file Storage. Publish it under **Firebase Console -> Storage -> Rules**. Never
+paste `service cloud.firestore` rules into Storage.
+
+The application uploads evidence to
 `evidence/{userId}/{enrollmentId}/day-{dayNumber}/{taskId}/{timestamp}-{safeFileName}`.
-These starter rules keep uploads scoped to the signed-in owner folder and limit
-files to images or PDFs up to 10MB.
 
 ```text
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() {
       return request.auth != null;
     }
+
     function validEvidenceFile() {
       return request.resource.size <= 10 * 1024 * 1024
         && request.resource.contentType in [
@@ -365,25 +520,17 @@ service firebase.storage {
 }
 ```
 
-These rules are development starter rules. Production rules still need hardening
-before launch, especially field validation and abuse controls before comments,
-uploads, payments, notifications, analytics, or AI features.
+Firebase CLI deployment can overwrite rules published in the Console, so the
+repository and Console copies must stay synchronized. These are development and
+startup rules. Add stricter field validation and abuse protection before a
+public production launch.
 
-### Legacy private-tracker rules
+### Obsolete legacy rules
 
-The minimal user-only rules are only for older/private-tracker mode. They do
-not support platform paths, members, access requests, or enrollments.
-
-```text
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-  }
-}
-```
+The former minimal user-only/private-tracker rules are intentionally not
+included as a publishable block. They do not support platform paths, members,
+access requests, enrollments, or the atomic path-creation batch and must not be
+published over `firestore.rules`.
 
 ---
 

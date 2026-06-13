@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validEvidenceFile() {
+      return request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType in [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "application/pdf"
+        ];
+    }
+
+    match /evidence/{userId}/{enrollmentId}/{allPaths=**} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validEvidenceFile();
+    }
+  }
+}
