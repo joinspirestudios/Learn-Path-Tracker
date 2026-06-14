@@ -57,6 +57,7 @@ export function cloudStatusMessage(status){
     invalid_argument:'The enrollment request is invalid. Reload the path and try again.',
     malformed_enrollment:'This enrollment record is incomplete and must be repaired.',
     enrollment_ownership_mismatch:'This enrollment record has an ownership mismatch and must be repaired.',
+    enrollment_consistency_error:'The enrollment was created but could not be loaded. Please try again.',
     configuration_error:'Firebase configuration is incomplete or points to the wrong project.',
     unknown_error:'Could not connect to Firestore. Your local data remains available. Retry cloud connection.',
     checking:'Checking Firestore connection...',
@@ -84,6 +85,9 @@ export function classifyFirebaseError(error){
   }
   if(code === 'malformed_enrollment'){
     return { status:'malformed_enrollment', message:cloudStatusMessage('malformed_enrollment') };
+  }
+  if(code === 'enrollment_consistency_error'){
+    return { status:'enrollment_consistency_error', message:cloudStatusMessage('enrollment_consistency_error') };
   }
   if(code === 'permission-denied' || lower.includes('missing or insufficient permissions') || lower.includes('permission-denied')){
     return { status:'permission_denied', message:cloudStatusMessage('permission_denied') };
@@ -121,6 +125,9 @@ export function enrollmentStartErrorMessage(error){
   }
   if(classified.status === 'unknown_error'){
     return 'Could not start this path. Please try again.';
+  }
+  if(['malformed_enrollment', 'enrollment_ownership_mismatch', 'enrollment_consistency_error'].includes(classified.status)){
+    return String(error?.message || classified.message);
   }
   return classified.message;
 }

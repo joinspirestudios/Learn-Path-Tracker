@@ -1,4 +1,5 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
+import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   assertFails,
@@ -12,6 +13,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 const projectId = 'learn-path-tracker-rules-test';
@@ -48,13 +50,18 @@ after(async () => {
 });
 
 describe('deterministic enrollment bootstrap', () => {
-  test('allows an owner lookup before create, then create, read, and immutable update', async () => {
+  test('allows create, read, identity merge, and progress update for the owner', async () => {
     const db = testEnv.authenticatedContext(userA).firestore();
     const ref = doc(db, 'enrollments', enrollmentA);
 
-    await assertSucceeds(getDoc(ref));
     await assertSucceeds(setDoc(ref, enrollmentData(userA, enrollmentA)));
     await assertSucceeds(getDoc(ref));
+    await assertSucceeds(setDoc(ref, {
+      id:enrollmentA,
+      pathId,
+      userId:userA,
+    }, { merge:true }));
+    assert.equal((await getDoc(ref)).data().currentDay, 1);
     await assertSucceeds(updateDoc(ref, { currentDay:2, streak:1 }));
   });
 
@@ -72,9 +79,42 @@ describe('deterministic enrollment bootstrap', () => {
     await assertSucceeds(setDoc(submissionRef, { userId:userA, dayNumber:1, taskId:'task-1' }));
     await assertSucceeds(getDoc(submissionRef));
   });
+
+  test('allows a path owner to create a parent and children in one batch', async () => {
+    const db = testEnv.authenticatedContext(userA).firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'paths', pathId), {
+      id:pathId,
+      ownerId:userA,
+      title:'Test path',
+      visibility:'private',
+    });
+    batch.set(doc(db, 'paths', pathId, 'members', userA), {
+      uid:userA,
+      role:'owner',
+    });
+    batch.set(doc(db, 'paths', pathId, 'sections', 'section-1'), {
+      id:'section-1',
+      title:'Section 1',
+      order:1,
+    });
+    batch.set(doc(db, 'paths', pathId, 'tasks', 'task-1'), {
+      id:'task-1',
+      sectionId:'section-1',
+      title:'Task 1',
+      order:1,
+    });
+
+    await assertSucceeds(batch.commit());
+  });
 });
 
 describe('enrollment isolation', () => {
+  test('denies reading an enrollment before the write-first bootstrap', async () => {
+    const db = testEnv.authenticatedContext(userA).firestore();
+    await assertFails(getDoc(doc(db, 'enrollments', enrollmentA)));
+  });
+
   test('denies signed-out enrollment reads and creates', async () => {
     const db = testEnv.unauthenticatedContext().firestore();
     const ref = doc(db, 'enrollments', enrollmentA);
@@ -96,13 +136,22 @@ describe('enrollment isolation', () => {
     ));
   });
 
-  test('denies changing userId or pathId after creation', async () => {
+  test('denies create when stored id differs from the document id', async () => {
+    const db = testEnv.authenticatedContext(userA).firestore();
+    await assertFails(setDoc(
+      doc(db, 'enrollments', enrollmentA),
+      enrollmentData(userA, 'wrong-enrollment-id')
+    ));
+  });
+
+  test('denies changing userId, pathId, or id after creation', async () => {
     const db = testEnv.authenticatedContext(userA).firestore();
     const ref = doc(db, 'enrollments', enrollmentA);
     await assertSucceeds(setDoc(ref, enrollmentData(userA, enrollmentA)));
 
     await assertFails(updateDoc(ref, { userId:userB }));
     await assertFails(updateDoc(ref, { pathId:'path-2' }));
+    await assertFails(updateDoc(ref, { id:'wrong-enrollment-id' }));
   });
 
   test('denies reading another user enrollment, day log, and submission', async () => {

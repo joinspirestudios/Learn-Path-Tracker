@@ -289,15 +289,10 @@ service cloud.firestore {
       return signedIn()
         && get(
           /databases/$(database)/documents/enrollments/$(enrollmentId)
-        ).data.userId == request.auth.uid;
-    }
-
-    function ownsEnrollmentId(enrollmentId) {
-      return signedIn()
-        && enrollmentId.size() > request.auth.uid.size()
-        && enrollmentId[
-          0:request.auth.uid.size() + 1
-        ] == request.auth.uid + "_";
+        ).data.userId == request.auth.uid
+        && get(
+          /databases/$(database)/documents/enrollments/$(enrollmentId)
+        ).data.id == enrollmentId;
     }
 
     // Supports a parent enrollment and its child documents being
@@ -306,7 +301,10 @@ service cloud.firestore {
       return signedIn()
         && getAfter(
           /databases/$(database)/documents/enrollments/$(enrollmentId)
-        ).data.userId == request.auth.uid;
+        ).data.userId == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/enrollments/$(enrollmentId)
+        ).data.id == enrollmentId;
     }
 
     // Lightweight public read used by the Firestore connection preflight.
@@ -456,34 +454,40 @@ service cloud.firestore {
     // User-specific journey enrollment and progress.
     match /enrollments/{enrollmentId} {
 
-      // Permit a direct lookup only when the deterministic document ID
-      // belongs to the authenticated user.
-      //
-      // This allows getDoc() to return a non-existent snapshot during
-      // first-time enrollment without exposing another user's document.
-      allow get: if ownsEnrollmentId(enrollmentId)
-        && (
-          !exists(
-            /databases/$(database)/documents/enrollments/$(enrollmentId)
-          )
-          || resource.data.userId == request.auth.uid
-        );
+      allow get: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.id == enrollmentId;
 
       // The app does not currently need unrestricted top-level enrollment
       // collection listing.
       allow list: if false;
 
-      allow create: if ownsEnrollmentId(enrollmentId)
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.pathId is string;
+      allow create: if signedIn()
+        && request.resource.data.id is string
+        && request.resource.data.pathId is string
+        && request.resource.data.userId is string
+        && request.resource.data.id == enrollmentId
+        && request.resource.data.userId == request.auth.uid;
 
-      allow update: if ownsEnrollmentId(enrollmentId)
+      allow update: if signedIn()
         && resource.data.userId == request.auth.uid
+        && request.resource.data.id is string
+        && request.resource.data.pathId is string
+        && request.resource.data.userId is string
         && request.resource.data.userId == resource.data.userId
-        && request.resource.data.pathId == resource.data.pathId;
+        && request.resource.data.id == enrollmentId
+        && (
+          !("pathId" in resource.data)
+          || request.resource.data.pathId == resource.data.pathId
+        )
+        && (
+          !("id" in resource.data)
+          || request.resource.data.id == resource.data.id
+        );
 
-      allow delete: if ownsEnrollmentId(enrollmentId)
-        && resource.data.userId == request.auth.uid;
+      allow delete: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.id == enrollmentId;
 
       match /dayLogs/{dayNumber} {
         allow read: if ownsEnrollment(enrollmentId);
@@ -506,10 +510,11 @@ service cloud.firestore {
 ```
 
 The enrollment ID is deterministic: `{authUid}_{sanitizedPathId}`. The client
-first merges only `id`, `pathId`, and `userId`, then reads the document and
-repairs missing safe defaults. The rules permit that owner-scoped direct
-lookup, prohibit top-level enrollment listing, and prevent `userId` or
-`pathId` from changing after creation.
+first merges only `id`, `pathId`, and `userId`, then reads the existing
+document and repairs missing safe defaults. Reads are permitted only after the
+stored `id` and `userId` match the document and authenticated user. The rules
+prohibit top-level enrollment listing and prevent `id`, `userId`, or `pathId`
+from being transferred after creation.
 
 Run the focused Firestore Rules tests with Java and the Firebase CLI installed:
 
@@ -520,18 +525,22 @@ npm run test:rules
 If the emulator is unavailable, use **Firebase Console -> Cloud Firestore ->
 Rules -> Rules Playground** with these manual checks:
 
-1. Authenticate as `user-a`. Allow `get` on the nonexistent document
-   `enrollments/user-a_path-1`.
-2. As `user-a`, allow `create` at that path with `userId: "user-a"` and
-   `pathId: "path-1"`; then allow `get` and an update that changes only
-   `currentDay`.
+1. Authenticate as `user-a`. Allow `create` at
+   `enrollments/user-a_path-1` with `id: "user-a_path-1"`,
+   `userId: "user-a"`, and `pathId: "path-1"`.
+2. As `user-a`, allow `get`, a merge of the same identity fields, and an
+   update that changes only `currentDay`.
 3. As `user-a`, allow create/read for
    `enrollments/user-a_path-1/dayLogs/1` and
    `enrollments/user-a_path-1/submissions/proof-1` after the parent exists.
-4. Deny the same enrollment read/create while unauthenticated.
-5. Deny `user-a` reading `enrollments/user-b_path-1`, creating an enrollment
-   with `userId: "user-b"`, or changing the created `userId` or `pathId`.
-6. Deny `user-a` reading `user-b` day logs/submissions and deny a list request
+4. As `user-a`, allow one batch that creates `paths/path-1` plus its owner
+   member, section, and task documents.
+5. Deny `get` before the write-first bootstrap and deny enrollment creation
+   while unauthenticated.
+6. Deny `user-a` reading `enrollments/user-b_path-1`, creating an enrollment
+   with `userId: "user-b"` or a mismatched `id`, or changing the created
+   `id`, `userId`, or `pathId`.
+7. Deny `user-a` reading `user-b` day logs/submissions and deny a list request
    against the top-level `enrollments` collection.
 
 ### Firebase Storage rules
@@ -584,6 +593,10 @@ authenticate the Firebase CLI, select the intended project, and run:
 ```bash
 firebase deploy --only firestore:rules,storage
 ```
+
+Because the enrollment bootstrap also changes `src/db.js`, rebuild and redeploy
+the Vite application to Vercel after publishing the rules. Publishing rules
+alone does not update the deployed frontend bundle.
 
 ### Obsolete legacy rules
 

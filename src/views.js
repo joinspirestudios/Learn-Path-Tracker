@@ -1524,7 +1524,7 @@ function syncOpenedPathInBackground(id){
     if(store.activeEnrollmentSync === syncToken && store.state.current === id && store.activeTab === 'plan') renderPlan();
   }).catch(e => {
     console.warn('enrollment sync:', e && e.message ? e.message : e);
-    flash('Could not sync start yet. We will retry when online.');
+    flash(enrollmentStartErrorMessage(e));
     if(store.state.current === id && store.activeTab === 'plan') renderPlan();
   });
 }

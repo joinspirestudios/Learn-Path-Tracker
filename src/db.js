@@ -14,7 +14,7 @@ import {
 } from './journey.js';
 import {
   ENROLLMENT_TIMEOUT_MS, FIRESTORE_PREFLIGHT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
-  classifyFirebaseError, cloudStatusMessage, trackOperation, userSyncMessage, withTimeout,
+  classifyFirebaseError, cloudStatusMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
 
 export function configPresent(){ return fb.present; }
@@ -228,10 +228,16 @@ function validateEnrollmentRecord(raw, enrollmentId, pathId, userId){
     );
   }
   if(raw.pathId !== pathId){
-    throw enrollmentFailure('malformed_enrollment', 'This enrollment record has a path mismatch and must be repaired.');
+    throw enrollmentFailure(
+      'malformed_enrollment',
+      'This enrollment record belongs to a different path and must be repaired.'
+    );
   }
-  if(raw.id != null && raw.id !== enrollmentId){
-    throw enrollmentFailure('malformed_enrollment', 'This enrollment record has an invalid ID and must be repaired.');
+  if(raw.id !== enrollmentId){
+    throw enrollmentFailure(
+      'malformed_enrollment',
+      'This enrollment record has an invalid document identity and must be repaired.'
+    );
   }
   if(raw.currentDay != null && (!Number.isFinite(Number(raw.currentDay)) || Number(raw.currentDay) < 1)){
     throw enrollmentFailure('malformed_enrollment', 'This enrollment record has an invalid current day and must be repaired.');
@@ -250,8 +256,7 @@ function enrollmentRepair(raw, normalized){
   safeDefaults.forEach(key => {
     if(!hasOwn(raw, key)) repair[key] = normalized[key];
   });
-  const identityOnly = Object.keys(raw).every(key => ['id', 'pathId', 'userId'].includes(key));
-  if(identityOnly && !hasOwn(raw, 'createdAt')) repair.createdAt = normalized.createdAt;
+  if(!hasOwn(raw, 'createdAt')) repair.createdAt = normalized.createdAt;
   if(Object.keys(repair).length) repair.updatedAt = stamp();
   return repair;
 }
@@ -559,9 +564,12 @@ export async function dbReconcileEnrollment(pathId, totalTaskCount = 0){
 }
 
 export async function dbEnsureEnrollment(pathId, options = {}){
-  const userId = (store.currentUser && store.currentUser.uid) || 'local';
-  const enrollmentId = enrollmentIdFor(pathId, userId);
   if(cloudActive()){
+    const userId = store.currentUser?.uid;
+    if(!userId){
+      throw enrollmentFailure('unauthenticated', 'Sign in again before starting this path.');
+    }
+    const enrollmentId = enrollmentIdFor(pathId, userId);
     let diagnostic = { enrollmentId, authUid:userId, documentExists:'unknown', ownershipMatches:'unknown' };
     try{
       const ref = enrollmentRef(enrollmentId);
@@ -579,9 +587,12 @@ export async function dbEnsureEnrollment(pathId, options = {}){
       };
       if(import.meta.env.DEV) console.info('[enrollment diagnostic]', diagnostic);
       if(!snap.exists()){
-        throw enrollmentFailure('malformed_enrollment', 'The enrollment bootstrap did not create a readable record.');
+        throw enrollmentFailure(
+          'enrollment_consistency_error',
+          'The enrollment was created but could not be loaded. Please try again.'
+        );
       }
-      const raw = snap.data();
+      const raw = snap.data() || {};
       validateEnrollmentRecord(raw, enrollmentId, pathId, userId);
       let enrollment = makeEnrollment(pathId, userId, { id: enrollmentId, ...raw });
       const repair = enrollmentRepair(raw, enrollment);
@@ -596,9 +607,11 @@ export async function dbEnsureEnrollment(pathId, options = {}){
         console.warn('[enrollment diagnostic]', diagnostic);
       }
       console.warn('ensure enrollment:', syncErrorMessage(e, 'Could not start this path. Try again.'));
-      if(options.throwOnCloudError) throw e;
+      if(options.throwOnCloudError || !isTemporaryFirebaseError(e)) throw e;
     }
   }
+  const userId = store.currentUser?.uid || 'local';
+  const enrollmentId = enrollmentIdFor(pathId, userId);
   const local = store.state.enrollments && store.state.enrollments[enrollmentId];
   if(local) return cacheEnrollment(makeEnrollment(pathId, userId, local), local.dayLogs || {});
   const enrollment = makeEnrollment(pathId, userId, {
