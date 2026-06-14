@@ -1,4 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { normalizeConfirmedBrief, unacceptedMaterialAssumptions } from '../src/ai-builder-model.js';
+import { apiError, methodNotAllowed, sendApiError } from './_lib/errors.js';
+import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
+import { runProviderRequest } from './_lib/provider.js';
+import { enforceRateLimit } from './_lib/rate-limit.js';
+import { requireAuth } from './_lib/require-auth.js';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const INTENSITIES = ['light', 'moderate', 'intense'];
@@ -8,6 +14,8 @@ const RECURRING_CADENCES = ['daily', 'weekdays', 'selected_days', 'times_per_wee
 const TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequential_learning'];
 const PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 const TOOL_NAME = 'create_learning_path';
+const MAX_JSON_BYTES = 96 * 1024;
+const GENERATE_TIMEOUT_MS = 55_000;
 
 const nullableNumber = { anyOf: [{ type:'number' }, { type:'null' }] };
 const nullableString = { anyOf: [{ type:'string' }, { type:'null' }] };
@@ -57,8 +65,8 @@ const PATH_DRAFT_TOOL = {
       category:{ type:'string' },
       durationDays:{ type:'number', minimum:1, maximum:365 },
       durationLabel:{ type:'string' },
-      difficulty:{ type:'string', enum:LEVELS },
-      intensity:{ type:'string', enum:INTENSITIES },
+      difficulty:{ anyOf:[{ type:'string', enum:LEVELS }, { type:'null' }] },
+      intensity:{ anyOf:[{ type:'string', enum:INTENSITIES }, { type:'null' }] },
       previewTitle:{ type:'string' },
       previewDescription:{ type:'string' },
       coreCommitments:{ type:'array', items:commitmentSchema },
@@ -153,6 +161,26 @@ function cleanNullableNumber(value, min = null, max = null){
   return Math.max(min == null ? number : min, Math.min(max == null ? number : max, number));
 }
 
+function validateConfirmedBriefInput(raw = {}){
+  const textLimits = {
+    goal:700, interpretedGoal:700, summary:700, currentBaseline:700,
+    currentStage:700, desiredOutcome:700, desiredEndState:700,
+    availableTime:120, dailyTimeAvailable:120, scheduleNotes:500,
+    evidencePreferences:220, evidencePreference:220,
+  };
+  Object.entries(textLimits).forEach(([field, max]) => {
+    if(raw[field] != null) boundedText(raw[field], field, max);
+  });
+  const arrayLimits = {
+    constraints:12, coreCommitments:16, milestones:16, resources:12,
+    resourcesMentioned:12, assumptions:16, progressiveTargets:8,
+    knownTasks:16, suggestedEvidenceTypes:12, confirmedFields:32,
+  };
+  Object.entries(arrayLimits).forEach(([field, max]) => {
+    if(raw[field] != null) boundedArray(raw[field], field, max);
+  });
+}
+
 function normalizeCadence(raw = {}){
   const source = typeof raw === 'string' ? { type:raw } : (raw || {});
   return {
@@ -185,46 +213,48 @@ function normalizeCommitments(value, legacy = []){
 }
 
 export function normalizePrompt(body = {}){
-  const clarified = body.clarifiedBrief && typeof body.clarifiedBrief === 'object' ? body.clarifiedBrief : null;
-  const suppliedDuration = cleanNullableNumber(body.durationDays, 1, 365) || cleanNullableNumber(clarified && clarified.durationDays, 1, 365);
-  const rawType = body.pathType || (clarified && clarified.pathType);
+  const briefSource = body.confirmedBrief || body.clarifiedBrief || body;
+  const confirmedBrief = normalizeConfirmedBrief(briefSource);
+  const suppliedDuration = cleanNullableNumber(confirmedBrief.durationDays, 1, 365);
+  const rawType = confirmedBrief.pathType;
   const pathType = rawType === 'auto' ? 'custom' : cleanChoice(rawType, PATH_TYPES, 'custom');
   const coreCommitments = normalizeCommitments(
-    body.coreCommitments || (clarified && clarified.coreCommitments),
-    body.nonNegotiables || (clarified && clarified.nonNegotiables)
+    confirmedBrief.coreCommitments,
+    confirmedBrief.nonNegotiables
   );
   return {
-    goal:text(body.goal || (clarified && clarified.goal)).slice(0, 700),
-    durationDays:suppliedDuration || 30,
+    goal:text(confirmedBrief.goal || confirmedBrief.interpretedGoal).slice(0, 700),
+    durationDays:suppliedDuration,
     durationWasProvided:!!suppliedDuration,
-    deadline:cleanNullableText(body.deadline || (clarified && clarified.deadline), 40),
-    currentLevel:cleanChoice(body.currentLevel, LEVELS, 'beginner'),
-    intensity:cleanChoice(body.intensity || (clarified && clarified.intensity), INTENSITIES, 'moderate'),
+    deadline:cleanNullableText(confirmedBrief.deadline, 40),
+    currentLevel:cleanChoice(body.currentLevel || confirmedBrief.currentLevel, LEVELS, null),
+    intensity:cleanChoice(confirmedBrief.intensity, INTENSITIES, null),
     pathType,
-    preferredSchedule:text(body.preferredSchedule || (clarified && clarified.scheduleNotes)).slice(0, 500),
+    preferredSchedule:text(confirmedBrief.scheduleNotes).slice(0, 500),
     resourceLinks:text(body.resourceLinks).slice(0, 1200),
-    currentStage:text(body.currentStage || (clarified && clarified.currentStage)).slice(0, 700),
-    desiredEndState:text(body.desiredEndState || (clarified && clarified.desiredEndState)).slice(0, 700),
-    baseline:text(body.baseline).slice(0, 700),
-    targetOutcome:text(body.targetOutcome).slice(0, 700),
-    constraints:text(body.constraints).slice(0, 700),
-    existingResources:text(body.existingResources).slice(0, 1200),
-    dailyTime:text(body.dailyTime || (clarified && clarified.dailyTimeAvailable)).slice(0, 120),
-    evidenceStyle:text(body.evidenceStyle || (clarified && clarified.evidencePreference)).slice(0, 220),
+    currentStage:text(confirmedBrief.currentBaseline).slice(0, 700),
+    desiredEndState:text(confirmedBrief.desiredOutcome).slice(0, 700),
+    baseline:text(confirmedBrief.currentBaseline).slice(0, 700),
+    targetOutcome:text(confirmedBrief.desiredOutcome).slice(0, 700),
+    constraints:confirmedBrief.constraints.join('\n').slice(0, 1200),
+    existingResources:confirmedBrief.resources.join('\n').slice(0, 1200),
+    dailyTime:text(confirmedBrief.availableTime).slice(0, 120),
+    evidenceStyle:text(confirmedBrief.evidencePreferences).slice(0, 220),
     includeTasks:text(body.includeTasks).slice(0, 1200),
     excludeTasks:text(body.excludeTasks).slice(0, 1200),
     visibility:['private', 'unlisted', 'public'].includes(body.visibility) ? body.visibility : 'private',
     description:text(body.description).slice(0, 700),
     coreCommitments,
-    assumptions:(Array.isArray(body.assumptions) ? body.assumptions : []).map(item => text(item).slice(0, 240)).filter(Boolean).slice(0, 12),
-    progressiveTargets:(Array.isArray(body.progressiveTargets) ? body.progressiveTargets : []).slice(0, 8).map(target => ({
+    assumptions:confirmedBrief.assumptions,
+    progressiveTargets:(Array.isArray(confirmedBrief.progressiveTargets) ? confirmedBrief.progressiveTargets : []).slice(0, 8).map(target => ({
       area:text(target.area).slice(0, 100),
       currentValue:cleanNullableNumber(target.currentValue),
       targetValue:cleanNullableNumber(target.targetValue),
       unit:cleanNullableText(target.unit, 40),
       notes:cleanNullableText(target.notes, 240),
     })).filter(target => target.area || target.notes),
-    clarifiedBrief:clarified,
+    confirmedBrief,
+    clarifiedBrief:confirmedBrief,
   };
 }
 
@@ -322,8 +352,8 @@ export function basicStarterDraft(input, source = 'fallback'){
     category:input.pathType,
     durationDays,
     durationLabel:`${durationDays} days`,
-    difficulty:input.currentLevel,
-    intensity:input.intensity,
+    difficulty:input.currentLevel || null,
+    intensity:input.intensity || null,
     previewTitle:title,
     previewDescription:input.description || input.goal,
     coreCommitments:commitments,
@@ -398,8 +428,8 @@ export function normalizeDraft(raw, input, source = 'ai'){
     category:text(raw.category, input.pathType).slice(0, 80),
     durationDays,
     durationLabel:text(raw.durationLabel, `${durationDays} days`).slice(0, 80),
-    difficulty:cleanChoice(raw.difficulty, LEVELS, input.currentLevel),
-    intensity:cleanChoice(raw.intensity, INTENSITIES, input.intensity),
+    difficulty:cleanChoice(raw.difficulty, LEVELS, input.currentLevel || null),
+    intensity:cleanChoice(raw.intensity, INTENSITIES, input.intensity || null),
     previewTitle:text(raw.previewTitle, raw.title || titleFromGoal(input.goal)).slice(0, 100),
     previewDescription:text(raw.previewDescription, raw.description || input.goal).slice(0, 500),
     visibility:input.visibility,
@@ -423,8 +453,9 @@ function buildPrompt(input){
     'Never insert generic fitness, diet, reading, sleep, deep-work, posting, or wellness habits unless the user goal or confirmed commitments call for them.',
     'Treat coreCommitments as confirmed requirements. Preserve their cadence, required flag, estimated time, and evidence intent unless safety requires a labeled adjustment.',
     'If coreCommitments is empty, recommend only the minimum goal-specific actions needed. Do not invent a challenge ritual.',
-    'If clarifiedBrief is present, treat it as the user-confirmed source of truth.',
-    'Use the supplied duration. If durationWasProvided is false, 30 days is a neutral generation window and may be adjusted only when the goal clearly requires it; explain the reason in notes.',
+    'Treat confirmedBrief as the user-confirmed source of truth. Never overwrite its confirmedFields.',
+    'Use the supplied confirmed duration. Do not insert a hidden default duration, level, or intensity.',
+    'Only use assumptions whose accepted flag is true. Do not introduce material assumptions that were not reviewed.',
     'Support daily, weekdays, selected_days, times_per_week, weekly, interval, once, and sequential schedules. Preserve legacy daily and once behavior.',
     'Use recurring schedules instead of creating one task per day. Use sequential for ordered learning and once for milestones or deliverables.',
     'Use progressive_recurring only when a measurable practice should grow over time; otherwise use fixed_recurring.',
@@ -437,22 +468,15 @@ function buildPrompt(input){
   ].join('\n');
 }
 
-function codedError(message, code, status = 400){
-  const error = new Error(message);
-  error.code = code;
-  error.status = status;
-  return error;
-}
-
 function parseJsonTextFallback(content){
   let trimmed = text(content);
-  if(!trimmed) throw codedError('Claude returned an empty response.', 'empty_ai_response', 502);
+  if(!trimmed) throw apiError('invalid_provider_response', 'Claude returned an empty response.', 502);
   trimmed = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const first = trimmed.indexOf('{');
   const last = trimmed.lastIndexOf('}');
   if(first >= 0 && last > first) trimmed = trimmed.slice(first, last + 1);
   try{ return JSON.parse(trimmed); }
-  catch(e){ throw codedError('Claude returned invalid JSON. Please regenerate.', 'invalid_ai_json', 502); }
+  catch(e){ throw apiError('invalid_provider_response', 'Claude returned invalid JSON. Please regenerate.', 502); }
 }
 
 function extractDraftInput(message){
@@ -461,21 +485,21 @@ function extractDraftInput(message){
   if(toolUse && toolUse.input && typeof toolUse.input === 'object') return toolUse.input;
   const textContent = blocks.filter(block => block && block.type === 'text').map(block => block.text || '').join('\n');
   if(text(textContent)) return parseJsonTextFallback(textContent);
-  throw codedError('Claude did not return the required structured path draft. Please regenerate.', 'missing_tool_use', 502);
+  throw apiError('invalid_provider_response', 'Claude did not return the required structured path draft. Please regenerate.', 502);
 }
 
 function mapAnthropicError(error){
+  if(error?.code === 'provider_timeout') return error;
   const status = Number(error && (error.status || error.statusCode));
   const type = text(error && (error.type || (error.error && error.error.type)));
-  if(status === 401 || status === 403 || /auth|permission/i.test(type)) return codedError('Anthropic authentication failed. Check the server API key.', 'anthropic_auth_error', status || 401);
-  if(status === 429 || /rate_limit|quota/i.test(type)) return codedError('Anthropic rate limit or quota reached. Please retry later.', 'anthropic_rate_limited', 429);
-  if(status >= 500 || /api_error|overloaded/i.test(type)) return codedError('Anthropic service error. Please retry later.', 'anthropic_server_error', status || 502);
-  return codedError('Claude generation failed. Please retry.', 'anthropic_generation_failed', status || 502);
+  if(status === 429 || /rate_limit|quota/i.test(type)) return apiError('provider_unavailable', 'The AI service is rate limited. Try again later.', 503);
+  if(status === 401 || status === 403 || /auth|permission/i.test(type)) return apiError('provider_unavailable', 'The AI service is not available because server credentials were rejected.', 503);
+  return apiError('provider_unavailable', 'The AI service is temporarily unavailable. Try again later.', 503);
 }
 
-async function callAnthropic(input){
+export async function callAnthropic(input, signal){
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if(!apiKey) throw codedError('Anthropic is not configured.', 'missing_anthropic_config', 503);
+  if(!apiKey) throw apiError('provider_unavailable', 'Anthropic is not configured.', 503);
   const anthropic = new Anthropic({ apiKey });
   let message;
   try{
@@ -487,42 +511,51 @@ async function callAnthropic(input){
       tools:[PATH_DRAFT_TOOL],
       tool_choice:{ type:'tool', name:TOOL_NAME },
       messages:[{ role:'user', content:buildPrompt(input) }],
-    });
+    }, { signal });
   }catch(e){
+    if(signal?.aborted) throw e;
     throw mapAnthropicError(e);
   }
   return extractDraftInput(message);
 }
 
-export default async function handler(req, res){
-  if(req.method !== 'POST'){
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ ok:false, message:'POST only.' });
-  }
-  try{
-    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    if(body.briefConfirmed !== true || !body.clarifiedBrief || typeof body.clarifiedBrief !== 'object'){
-      return res.status(400).json({
-        ok:false,
-        code:'confirmed_brief_required',
-        message:'Review and confirm the goal brief before generating a roadmap.',
-      });
+export function createGeneratePathHandler({
+  authenticate = requireAuth,
+  rateLimit = enforceRateLimit,
+  provider = callAnthropic,
+  runProvider = runProviderRequest,
+} = {}){
+  return async function handler(req, res){
+    if(req.method !== 'POST') return methodNotAllowed(res);
+    try{
+      const auth = await authenticate(req);
+      const body = requireJsonBody(req, MAX_JSON_BYTES);
+      if(!body.confirmedBrief || typeof body.confirmedBrief !== 'object'){
+        throw apiError('brief_not_confirmed', 'Review and confirm your path brief before generating the roadmap.', 400);
+      }
+      validateConfirmedBriefInput(body.confirmedBrief);
+      const confirmedBrief = normalizeConfirmedBrief(body.confirmedBrief);
+      if(!confirmedBrief.briefConfirmed || !confirmedBrief.confirmedAt){
+        throw apiError('brief_not_confirmed', 'Review and confirm your path brief before generating the roadmap.', 400);
+      }
+      if(unacceptedMaterialAssumptions(confirmedBrief).length){
+        throw apiError('brief_not_confirmed', 'Accept, edit, or remove every material assumption before generating.', 400);
+      }
+      boundedText(confirmedBrief.goal, 'Goal', 700, { required:true });
+      const input = normalizePrompt({ ...body, confirmedBrief });
+      if(!input.durationWasProvided){
+        throw apiError('brief_not_confirmed', 'Set a duration in the confirmed brief before generating a roadmap.', 400);
+      }
+      await rateLimit(auth.uid, 'generate');
+      const raw = await runProvider(req, GENERATE_TIMEOUT_MS, signal => provider(input, signal));
+      let draft;
+      try{ draft = normalizeDraft(raw, input, 'anthropic'); }
+      catch(error){ throw apiError('invalid_provider_response', 'Claude returned a path draft that could not be validated. Please regenerate.', 502); }
+      return res.status(200).json({ ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
+    }catch(error){
+      return sendApiError(res, error);
     }
-    const input = normalizePrompt(body);
-    if(!input.goal) return res.status(400).json({ ok:false, code:'missing_goal_text', message:'Goal is required.' });
-    if(!input.durationWasProvided){
-      return res.status(400).json({ ok:false, code:'confirmed_duration_required', message:'Set a duration in the confirmed brief before generating a roadmap.' });
-    }
-    let raw;
-    try{ raw = await callAnthropic(input); }
-    catch(e){
-      return res.status(e.status || 502).json({ ok:false, code:e.code || 'anthropic_generation_failed', message:e.message || 'Claude generation failed. Please try again.' });
-    }
-    let draft;
-    try{ draft = normalizeDraft(raw, input, 'anthropic'); }
-    catch(e){ throw codedError('Claude returned a path draft that could not be validated. Please regenerate.', 'invalid_ai_output', 502); }
-    return res.status(200).json({ ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
-  }catch(e){
-    return res.status(e.status || 400).json({ ok:false, code:e.code || 'invalid_request', message:e.message || 'Could not generate a path draft.' });
-  }
+  };
 }
+
+export default createGeneratePathHandler();

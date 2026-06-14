@@ -180,3 +180,15 @@ describe('enrollment isolation', () => {
     await assertFails(getDocs(collection(db, 'enrollments')));
   });
 });
+
+describe('server-only operational data', () => {
+  test('denies client reads and writes to internal rate-limit documents', async () => {
+    const authenticated = testEnv.authenticatedContext(userA).firestore();
+    const unauthenticated = testEnv.unauthenticatedContext().firestore();
+    const ref = doc(authenticated, '_internalRateLimits', 'user-a_generate');
+
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref, { uid:userA, routeKey:'generate', hourlyCount:1 }));
+    await assertFails(getDoc(doc(unauthenticated, '_internalRateLimits', 'user-a_generate')));
+  });
+});

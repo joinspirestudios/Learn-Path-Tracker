@@ -84,6 +84,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Server-only operational counters. Firebase Admin bypasses client rules;
+    // no browser client may inspect or modify rate-limit state.
+    match /_internalRateLimits/{document=**} {
+      allow read, write: if false;
+    }
+
     // Private user state and render logs.
     // Current code writes under:
     // users/{uid}/state/main

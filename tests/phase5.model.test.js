@@ -10,7 +10,7 @@ import {
 import { getTasksForDay } from '../src/journey.js';
 import { platformToLocalPath, resolveCreatorName } from '../src/platform.js';
 import { TEMPLATES } from '../src/templates.js';
-import generatePathHandler, { basicStarterDraft, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
+import { basicStarterDraft, createGeneratePathHandler, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
 
 test('generic AI builder defaults are neutral', () => {
   const defaults = aiPromptDefaults();
@@ -212,14 +212,15 @@ test('the canonical Build with AI handler interprets before generation and Basic
   assert.match(basicHandler, /localGeneratedDraft\(prompt\)/);
   assert.doesNotMatch(basicHandler, /fetch\(/);
   assert.match(generationHandler, /aiBuilder\.phase !== 'reviewing'/);
-  assert.match(generationHandler, /briefConfirmed:true/);
+  assert.match(generationHandler, /confirmBrief\(brief\)/);
+  assert.match(generationHandler, /confirmedBrief,/);
   assert.match(generationHandler, /\/api\/generate-path/);
 });
 
 test('clarification updates send the previous brief and preserved answers back through interpretation', () => {
   const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   const interpretationHandler = source.slice(source.indexOf('async function requestGoalInterpretation'), source.indexOf('function createBasicDraft'));
-  assert.match(interpretationHandler, /previousBrief:withAnswers \? aiBuilder\.brief : null/);
+  assert.match(interpretationHandler, /previousBrief:aiBuilder\.brief \|\| briefFromPrompt/);
   assert.match(interpretationHandler, /answers,/);
   assert.match(interpretationHandler, /aiBuilder\.clarificationRound \+= 1/);
   assert.match(interpretationHandler, /MAX_AI_CLARIFICATION_ROUNDS/);
@@ -233,7 +234,16 @@ test('generation API rejects requests that did not confirm an interpreted brief'
     status(code){ statusCode = code; return this; },
     json(value){ payload = value; return value; },
   };
-  await generatePathHandler({ method:'POST', body:{ goal:'A vague goal' } }, response);
+  const generatePathHandler = createGeneratePathHandler({
+    authenticate:async () => ({ uid:'user-a' }),
+    rateLimit:async () => {},
+    provider:async () => { throw new Error('Provider must not be called.'); },
+  });
+  await generatePathHandler({
+    method:'POST',
+    headers:{ 'content-type':'application/json' },
+    body:{ goal:'A vague goal' },
+  }, response);
   assert.equal(statusCode, 400);
-  assert.equal(payload.code, 'confirmed_brief_required');
+  assert.equal(payload.code, 'brief_not_confirmed');
 });

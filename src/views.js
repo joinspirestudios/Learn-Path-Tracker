@@ -24,6 +24,7 @@ import {
   nextRungIdx, currentWeekFromStart, computeStreak,
 } from './plan.js';
 import { openAuthModal } from './auth.js';
+import { authFetch } from './api.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
@@ -31,9 +32,11 @@ import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath, resolv
 import {
   AI_CADENCE_TYPES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
   MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
-  aiBriefDefaults, aiPromptDefaults, emptyCoreCommitment,
+  aiBriefDefaults, aiPromptDefaults, briefFromPrompt, confirmBrief, emptyCoreCommitment,
   canStartAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
-  normalizeCoreCommitments, recoverAIBuilderState, routeInterpretedBrief,
+  normalizeCoreCommitments, normalizeBriefAssumptions, normalizeClarifyingQuestions,
+  normalizeConfirmedBrief, recoverAIBuilderState, routeInterpretedBrief,
+  unacceptedMaterialAssumptions,
 } from './ai-builder-model.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
@@ -61,6 +64,43 @@ let startingJourneyId = null;
 let aiSaveClientId = null;
 const AI_INTERPRET_TIMEOUT_MS = 30000;
 const AI_GENERATE_TIMEOUT_MS = 60000;
+const VOICE_TRANSCRIBE_TIMEOUT_MS = 50000;
+
+function abortAIRequest(kind = null){
+  const controllers = aiBuilder?.requestControllers || {};
+  Object.entries(controllers).forEach(([key, controller]) => {
+    if(!kind || key === kind) controller?.abort();
+  });
+  if(aiBuilder?.requestControllers){
+    if(kind) delete aiBuilder.requestControllers[kind];
+    else aiBuilder.requestControllers = {};
+  }
+}
+
+async function authenticatedAIRequest(kind, url, options, timeoutMs){
+  abortAIRequest(kind);
+  const controller = new AbortController();
+  aiBuilder.requestControllers[kind] = controller;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try{
+    return await authFetch(url, { ...options, signal:controller.signal });
+  }catch(error){
+    if(timedOut){
+      const timeoutError = new Error('The request took too long and was cancelled.');
+      timeoutError.code = 'provider_timeout';
+      throw timeoutError;
+    }
+    throw error;
+  }finally{
+    clearTimeout(timer);
+    if(aiBuilder?.requestControllers?.[kind] === controller) delete aiBuilder.requestControllers[kind];
+  }
+}
+
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -332,44 +372,7 @@ function joinLines(value){
 }
 
 function normalizeGoalBrief(raw = {}){
-  const base = aiBriefDefaults();
-  const durationDays = raw.durationDays == null || raw.durationDays === '' ? null : clampDay(raw.durationDays, 30, 365);
-  return {
-    ...base,
-    summary:String(raw.summary || '').slice(0, 700),
-    goal:String(raw.goal || '').slice(0, 700),
-    goalCategory:String(raw.goalCategory || '').slice(0, 100),
-    pathType:AI_PATH_TYPES.includes(raw.pathType) && raw.pathType !== 'auto' ? raw.pathType : 'custom',
-    currentStage:String(raw.currentStage || '').slice(0, 700),
-    desiredEndState:String(raw.desiredEndState || '').slice(0, 700),
-    durationDays,
-    recommendedDurationReason:String(raw.recommendedDurationReason || '').slice(0, 500),
-    intensity:['light', 'moderate', 'intense'].includes(raw.intensity) ? raw.intensity : '',
-    dailyTimeAvailable:String(raw.dailyTimeAvailable || '').slice(0, 120),
-    estimatedDailyMinutes:nullableNumber(raw.estimatedDailyMinutes),
-    estimatedWeeklyHours:nullableNumber(raw.estimatedWeeklyHours),
-    deadline:String(raw.deadline || '').slice(0, 80),
-    scheduleNotes:String(raw.scheduleNotes || '').slice(0, 500),
-    knownTasks:Array.isArray(raw.knownTasks) ? raw.knownTasks.map(x => String(x || '').trim()).filter(Boolean).slice(0, 16) : [],
-    coreCommitments:normalizeCoreCommitments(raw.coreCommitments, raw.nonNegotiables || raw.dailyNonNegotiables),
-    milestones:Array.isArray(raw.milestones) ? raw.milestones.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
-    constraints:Array.isArray(raw.constraints) ? raw.constraints.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
-    resourcesMentioned:Array.isArray(raw.resourcesMentioned) ? raw.resourcesMentioned.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
-    evidencePreference:String(raw.evidencePreference || '').slice(0, 220),
-    suggestedEvidenceTypes:Array.isArray(raw.suggestedEvidenceTypes) ? raw.suggestedEvidenceTypes.map(x => String(x || '').trim()).filter(Boolean).slice(0, 10) : [],
-    progressiveTargets:(Array.isArray(raw.progressiveTargets) ? raw.progressiveTargets : []).slice(0, 8).map(target => ({
-      area:String(target.area || '').slice(0, 100),
-      currentValue:nullableNumber(target.currentValue),
-      targetValue:nullableNumber(target.targetValue),
-      unit:String(target.unit || '').slice(0, 40),
-      notes:String(target.notes || '').slice(0, 240),
-    })).filter(target => target.area || target.notes),
-    assumptions:Array.isArray(raw.assumptions) ? raw.assumptions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
-    missingCriticalInfo:Array.isArray(raw.missingCriticalInfo) ? raw.missingCriticalInfo.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
-    clarifyingQuestions:Array.isArray(raw.clarifyingQuestions) ? raw.clarifyingQuestions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) : [],
-    confidence:Number.isFinite(Number(raw.confidence)) ? Math.max(0, Math.min(1, Number(raw.confidence))) : 0,
-    readyToGenerate:!!raw.readyToGenerate,
-  };
+  return normalizeConfirmedBrief(raw);
 }
 
 function progressiveTargetsFromText(value){
@@ -407,7 +410,7 @@ function briefToPromptPatch(brief){
     b.currentStage ? 'Current stage: ' + b.currentStage : '',
     b.desiredEndState ? 'Desired end state: ' + b.desiredEndState : '',
     targetLines.length ? 'Progressive targets: ' + targetLines.join('; ') : '',
-    b.assumptions.length ? 'Assumptions: ' + b.assumptions.join('; ') : '',
+    b.assumptions.length ? 'Accepted assumptions: ' + b.assumptions.filter(item => item.accepted).map(item => item.text).join('; ') : '',
   ].filter(Boolean).join('\n');
   return {
     goal:b.goal || b.summary,
@@ -521,6 +524,7 @@ function normalizeGeneratedDraft(raw, prompt){
     })).filter(r => r.title || r.url || r.description),
     notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => String(n || '').slice(0, 300)).filter(Boolean).slice(0, 8),
     coreCommitments:normalizeCoreCommitments(raw.coreCommitments, prompt.coreCommitments),
+    confirmedBrief:prompt.confirmedBrief ? normalizeConfirmedBrief(prompt.confirmedBrief) : null,
     source:raw.source || 'ai',
   };
 }
@@ -676,6 +680,7 @@ function aiDraftToLocalPath(draft){
     creatorId:store.currentUser?.uid || '',
     creatorEmail:store.currentUser?.email || '',
     coreCommitments:normalizeCoreCommitments(draft.coreCommitments),
+    aiBrief:draft.confirmedBrief || null,
     visibility:draft.visibility || 'private',
     discoverable:false,
     previewEnabled:true,
@@ -711,6 +716,7 @@ function openAIPathBuilder(){
     clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
     clarificationRound:0,
     requestToken:0,
+    requestControllers:{},
     voice: makeVoiceState(aiBuilder?.voice || {}),
     saving:false,
     dirty:false,
@@ -720,6 +726,7 @@ function openAIPathBuilder(){
 }
 
 function closeAIBuilder(){
+  abortAIRequest();
   cleanupVoiceRecording();
   if(aiBuilder?.overlay) aiBuilder.overlay.remove();
   aiBuilder = null;
@@ -788,11 +795,13 @@ function validateMeaningfulGoal(){
 }
 
 function aiInterpretationError(error){
-  if(error?.code === 'operation_timeout') return 'We could not finish understanding your goal in time. Your answers are still saved. Try again.';
-  if(['invalid_goal_brief', 'invalid_ai_json', 'missing_tool_use', 'empty_ai_response'].includes(error?.code)){
+  if(error?.code === 'unauthorized') return 'Your session has expired. Sign in again to continue.';
+  if(error?.code === 'rate_limited') return 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
+  if(['operation_timeout', 'provider_timeout'].includes(error?.code)) return 'The AI request took too long and was cancelled. Your information is still saved.';
+  if(['invalid_goal_brief', 'invalid_ai_json', 'missing_tool_use', 'empty_ai_response', 'invalid_provider_response'].includes(error?.code)){
     return 'The AI returned an incomplete goal brief. Please retry.';
   }
-  if(error?.code === 'missing_anthropic_config') return 'Build with AI is not configured. Use Basic starter or add the Anthropic server configuration.';
+  if(error?.code === 'provider_unavailable') return 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
   if(typeof navigator !== 'undefined' && navigator.onLine === false) return 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
   if(error instanceof TypeError) return 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
   return error?.message || 'We could not understand your goal. Your answers are still saved. Try again.';
@@ -935,6 +944,7 @@ function clearVoiceRecording(){
 
 async function transcribeVoiceRecording(){
   const voice = aiBuilder.voice;
+  if(voice?.loading) return;
   if(!voice?.blob){
     voice.error = 'Record a voice idea before transcribing.';
     renderAIBuilder();
@@ -942,34 +952,44 @@ async function transcribeVoiceRecording(){
   }
   voice.loading = true;
   voice.error = '';
+  const requestToken = ++aiBuilder.requestToken;
   renderAIBuilder();
   try{
-    const res = await fetch('/api/transcribe-voice', {
+    const res = await authenticatedAIRequest('voice', '/api/transcribe-voice', {
       method:'POST',
-      headers:{ 'Content-Type': voice.blob.type || voice.mimeType || 'audio/webm' },
+      headers:{
+        'Content-Type':voice.blob.type || voice.mimeType || 'audio/webm',
+        'X-File-Name':'voice-recording',
+      },
       body:voice.blob,
-    });
+    }, VOICE_TRANSCRIBE_TIMEOUT_MS);
     const payload = await res.json();
     if(!res.ok || !payload.ok){
       const err = new Error(payload.message || 'Voice transcription failed.');
-      err.code = payload.code || '';
+      err.code = payload.error || payload.code || '';
       throw err;
     }
+    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
     aiBuilder.voice.transcript = payload.transcript || '';
     aiBuilder.voice.error = '';
   }catch(e){
-    aiBuilder.voice.error = voiceErrorCopy(e.code, e.message);
+    if(aiBuilder && requestToken === aiBuilder.requestToken) aiBuilder.voice.error = voiceErrorCopy(e.code, e.message);
   }finally{
-    aiBuilder.voice.loading = false;
-    renderAIBuilder();
+    if(aiBuilder && requestToken === aiBuilder.requestToken){
+      aiBuilder.voice.loading = false;
+      renderAIBuilder();
+    }
   }
 }
 
 function voiceErrorCopy(code, fallback){
-  if(code === 'missing_deepgram_config') return 'Voice transcription requires Deepgram configuration. You can still type your goal manually.';
-  if(code === 'unsupported_audio_type') return 'This audio format is not supported. Please try recording again.';
-  if(code === 'audio_too_large') return 'This recording is too large. Please keep voice memos under 5 minutes.';
-  if(code === 'empty_transcript') return 'We could not detect speech clearly. Try recording again or type your goal manually.';
+  if(code === 'unauthorized') return 'Your session has expired. Sign in again to transcribe this recording.';
+  if(code === 'rate_limited') return 'You have reached the current transcription limit. Try again later.';
+  if(code === 'provider_timeout') return 'Voice transcription took too long and was cancelled. Your recording is still available.';
+  if(code === 'provider_unavailable') return 'Voice transcription is temporarily unavailable. You can still type your goal manually.';
+  if(code === 'invalid_request') return fallback || 'This recording could not be accepted. Try recording again.';
+  if(code === 'payload_too_large') return 'This recording is larger than the 25 MB upload limit.';
+  if(code === 'invalid_provider_response') return fallback || 'We could not detect speech clearly. Try recording again or type your goal manually.';
   return fallback || 'Voice transcription failed. You can still type your goal manually.';
 }
 
@@ -1111,6 +1131,19 @@ function aiPromptHTML(){
     + '</div></div>';
 }
 
+function assumptionsHTML(value){
+  const assumptions = normalizeBriefAssumptions(value);
+  return '<div class="field"><label>Assumptions</label>'
+    + '<div class="ai-list assumptions">'
+    + (assumptions.length ? assumptions.map((item, index) => '<div class="ai-edit-row">'
+      + '<label class="checkline"><input type="checkbox" class="ai-assumption-accepted" data-i="' + index + '" ' + (item.accepted ? 'checked' : '') + '/> Accepted</label>'
+      + '<textarea class="ai-assumption-text" data-i="' + index + '" placeholder="Visible assumption">' + esc(item.text) + '</textarea>'
+      + '<button class="icon-btn danger" type="button" data-assumption-action="remove" data-i="' + index + '" aria-label="Remove assumption">x</button>'
+      + '</div>').join('') : '<div class="hint">No assumptions. Unknown values will remain unknown.</div>')
+    + '</div><button class="add-link" type="button" data-assumption-action="add">+ Add assumption</button>'
+    + '<div class="hint">Accept, edit, or remove every material assumption before generation.</div></div>';
+}
+
 function goalBriefHTML(){
   if(!aiBuilder.brief) return '';
   const b = normalizeGoalBrief(aiBuilder.brief);
@@ -1146,12 +1179,12 @@ function goalBriefHTML(){
     + '<div class="ai-review-head"><b>Core commitments</b><span class="muted">Review these before generating the roadmap.</span></div>'
     + commitmentsHTML(b.coreCommitments, 'brief')
     + '<div class="field"><label>Progressive targets</label><textarea class="ai-brief-targets" placeholder="area | current | target | unit | notes">' + esc(progressiveTargetsToText(b.progressiveTargets)) + '</textarea></div>'
-    + '<div class="ai-grid">'
-    + '<div class="field"><label>Assumptions</label><textarea class="ai-brief-array" data-key="assumptions" placeholder="One per line">' + esc(joinLines(b.assumptions)) + '</textarea></div>'
-    + '<div class="field"><label>Details that would improve your path</label><textarea class="ai-brief-array" data-key="missingCriticalInfo" placeholder="One per line">' + esc(joinLines(b.missingCriticalInfo)) + '</textarea></div>'
-    + '</div>'
+    + assumptionsHTML(b.assumptions)
+    + '<div class="field"><label>Material gaps</label><textarea class="ai-brief-array" data-key="materialGaps" placeholder="One per line">' + esc(joinLines(b.materialGaps)) + '</textarea></div>'
     + (clarifying && q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>A few details will make your path more accurate</b><button class="btn gold" id="aiApplyAnswers" type="button">Update my brief</button></div>'
-      + q.map((question, i) => '<div class="field"><label>' + esc(question) + '</label><textarea class="ai-answer-field" data-i="' + i + '" placeholder="Your answer">' + esc(aiBuilder.clarifyingAnswers[i] || '') + '</textarea></div>').join('')
+      + q.map(question => '<div class="field"><label>' + esc(question.prompt) + '</label>'
+        + (question.reason ? '<div class="hint">' + esc(question.reason) + '</div>' : '')
+        + '<textarea class="ai-answer-field" data-question-id="' + esc(question.id) + '" placeholder="Your answer">' + esc(aiBuilder.clarifyingAnswers[question.id] || '') + '</textarea></div>').join('')
       + '</div>' : '')
     + '</div>';
 }
@@ -1212,6 +1245,16 @@ function aiTaskRowHTML(t, i, sectionOptions){
     + '</div>';
 }
 
+function markBriefFieldConfirmed(key){
+  if(!aiBuilder?.brief) return;
+  const canonical = ({
+    currentStage:'currentBaseline', desiredEndState:'desiredOutcome',
+    dailyTimeAvailable:'availableTime', evidencePreference:'evidencePreferences',
+    resourcesMentioned:'resources', missingCriticalInfo:'materialGaps',
+  })[key] || key;
+  aiBuilder.brief.confirmedFields = [...new Set([...(aiBuilder.brief.confirmedFields || []), canonical])];
+}
+
 function renderAIBuilder(){
   if(!aiBuilder?.overlay) return;
   aiBuilder.overlay.innerHTML = aiBuilder.mode === 'review' && aiBuilder.draft ? aiReviewHTML() : aiPromptHTML();
@@ -1257,21 +1300,49 @@ function renderAIBuilder(){
       if(key === 'durationDays') aiBuilder.brief[key] = e.target.value ? clampDay(e.target.value, 30, 365) : null;
       else if(['estimatedDailyMinutes', 'estimatedWeeklyHours'].includes(key)) aiBuilder.brief[key] = nullableNumber(e.target.value);
       else aiBuilder.brief[key] = e.target.value;
+      if(key === 'goal') aiBuilder.brief.interpretedGoal = aiBuilder.brief.goal;
+      if(key === 'currentStage') aiBuilder.brief.currentBaseline = aiBuilder.brief.currentStage;
+      if(key === 'desiredEndState') aiBuilder.brief.desiredOutcome = aiBuilder.brief.desiredEndState;
+      if(key === 'dailyTimeAvailable') aiBuilder.brief.availableTime = aiBuilder.brief.dailyTimeAvailable;
+      if(key === 'evidencePreference') aiBuilder.brief.evidencePreferences = aiBuilder.brief.evidencePreference;
+      markBriefFieldConfirmed(key);
     };
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', handler);
   });
   aiBuilder.overlay.querySelectorAll('.ai-brief-array').forEach(el => el.addEventListener('input', e => {
     if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
-    aiBuilder.brief[e.target.dataset.key] = splitLines(e.target.value);
+    const key = e.target.dataset.key;
+    aiBuilder.brief[key] = splitLines(e.target.value);
+    if(key === 'resourcesMentioned') aiBuilder.brief.resources = [...aiBuilder.brief.resourcesMentioned];
+    if(key === 'materialGaps') aiBuilder.brief.missingCriticalInfo = [...aiBuilder.brief.materialGaps];
+    markBriefFieldConfirmed(key);
   }));
   const targetInput = aiBuilder.overlay.querySelector('.ai-brief-targets');
   if(targetInput) targetInput.addEventListener('input', e => {
     if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
     aiBuilder.brief.progressiveTargets = progressiveTargetsFromText(e.target.value);
+    markBriefFieldConfirmed('progressiveTargets');
   });
   aiBuilder.overlay.querySelectorAll('.ai-answer-field').forEach(el => el.addEventListener('input', e => {
-    aiBuilder.clarifyingAnswers[Number(e.target.dataset.i)] = e.target.value;
+    aiBuilder.clarifyingAnswers[e.target.dataset.questionId] = e.target.value;
   }));
+  aiBuilder.overlay.querySelectorAll('.ai-assumption-text').forEach(el => el.addEventListener('input', e => {
+    const item = aiBuilder.brief.assumptions[Number(e.target.dataset.i)];
+    if(item) item.text = e.target.value;
+  }));
+  aiBuilder.overlay.querySelectorAll('.ai-assumption-accepted').forEach(el => el.addEventListener('change', e => {
+    const item = aiBuilder.brief.assumptions[Number(e.target.dataset.i)];
+    if(item){ item.accepted = e.target.checked; item.source = item.source || 'user'; }
+  }));
+  aiBuilder.overlay.querySelectorAll('[data-assumption-action]').forEach(button => button.onclick = () => {
+    aiBuilder.brief.assumptions = normalizeBriefAssumptions(aiBuilder.brief.assumptions);
+    if(button.dataset.assumptionAction === 'add'){
+      aiBuilder.brief.assumptions.push({ id:'assumption-user-' + Date.now().toString(36), field:'', text:'', accepted:false, source:'user', material:true });
+    } else {
+      aiBuilder.brief.assumptions.splice(Number(button.dataset.i), 1);
+    }
+    renderAIBuilder();
+  });
   aiBuilder.overlay.querySelectorAll('.ai-commitment-field, .ai-commitment-cadence').forEach(el => {
     const handler = e => {
       const scope = e.target.dataset.scope;
@@ -1287,6 +1358,7 @@ function renderAIBuilder(){
       else if(['timesPerWeek', 'intervalDays', 'scheduledDay'].includes(key)) item.cadence[key] = nullableNumber(e.target.value);
       else if(key === 'estimatedMinutes') item.estimatedMinutes = nullableNumber(e.target.value);
       else item[key] = e.target.value;
+      if(scope === 'brief') markBriefFieldConfirmed('coreCommitments');
     };
     el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
   });
@@ -1295,6 +1367,7 @@ function renderAIBuilder(){
     const list = scope === 'brief' ? aiBuilder.brief.coreCommitments : aiBuilder.prompt.coreCommitments;
     if(button.dataset.commitmentAction === 'add') list.push(emptyCoreCommitment(list.length));
     if(button.dataset.commitmentAction === 'remove') list.splice(Number(button.dataset.i), 1);
+    if(scope === 'brief') markBriefFieldConfirmed('coreCommitments');
     renderAIBuilder();
   });
   aiBuilder.overlay.querySelectorAll('.ai-draft-field').forEach(el => el.addEventListener('input', e => {
@@ -1353,6 +1426,13 @@ async function handleBuildWithAI(){
     return;
   }
   aiBuilder.prompt = collectAIPrompt();
+  if(!store.currentUser){
+    aiBuilder.error = 'Sign in to use Build with AI. Basic starter remains available without an AI request.';
+    aiBuilder.phase = 'error';
+    renderAIBuilder();
+    if(configPresent()) openAuthModal('login');
+    return;
+  }
   aiBuilder.prompt.assumptions = [];
   aiBuilder.prompt.progressiveTargets = [];
   aiBuilder.prompt.clarifiedBrief = null;
@@ -1371,10 +1451,12 @@ async function handleBuildWithAI(){
 async function requestGoalInterpretation(withAnswers){
   if(!canStartAIRequest(aiBuilder)) return;
   const previousPhase = aiBuilder.phase;
-  const questions = aiBuilder.brief?.clarifyingQuestions || [];
-  const answers = withAnswers ? questions.map((question, index) => ({
-    question,
-    answer:String(aiBuilder.clarifyingAnswers[index] || '').trim(),
+  const questions = normalizeClarifyingQuestions(aiBuilder.brief?.clarifyingQuestions || []);
+  const answers = withAnswers ? questions.map(question => ({
+    id:question.id,
+    targetField:question.targetField,
+    question:question.prompt,
+    answer:String(aiBuilder.clarifyingAnswers[question.id] || '').trim(),
   })).filter(item => item.answer) : [];
   if(withAnswers && !answers.length){
     aiBuilder.error = 'Answer at least one question before updating your brief.';
@@ -1388,22 +1470,22 @@ async function requestGoalInterpretation(withAnswers){
   aiBuilder.message = withAnswers ? 'Preparing your updated brief...' : 'Understanding your goal...';
   renderAIBuilder();
   try{
-    const response = await withTimeout(fetch('/api/interpret-goal', {
+    const response = await authenticatedAIRequest('interpret', '/api/interpret-goal', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body:JSON.stringify({
         roughGoal:aiBuilder.prompt.goal,
         context:aiBuilder.prompt,
-        previousBrief:withAnswers ? aiBuilder.brief : null,
+        previousBrief:aiBuilder.brief || briefFromPrompt(aiBuilder.prompt),
         answers,
         clarificationRound:withAnswers ? aiBuilder.clarificationRound + 1 : aiBuilder.clarificationRound,
         maxClarificationRounds:MAX_AI_CLARIFICATION_ROUNDS,
       }),
-    }), AI_INTERPRET_TIMEOUT_MS, 'understand goal');
+    }, AI_INTERPRET_TIMEOUT_MS);
     const payload = await parseAIResponse(response, 'invalid_goal_brief', 'The AI returned an incomplete goal brief. Please retry.');
     if(!response.ok || !payload.ok){
       const error = new Error(payload.message || 'Could not understand this goal.');
-      error.code = payload.code || '';
+      error.code = payload.error || payload.code || '';
       throw error;
     }
     if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
@@ -1489,6 +1571,13 @@ async function generateRoadmapFromBrief(){
     renderAIBuilder();
     return;
   }
+  const unaccepted = unacceptedMaterialAssumptions(brief);
+  if(unaccepted.length){
+    aiBuilder.error = 'Accept, edit, or remove every material assumption before generating the roadmap.';
+    renderAIBuilder();
+    return;
+  }
+  const confirmedBrief = confirmBrief(brief);
   const patch = briefToPromptPatch(brief);
   const prompt = {
     ...aiBuilder.prompt,
@@ -1497,10 +1586,11 @@ async function generateRoadmapFromBrief(){
     description:aiBuilder.prompt.description || patch.goal || '',
     excludeTasks:aiBuilder.prompt.excludeTasks || '',
     resourceLinks:aiBuilder.prompt.resourceLinks || '',
-    clarifiedBrief:brief,
-    briefConfirmed:true,
+    clarifiedBrief:confirmedBrief,
+    confirmedBrief,
   };
   aiBuilder.prompt = prompt;
+  aiBuilder.brief = confirmedBrief;
   const requestToken = ++aiBuilder.requestToken;
   aiBuilder.loading = true;
   aiBuilder.phase = 'generating';
@@ -1508,15 +1598,22 @@ async function generateRoadmapFromBrief(){
   aiBuilder.message = '';
   renderAIBuilder();
   try{
-    const response = await withTimeout(fetch('/api/generate-path', {
+    const response = await authenticatedAIRequest('generate', '/api/generate-path', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
-      body:JSON.stringify(prompt),
-    }), AI_GENERATE_TIMEOUT_MS, 'generate roadmap');
+      body:JSON.stringify({
+        confirmedBrief,
+        visibility:prompt.visibility,
+        description:prompt.description,
+        resourceLinks:prompt.resourceLinks,
+        includeTasks:prompt.includeTasks,
+        excludeTasks:prompt.excludeTasks,
+      }),
+    }, AI_GENERATE_TIMEOUT_MS);
     const payload = await parseAIResponse(response, 'invalid_ai_output', 'Claude returned a path draft that could not be validated. Please regenerate.');
     if(!response.ok || !payload.ok){
       const error = new Error(payload.message || 'AI generation failed.');
-      error.code = payload.code || '';
+      error.code = payload.error || payload.code || '';
       throw error;
     }
     if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
@@ -1529,10 +1626,12 @@ async function generateRoadmapFromBrief(){
   }catch(error){
     if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
     aiBuilder.phase = 'reviewing';
-    if(error.code === 'operation_timeout') aiBuilder.error = 'Roadmap generation took too long. Your confirmed brief is still saved. Try again.';
-    else if(error.code === 'invalid_ai_json') aiBuilder.error = 'Claude returned invalid JSON. Please regenerate.';
-    else if(error.code === 'invalid_ai_output') aiBuilder.error = 'Claude returned a path draft that could not be validated. Please regenerate.';
-    else if(error.code === 'missing_anthropic_config') aiBuilder.error = 'Build with AI is not configured. Your confirmed brief is still saved; Basic starter remains available from the original form.';
+    if(error.code === 'unauthorized') aiBuilder.error = 'Your session has expired. Sign in again to continue.';
+    else if(error.code === 'rate_limited') aiBuilder.error = 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
+    else if(['operation_timeout', 'provider_timeout'].includes(error.code)) aiBuilder.error = 'The AI request took too long and was cancelled. Your information is still saved.';
+    else if(error.code === 'invalid_provider_response') aiBuilder.error = 'Claude returned an invalid roadmap response. Please regenerate.';
+    else if(error.code === 'provider_unavailable') aiBuilder.error = 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
+    else if(error.code === 'brief_not_confirmed') aiBuilder.error = 'Review and confirm your path brief before generating the roadmap.';
     else aiBuilder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';
   }finally{
     if(aiBuilder && requestToken === aiBuilder.requestToken){
