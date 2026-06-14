@@ -1,6 +1,9 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const OPEN_STATUSES = ['active', 'completed', 'missed', 'frozen'];
-const SCHEDULE_TYPES = ['once', 'daily'];
+export const SCHEDULE_TYPES = [
+  'once', 'daily', 'weekdays', 'selected_days', 'times_per_week',
+  'weekly', 'interval', 'sequential',
+];
 const TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequential_learning'];
 const PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 
@@ -64,7 +67,8 @@ export function normalizeDurationDays(value, label = ''){
 }
 
 function cleanScheduleType(task){
-  if(SCHEDULE_TYPES.includes(task.scheduleType)) return task.scheduleType;
+  const value = task.scheduleType || task.schedule;
+  if(SCHEDULE_TYPES.includes(value)) return value;
   if(task.unlockDay != null || task.startDay != null) return 'once';
   return null;
 }
@@ -82,6 +86,7 @@ function normalizeNumberOrNull(value){
 
 function cleanTaskMode(value, scheduleType){
   if(TASK_MODES.includes(value)) return value;
+  if(scheduleType === 'sequential') return 'sequential_learning';
   return scheduleType === 'daily' ? 'fixed_recurring' : 'one_off';
 }
 
@@ -97,16 +102,20 @@ function normalizeTaskSchedule(task, fallbackDay, durationDays){
   const startDay = normalizeDay(task.startDay);
   const endDay = normalizeDay(task.endDay);
   const mode = cleanTaskMode(task.taskMode, scheduleType || 'once');
-  if(scheduleType === 'daily'){
+  if(['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval'].includes(scheduleType)){
     const start = startDay || unlockDay || 1;
     const taskMode = cleanTaskMode(task.taskMode, 'daily');
     return {
       ...task,
-      scheduleType: 'daily',
+      scheduleType,
       taskMode,
       startDay: start,
       endDay: endDay || durationDays || start,
       unlockDay: unlockDay || start,
+      daysOfWeek:Array.isArray(task.daysOfWeek) ? task.daysOfWeek : [],
+      timesPerWeek:normalizeDay(task.timesPerWeek),
+      intervalDays:normalizeDay(task.intervalDays),
+      scheduledDay:normalizeDay(task.scheduledDay),
       progressionMetric: task.progressionMetric || null,
       progressionUnit: task.progressionUnit || null,
       startValue: normalizeNumberOrNull(task.startValue),
@@ -115,8 +124,9 @@ function normalizeTaskSchedule(task, fallbackDay, durationDays){
       progressionNotes: task.progressionNotes || null,
     };
   }
-  const onceDay = unlockDay || startDay || fallbackDay || 1;
-  const taskMode = cleanTaskMode(mode, 'once');
+  const scheduledDay = normalizeDay(task.scheduledDay);
+  const onceDay = unlockDay || startDay || scheduledDay || fallbackDay || 1;
+  const taskMode = cleanTaskMode(mode, scheduleType || 'once');
   return {
     ...task,
     scheduleType: scheduleType || 'once',
@@ -124,6 +134,10 @@ function normalizeTaskSchedule(task, fallbackDay, durationDays){
     startDay: startDay || onceDay,
     endDay: endDay,
     unlockDay: onceDay,
+    daysOfWeek:Array.isArray(task.daysOfWeek) ? task.daysOfWeek : [],
+    timesPerWeek:normalizeDay(task.timesPerWeek),
+    intervalDays:normalizeDay(task.intervalDays),
+    scheduledDay:scheduledDay || onceDay,
     progressionMetric: task.progressionMetric || null,
     progressionUnit: task.progressionUnit || null,
     startValue: normalizeNumberOrNull(task.startValue),
@@ -178,7 +192,27 @@ export function getTasksForDay(pathTasks, dayNumber){
       const end = Number(task.endDay || start);
       return day >= start && day <= end;
     }
-    return Number(task.unlockDay || task.startDay || 1) === day;
+    const start = Number(task.startDay || task.unlockDay || 1);
+    const end = Number(task.endDay || start);
+    if(day < start || day > end) return false;
+    const cycleDay = ((day - 1) % 7) + 1;
+    if(task.scheduleType === 'weekdays') return cycleDay <= 5;
+    if(task.scheduleType === 'selected_days'){
+      const names = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      const selected = new Set((task.daysOfWeek || []).map(value => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : names.indexOf(String(value).slice(0, 3).toLowerCase()) + 1;
+      }));
+      return selected.has(cycleDay);
+    }
+    if(task.scheduleType === 'times_per_week'){
+      const count = Math.max(1, Math.min(7, Number(task.timesPerWeek || 1)));
+      const selected = new Set(Array.from({ length:count }, (_, index) => 1 + Math.floor(index * 7 / count)));
+      return selected.has(cycleDay);
+    }
+    if(task.scheduleType === 'weekly') return (day - start) % 7 === 0;
+    if(task.scheduleType === 'interval') return (day - start) % Math.max(1, Number(task.intervalDays || 1)) === 0;
+    return Number(task.scheduledDay || task.unlockDay || task.startDay || 1) === day;
   });
 }
 
@@ -239,8 +273,10 @@ export function getMaxRoadmapDay(pathOrTasks, enrollment){
     ? null
     : normalizeDurationDays(pathOrTasks?.durationDays, pathOrTasks?.durationLabel);
   const maxTaskDay = tasks.reduce((max, task) => {
-    if(task.scheduleType === 'daily') return Math.max(max, Number(task.endDay || task.startDay || task.unlockDay || 1));
-    return Math.max(max, Number(task.unlockDay || task.startDay || 1));
+    if(['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval'].includes(task.scheduleType)){
+      return Math.max(max, Number(task.endDay || task.startDay || task.unlockDay || 1));
+    }
+    return Math.max(max, Number(task.scheduledDay || task.unlockDay || task.startDay || 1));
   }, 1);
   const currentDay = Number(enrollment?.currentDay || 1);
   const lastCompleted = enrollment?.lastCompletedDay == null ? 0 : Number(enrollment.lastCompletedDay);

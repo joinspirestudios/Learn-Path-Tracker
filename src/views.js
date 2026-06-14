@@ -27,7 +27,12 @@ import { openAuthModal } from './auth.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
-import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath } from './platform.js';
+import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath, resolveCreatorName } from './platform.js';
+import {
+  AI_CADENCE_TYPES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
+  aiBriefDefaults, aiPromptDefaults, emptyCoreCommitment,
+  normalizeCoreCommitment, normalizeCoreCommitments,
+} from './ai-builder-model.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
   formatProgressiveTaskTitle, getMaxRoadmapDay, getTasksForDay, journeyDayForDate,
@@ -181,7 +186,7 @@ export function renderCatalog(){
     const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
     const goal = pathGoal(id);
     const badge = def.platform
-      ? (def.ownerId === (store.currentUser && store.currentUser.uid) ? 'Your platform path' : 'Public path')
+      ? ('By ' + resolveCreatorName(def, store.currentUser))
       : (cloudActive() ? 'Local draft' : 'Your path');
     h += '<button class="skill-card" data-id="' + esc(id) + '">'
       + '<div class="sc-badge">' + esc(badge) + '</div>'
@@ -243,8 +248,11 @@ function pathCardBlurb(def, total){
   if(def.durationLabel) bits.push(esc(def.durationLabel));
   if(def.visibility) bits.push(esc(def.visibility));
   const meta = bits.length ? bits.join(' · ') + '. ' : '';
-  if(def.platform && !pathTasksReady(def)) return meta + 'Open to load sections and tasks.';
-  return meta + (total ? (total + ' tasks across ' + (def.weeks || []).length + ' sections') : 'Empty path. Open it to add sections, tasks, and resources.');
+  const taskCount = total || Number(def.taskCount || 0);
+  const sectionCount = (def.weeks || []).length || Number(def.sectionCount || 0);
+  if(def.platform && !pathTasksReady(def) && !taskCount && !sectionCount) return meta + 'Open to load sections and tasks.';
+  if(def.platform && !pathTasksReady(def) && !taskCount && sectionCount) return meta + sectionCount + ' sections. Open to load task details.';
+  return meta + (taskCount ? (taskCount + ' tasks across ' + sectionCount + ' sections') : 'Empty path. Open it to add sections, tasks, and resources.');
 }
 
 async function importLocalPath(id){
@@ -274,69 +282,6 @@ async function importLocalPath(id){
   }
 }
 
-const AI_NON_NEGOTIABLES = [
-  'Read 10 pages',
-  'Run or walk 1km',
-  'Gym or training',
-  'Deep work',
-  'Sleep 8 hours',
-  'No soda',
-  'Course or learning progress',
-  'Post on social media',
-];
-const AI_TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequential_learning'];
-const AI_PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
-
-function aiPromptDefaults(){
-  return {
-    goal:'',
-    durationDays:75,
-    currentLevel:'beginner',
-    currentStage:'',
-    desiredEndState:'',
-    baseline:'',
-    targetOutcome:'',
-    constraints:'',
-    existingResources:'',
-    intensity:'moderate',
-    pathType:'skill',
-    resourceLinks:'',
-    dailyTime:'',
-    evidenceStyle:'',
-    includeTasks:'',
-    excludeTasks:'',
-    visibility:'private',
-    description:'',
-    nonNegotiables:[],
-    assumptions:[],
-    progressiveTargets:[],
-    clarifiedBrief:null,
-  };
-}
-
-function aiBriefDefaults(){
-  return {
-    summary:'',
-    goal:'',
-    pathType:'custom',
-    currentStage:'',
-    desiredEndState:'',
-    durationDays:null,
-    intensity:'',
-    dailyTimeAvailable:'',
-    knownTasks:[],
-    nonNegotiables:[],
-    constraints:[],
-    resourcesMentioned:[],
-    evidencePreference:'',
-    progressiveTargets:[],
-    assumptions:[],
-    missingCriticalInfo:[],
-    clarifyingQuestions:[],
-    confidence:0,
-    readyToGenerate:false,
-  };
-}
 
 function makeVoiceState(prev = {}){
   const supported = typeof MediaRecorder !== 'undefined'
@@ -384,22 +329,30 @@ function joinLines(value){
 
 function normalizeGoalBrief(raw = {}){
   const base = aiBriefDefaults();
-  const durationDays = raw.durationDays == null || raw.durationDays === '' ? null : clampDay(raw.durationDays, 75, 365);
+  const durationDays = raw.durationDays == null || raw.durationDays === '' ? null : clampDay(raw.durationDays, 30, 365);
   return {
     ...base,
     summary:String(raw.summary || '').slice(0, 700),
     goal:String(raw.goal || '').slice(0, 700),
-    pathType:['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'].includes(raw.pathType) ? raw.pathType : 'custom',
+    goalCategory:String(raw.goalCategory || '').slice(0, 100),
+    pathType:AI_PATH_TYPES.includes(raw.pathType) && raw.pathType !== 'auto' ? raw.pathType : 'custom',
     currentStage:String(raw.currentStage || '').slice(0, 700),
     desiredEndState:String(raw.desiredEndState || '').slice(0, 700),
     durationDays,
+    recommendedDurationReason:String(raw.recommendedDurationReason || '').slice(0, 500),
     intensity:['light', 'moderate', 'intense'].includes(raw.intensity) ? raw.intensity : '',
     dailyTimeAvailable:String(raw.dailyTimeAvailable || '').slice(0, 120),
+    estimatedDailyMinutes:nullableNumber(raw.estimatedDailyMinutes),
+    estimatedWeeklyHours:nullableNumber(raw.estimatedWeeklyHours),
+    deadline:String(raw.deadline || '').slice(0, 80),
+    scheduleNotes:String(raw.scheduleNotes || '').slice(0, 500),
     knownTasks:Array.isArray(raw.knownTasks) ? raw.knownTasks.map(x => String(x || '').trim()).filter(Boolean).slice(0, 16) : [],
-    nonNegotiables:Array.isArray(raw.nonNegotiables) ? raw.nonNegotiables.map(x => String(x || '').trim()).filter(Boolean).slice(0, 16) : [],
+    coreCommitments:normalizeCoreCommitments(raw.coreCommitments, raw.nonNegotiables || raw.dailyNonNegotiables),
+    milestones:Array.isArray(raw.milestones) ? raw.milestones.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
     constraints:Array.isArray(raw.constraints) ? raw.constraints.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
     resourcesMentioned:Array.isArray(raw.resourcesMentioned) ? raw.resourcesMentioned.map(x => String(x || '').trim()).filter(Boolean).slice(0, 12) : [],
     evidencePreference:String(raw.evidencePreference || '').slice(0, 220),
+    suggestedEvidenceTypes:Array.isArray(raw.suggestedEvidenceTypes) ? raw.suggestedEvidenceTypes.map(x => String(x || '').trim()).filter(Boolean).slice(0, 10) : [],
     progressiveTargets:(Array.isArray(raw.progressiveTargets) ? raw.progressiveTargets : []).slice(0, 8).map(target => ({
       area:String(target.area || '').slice(0, 100),
       currentValue:nullableNumber(target.currentValue),
@@ -454,19 +407,21 @@ function briefToPromptPatch(brief){
   ].filter(Boolean).join('\n');
   return {
     goal:b.goal || b.summary,
-    durationDays:b.durationDays || aiBuilder.prompt.durationDays || 75,
+    durationDays:b.durationDays || aiBuilder.prompt.durationDays || 30,
+    deadline:b.deadline || aiBuilder.prompt.deadline || '',
     intensity:b.intensity || aiBuilder.prompt.intensity || 'moderate',
-    pathType:b.pathType || aiBuilder.prompt.pathType || 'custom',
+    pathType:b.pathType || (aiBuilder.prompt.pathType === 'auto' ? 'custom' : aiBuilder.prompt.pathType) || 'custom',
     currentStage:b.currentStage || aiBuilder.prompt.currentStage || '',
     desiredEndState:b.desiredEndState || aiBuilder.prompt.desiredEndState || '',
     baseline:b.progressiveTargets.length ? targetLines.join('; ') : (aiBuilder.prompt.baseline || ''),
     targetOutcome:b.desiredEndState || aiBuilder.prompt.targetOutcome || '',
     constraints:b.constraints.join('\n') || aiBuilder.prompt.constraints || '',
+    preferredSchedule:b.scheduleNotes || aiBuilder.prompt.preferredSchedule || '',
     existingResources:b.resourcesMentioned.join('\n') || aiBuilder.prompt.existingResources || '',
     dailyTime:b.dailyTimeAvailable || aiBuilder.prompt.dailyTime || '',
     evidenceStyle:b.evidencePreference || aiBuilder.prompt.evidenceStyle || '',
     includeTasks:[joinLines(b.knownTasks), briefText].filter(Boolean).join('\n\n'),
-    nonNegotiables:b.nonNegotiables.length ? b.nonNegotiables : aiBuilder.prompt.nonNegotiables,
+    coreCommitments:b.coreCommitments.length ? b.coreCommitments : aiBuilder.prompt.coreCommitments,
     assumptions:b.assumptions,
     progressiveTargets:b.progressiveTargets,
     clarifiedBrief:b,
@@ -475,7 +430,13 @@ function briefToPromptPatch(brief){
 
 function normalizeTaskMode(value, scheduleType){
   if(AI_TASK_MODES.includes(value)) return value;
-  return scheduleType === 'daily' ? 'fixed_recurring' : 'one_off';
+  return ['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval'].includes(scheduleType)
+    ? 'fixed_recurring'
+    : (scheduleType === 'sequential' ? 'sequential_learning' : 'one_off');
+}
+
+function normalizeScheduleType(value){
+  return AI_CADENCE_TYPES.includes(value) ? value : 'once';
 }
 
 function normalizeProgressionCurve(value, taskMode){
@@ -495,7 +456,7 @@ function titleFromGoal(goal){
 
 function normalizeGeneratedDraft(raw, prompt){
   if(!raw || typeof raw !== 'object') throw new Error('The generator returned an invalid draft.');
-  const durationDays = clampDay(raw.durationDays || prompt.durationDays, 1, 365);
+  const durationDays = clampDay(raw.durationDays || prompt.durationDays || 30, 30, 365);
   const sections = (Array.isArray(raw.sections) ? raw.sections : []).slice(0, 12).map((s, i) => ({
     title:String(s.title || ('Section ' + (i + 1))).slice(0, 100),
     description:String(s.description || '').slice(0, 500),
@@ -504,10 +465,11 @@ function normalizeGeneratedDraft(raw, prompt){
   if(!sections.length) sections.push({ title:'Foundation', description:'Start here.', order:0 });
   const sectionNames = new Set(sections.map(s => s.title));
   const tasks = (Array.isArray(raw.tasks) ? raw.tasks : []).slice(0, 90).map((t, i) => {
-    const scheduleType = t.scheduleType === 'daily' ? 'daily' : 'once';
+    const scheduleType = normalizeScheduleType(t.scheduleType || t.schedule);
     const startDay = clampDay(t.startDay || t.unlockDay || 1, 1, durationDays);
-    const endDay = scheduleType === 'daily' ? clampDay(t.endDay || durationDays, startDay, durationDays) : null;
-    const unlockDay = scheduleType === 'once' ? clampDay(t.unlockDay || startDay, startDay, durationDays) : null;
+    const recurring = !['once', 'sequential'].includes(scheduleType);
+    const endDay = recurring ? clampDay(t.endDay || durationDays, startDay, durationDays) : null;
+    const unlockDay = recurring ? startDay : clampDay(t.unlockDay || t.scheduledDay || startDay, startDay, durationDays);
     const taskMode = normalizeTaskMode(t.taskMode, scheduleType);
     return {
       title:String(t.title || ('Task ' + (i + 1))).slice(0, 140),
@@ -518,6 +480,10 @@ function normalizeGeneratedDraft(raw, prompt){
       startDay,
       endDay,
       unlockDay,
+      daysOfWeek:Array.isArray(t.daysOfWeek) ? t.daysOfWeek.slice(0, 7) : [],
+      timesPerWeek:nullableNumber(t.timesPerWeek),
+      intervalDays:nullableNumber(t.intervalDays),
+      scheduledDay:nullableNumber(t.scheduledDay) || unlockDay,
       progressionMetric:t.progressionMetric ? String(t.progressionMetric).slice(0, 80) : null,
       progressionUnit:t.progressionUnit ? String(t.progressionUnit).slice(0, 40) : null,
       startValue:nullableNumber(t.startValue),
@@ -550,35 +516,50 @@ function normalizeGeneratedDraft(raw, prompt){
       description:String(r.description || '').slice(0, 300),
     })).filter(r => r.title || r.url || r.description),
     notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => String(n || '').slice(0, 300)).filter(Boolean).slice(0, 8),
+    coreCommitments:normalizeCoreCommitments(raw.coreCommitments, prompt.coreCommitments),
     source:raw.source || 'ai',
   };
 }
 
 function localGeneratedDraft(prompt){
-  const durationDays = clampDay(prompt.durationDays, 75, 365);
+  const durationDays = clampDay(prompt.durationDays || 30, 30, 365);
   const title = titleFromGoal(prompt.goal);
   const sections = [
     { title:'Foundation', description:'Set up the routine and first repeatable actions.', order:0 },
     { title:'Build', description:'Practice consistently and make visible progress.', order:1 },
     { title:'Review', description:'Reflect, ship proof, and decide the next step.', order:2 },
   ];
-  const daily = prompt.nonNegotiables.length ? prompt.nonNegotiables : ['Work on the goal'];
-  const tasks = daily.slice(0, 8).map((name, i) => ({
-    title:name,
-    description:'Repeat this commitment during the path.',
+  const commitments = normalizeCoreCommitments(prompt.coreCommitments);
+  const starterCommitments = commitments.length ? commitments : [normalizeCoreCommitment({
+    id:'goal-session',
+    title:'Complete a focused session toward the goal',
+    description:'Use the available time for the next concrete step toward the desired outcome.',
+    required:true,
+    cadence:{ type:'times_per_week', timesPerWeek:3 },
+    estimatedMinutes:nullableNumber(String(prompt.dailyTime || '').match(/\d+/)?.[0]) || 30,
+    evidenceType:prompt.evidenceStyle || '',
+    reason:'Provides a conservative repeatable starting rhythm without adding unrelated habits.',
+  })];
+  const tasks = starterCommitments.slice(0, 12).map((commitment, i) => ({
+    title:commitment.title,
+    description:commitment.description || 'Repeat this commitment during the path.',
     sectionTitle:'Foundation',
-    scheduleType:'daily',
-    taskMode:'fixed_recurring',
+    scheduleType:commitment.cadence.type,
+    taskMode:normalizeTaskMode(null, commitment.cadence.type),
     startDay:1,
     endDay:durationDays,
-    unlockDay:null,
+    unlockDay:commitment.cadence.scheduledDay || 1,
+    daysOfWeek:commitment.cadence.daysOfWeek,
+    timesPerWeek:commitment.cadence.timesPerWeek,
+    intervalDays:commitment.cadence.intervalDays,
+    scheduledDay:commitment.cadence.scheduledDay,
     progressionMetric:null,
     progressionUnit:null,
     startValue:null,
     targetValue:null,
     progressionCurve:null,
     progressionNotes:null,
-    evidenceRequired:/(run|walk|gym|train|workout|course|post|publish|design|project|deep work|proof|upload)/i.test(name + ' ' + prompt.evidenceStyle),
+    evidenceRequired:!!commitment.evidenceType || /proof|evidence|upload|log|record/i.test(prompt.evidenceStyle || ''),
     resourceUrl:null,
     order:i,
   }));
@@ -638,6 +619,7 @@ function localGeneratedDraft(prompt){
     tasks,
     resources:String(prompt.resourceLinks || '').split(/\s+/).filter(x => /^https?:\/\//i.test(x)).map((url, i) => ({ title:'Resource ' + (i + 1), url, description:'' })),
     notes:['Basic starter template. Review and edit before saving.'].concat(['fitness', 'challenge'].includes(prompt.pathType) ? ['Adapt intensity to your health, ability, and professional guidance where needed.'] : []),
+    coreCommitments:starterCommitments,
     source:'fallback',
   }, prompt);
 }
@@ -669,6 +651,10 @@ function aiDraftToLocalPath(draft){
       targetValue:task.targetValue == null ? null : Number(task.targetValue),
       progressionCurve:task.progressionCurve || null,
       progressionNotes:task.progressionNotes || null,
+      daysOfWeek:Array.isArray(task.daysOfWeek) ? task.daysOfWeek : [],
+      timesPerWeek:task.timesPerWeek == null ? null : Number(task.timesPerWeek),
+      intervalDays:task.intervalDays == null ? null : Number(task.intervalDays),
+      scheduledDay:task.scheduledDay == null ? null : Number(task.scheduledDay),
       evidenceRequired:!!task.evidenceRequired,
     });
   });
@@ -683,6 +669,9 @@ function aiDraftToLocalPath(draft){
     durationDays:clampDay(draft.durationDays, 1, 365),
     durationLabel:draft.durationLabel || (draft.durationDays + ' days'),
     creatorName:store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
+    creatorId:store.currentUser?.uid || '',
+    creatorEmail:store.currentUser?.email || '',
+    coreCommitments:normalizeCoreCommitments(draft.coreCommitments),
     visibility:draft.visibility || 'private',
     discoverable:false,
     previewEnabled:true,
@@ -730,19 +719,20 @@ function closeAIBuilder(){
 }
 
 function collectAIPrompt(){
-  const nonNegotiables = Array.from(aiBuilder.overlay.querySelectorAll('.ai-nn:checked')).map(x => x.value);
   aiBuilder.prompt = {
     goal:($('aiGoal')?.value || '').trim(),
-    durationDays:clampDay($('aiDuration')?.value || 75, 75, 365),
+    durationDays:$('aiDuration')?.value ? clampDay($('aiDuration').value, 30, 365) : null,
+    deadline:($('aiDeadline')?.value || '').trim(),
     currentLevel:$('aiLevel')?.value || 'beginner',
     currentStage:($('aiCurrentStage')?.value || '').trim(),
     desiredEndState:($('aiDesiredEndState')?.value || '').trim(),
     baseline:($('aiBaseline')?.value || '').trim(),
     targetOutcome:($('aiTargetOutcome')?.value || '').trim(),
     constraints:($('aiConstraints')?.value || '').trim(),
+    preferredSchedule:($('aiPreferredSchedule')?.value || '').trim(),
     existingResources:($('aiExistingResources')?.value || '').trim(),
     intensity:$('aiIntensity')?.value || 'moderate',
-    pathType:$('aiType')?.value || 'skill',
+    pathType:$('aiType')?.value || 'auto',
     resourceLinks:($('aiResources')?.value || '').trim(),
     dailyTime:($('aiDailyTime')?.value || '').trim(),
     evidenceStyle:($('aiEvidenceStyle')?.value || '').trim(),
@@ -750,12 +740,34 @@ function collectAIPrompt(){
     excludeTasks:($('aiExclude')?.value || '').trim(),
     visibility:$('aiVisibility')?.value || 'private',
     description:($('aiDescription')?.value || '').trim(),
-    nonNegotiables,
+    coreCommitments:normalizeCoreCommitments(aiBuilder.prompt.coreCommitments),
     assumptions:aiBuilder.brief?.assumptions || [],
     progressiveTargets:aiBuilder.brief?.progressiveTargets || [],
     clarifiedBrief:aiBuilder.brief || null,
   };
   return aiBuilder.prompt;
+}
+
+function validateAIBuilderInputs(){
+  const durationInputs = [
+    $('aiDuration'),
+    aiBuilder?.overlay?.querySelector('.ai-brief-field[data-key="durationDays"]'),
+  ].filter(Boolean);
+  for(const input of durationInputs){
+    if(input.value === '') continue;
+    const duration = Number(input.value);
+    if(!Number.isFinite(duration) || duration < 1 || duration > 365){
+      input.focus();
+      return 'Duration must be between 1 and 365 days.';
+    }
+  }
+  const emptyCommitment = [...(aiBuilder?.overlay?.querySelectorAll('.ai-commitment-field[data-key="title"]') || [])]
+    .find(input => !input.value.trim());
+  if(emptyCommitment && !emptyCommitment.value.trim()){
+    emptyCommitment.focus();
+    return 'Each Core commitment needs a title. Add a title or remove the empty commitment.';
+  }
+  return '';
 }
 
 function cleanupVoiceRecording(clearTranscript = false){
@@ -957,19 +969,63 @@ function voiceMemoHTML(){
     + '</div>';
 }
 
+function cadenceFieldsHTML(commitment, scope, index){
+  const cadence = commitment.cadence || {};
+  const prefix = 'ai-' + scope + '-commitment-' + index;
+  if(cadence.type === 'selected_days'){
+    return '<div class="field"><label for="' + prefix + '-days">Days of week</label><input id="' + prefix + '-days" name="' + prefix + '-days" class="ai-commitment-cadence" data-scope="' + scope + '" data-i="' + index + '" data-key="daysOfWeek" value="' + esc((cadence.daysOfWeek || []).join(', ')) + '" placeholder="mon, wed, fri"/></div>';
+  }
+  if(cadence.type === 'times_per_week'){
+    return '<div class="field"><label for="' + prefix + '-times">Times per week</label><input id="' + prefix + '-times" name="' + prefix + '-times" type="number" min="1" max="7" class="ai-commitment-cadence" data-scope="' + scope + '" data-i="' + index + '" data-key="timesPerWeek" value="' + esc(cadence.timesPerWeek || '') + '"/></div>';
+  }
+  if(cadence.type === 'interval'){
+    return '<div class="field"><label for="' + prefix + '-interval">Every N days</label><input id="' + prefix + '-interval" name="' + prefix + '-interval" type="number" min="1" max="365" class="ai-commitment-cadence" data-scope="' + scope + '" data-i="' + index + '" data-key="intervalDays" value="' + esc(cadence.intervalDays || '') + '"/></div>';
+  }
+  if(['once', 'sequential'].includes(cadence.type)){
+    return '<div class="field"><label for="' + prefix + '-day">Scheduled day</label><input id="' + prefix + '-day" name="' + prefix + '-day" type="number" min="1" max="365" class="ai-commitment-cadence" data-scope="' + scope + '" data-i="' + index + '" data-key="scheduledDay" value="' + esc(cadence.scheduledDay || '') + '"/></div>';
+  }
+  return '';
+}
+
+function commitmentRowHTML(commitment, scope, index){
+  const c = normalizeCoreCommitment(commitment, index);
+  const prefix = 'ai-' + scope + '-commitment-' + index;
+  return '<div class="ai-commitment-row">'
+    + '<div class="ai-review-head"><b>Commitment ' + (index + 1) + '</b><button id="' + prefix + '-remove" name="' + prefix + '-remove" type="button" class="icon-btn danger" data-commitment-action="remove" data-scope="' + scope + '" data-i="' + index + '" aria-label="Remove commitment ' + (index + 1) + '">x</button></div>'
+    + '<div class="ai-grid">'
+    + '<div class="field"><label for="' + prefix + '-title">Title</label><input id="' + prefix + '-title" name="' + prefix + '-title" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="title" value="' + esc(c.title) + '"/></div>'
+    + '<div class="field"><label for="' + prefix + '-cadence">Cadence</label><select id="' + prefix + '-cadence" name="' + prefix + '-cadence" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="cadenceType">' + selectOptions(AI_CADENCE_TYPES, c.cadence.type) + '</select></div>'
+    + cadenceFieldsHTML(c, scope, index)
+    + '<div class="field"><label for="' + prefix + '-minutes">Estimated minutes</label><input id="' + prefix + '-minutes" name="' + prefix + '-minutes" type="number" min="0" max="1440" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="estimatedMinutes" value="' + esc(c.estimatedMinutes == null ? '' : c.estimatedMinutes) + '"/></div>'
+    + '<div class="field"><label for="' + prefix + '-evidence">Evidence type</label><input id="' + prefix + '-evidence" name="' + prefix + '-evidence" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="evidenceType" value="' + esc(c.evidenceType) + '" placeholder="reflection, URL, run log..."/></div>'
+    + '</div>'
+    + '<div class="field"><label for="' + prefix + '-description">Description</label><textarea id="' + prefix + '-description" name="' + prefix + '-description" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="description">' + esc(c.description) + '</textarea></div>'
+    + '<div class="field"><label for="' + prefix + '-reason">Why this matters</label><textarea id="' + prefix + '-reason" name="' + prefix + '-reason" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="reason">' + esc(c.reason) + '</textarea></div>'
+    + '<label class="checkline" for="' + prefix + '-required"><input id="' + prefix + '-required" name="' + prefix + '-required" type="checkbox" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="required" ' + (c.required ? 'checked' : '') + '/> Required</label>'
+    + '</div>';
+}
+
+function commitmentsHTML(commitments, scope){
+  const items = (Array.isArray(commitments) ? commitments : []).map((item, index) => normalizeCoreCommitment(item, index));
+  return '<div class="ai-commitments" data-commitment-scope="' + scope + '">'
+    + (items.length ? items.map((item, index) => commitmentRowHTML(item, scope, index)).join('') : '<div class="hint">No commitments added yet.</div>')
+    + '<button id="ai-' + scope + '-add-commitment" name="ai-' + scope + '-add-commitment" class="add-link" type="button" data-commitment-action="add" data-scope="' + scope + '">+ Add commitment</button></div>';
+}
+
 function aiPromptHTML(){
   const p = aiBuilder.prompt;
   return '<div class="modal-box ai-modal"><div class="modal-head"><h3>Build path with AI</h3><button class="modal-x">x</button></div>'
     + '<div class="modal-body">'
     + '<div class="ai-note">Generate an editable starting point. Review and save only when it fits your plan.</div>'
     + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
-    + '<div class="field"><label>Goal</label><textarea id="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
+    + '<div class="field"><label for="aiGoal">Goal</label><textarea id="aiGoal" name="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
     + voiceMemoHTML()
     + '<div class="ai-grid">'
-    + '<div class="field"><label>Duration in days</label><input type="number" id="aiDuration" min="1" max="365" value="' + esc(p.durationDays) + '"/></div>'
+    + '<div class="field"><label for="aiDuration">Duration in days</label><input type="number" id="aiDuration" name="aiDuration" min="1" max="365" value="' + esc(p.durationDays == null ? '' : p.durationDays) + '" placeholder="Let AI recommend"/></div>'
+    + '<div class="field"><label for="aiDeadline">Optional deadline</label><input type="date" id="aiDeadline" name="aiDeadline" value="' + esc(p.deadline || '') + '"/></div>'
     + '<div class="field"><label>Current level</label><select id="aiLevel">' + selectOptions(['beginner', 'intermediate', 'advanced'], p.currentLevel) + '</select></div>'
     + '<div class="field"><label>Intensity</label><select id="aiIntensity">' + selectOptions(['light', 'moderate', 'intense'], p.intensity) + '</select></div>'
-    + '<div class="field"><label>Path type</label><select id="aiType">' + selectOptions(['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'], p.pathType) + '</select></div>'
+    + '<div class="field"><label for="aiType">Path type</label><select id="aiType" name="aiType">' + selectOptions(AI_PATH_TYPES, p.pathType) + '</select></div>'
     + '</div>'
     + '<div class="field"><label>Current ability / stage</label><textarea id="aiCurrentStage" placeholder="Where are you starting from?">' + esc(p.currentStage) + '</textarea></div>'
     + '<div class="field"><label>Desired end state</label><textarea id="aiDesiredEndState" placeholder="What should you be able to do by the end?">' + esc(p.desiredEndState) + '</textarea></div>'
@@ -978,7 +1034,8 @@ function aiPromptHTML(){
     + '<div class="field"><label>Target outcome</label><input type="text" id="aiTargetOutcome" value="' + esc(p.targetOutcome) + '" placeholder="Run 15km, 10-minute conversation..."/></div>'
     + '</div>'
     + '<div class="field"><label>Constraints / limitations</label><textarea id="aiConstraints" placeholder="Time, equipment, injury limits, days off, budget...">' + esc(p.constraints) + '</textarea></div>'
-    + '<div class="ai-nn-wrap"><label>Daily non-negotiables</label><div class="ai-checks">' + AI_NON_NEGOTIABLES.map(item => '<label><input type="checkbox" class="ai-nn" value="' + esc(item) + '" ' + (p.nonNegotiables.includes(item) ? 'checked' : '') + '/>' + esc(item) + '</label>').join('') + '</div></div>'
+    + '<div class="field"><label for="aiPreferredSchedule">Preferred schedule</label><textarea id="aiPreferredSchedule" name="aiPreferredSchedule" placeholder="Weekdays only, weekends free, Tuesday and Thursday evenings...">' + esc(p.preferredSchedule || '') + '</textarea></div>'
+    + '<div class="ai-nn-wrap"><div class="ai-review-head"><b>Core commitments</b></div><p class="hint">The AI will suggest the essential commitments after understanding your goal. You will be able to edit them before generating your path.</p>' + commitmentsHTML(p.coreCommitments, 'prompt') + '</div>'
     + '<div class="ai-grid">'
     + '<div class="field"><label>Daily time available</label><input type="text" id="aiDailyTime" value="' + esc(p.dailyTime) + '" placeholder="30 minutes, 2 hours..."/></div>'
     + '<div class="field"><label>Default visibility</label><select id="aiVisibility">' + selectOptions(['private', 'unlisted', 'public'], p.visibility) + '</select></div>'
@@ -990,9 +1047,9 @@ function aiPromptHTML(){
     + '<div class="field"><label>Tasks to avoid</label><textarea id="aiExclude" placeholder="Anything you do not want included">' + esc(p.excludeTasks) + '</textarea></div>'
     + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>'
     + goalBriefHTML()
-    + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn" id="aiClarify" ' + (aiBuilder.clarifyLoading ? 'disabled' : '') + '>' + (aiBuilder.clarifyLoading ? 'Clarifying...' : 'Clarify my goal') + '</button>'
+    + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn" id="aiClarify" ' + (aiBuilder.clarifyLoading ? 'disabled' : '') + '>' + (aiBuilder.clarifyLoading ? 'Interpreting...' : 'Interpret goal') + '</button>'
     + goalBriefActionHTML()
-    + '<button class="btn ' + (aiBuilder.brief ? '' : 'gold') + '" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : (aiBuilder.brief ? 'Generate draft directly' : 'Generate draft')) + '</button></div>'
+    + '<button class="btn ' + (aiBuilder.brief ? '' : 'gold') + '" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating roadmap...' : (aiBuilder.brief ? 'Fast generate from current inputs' : 'Fast generate without interpretation')) + '</button></div>'
     + '</div></div>';
 }
 
@@ -1000,10 +1057,10 @@ function goalBriefActionHTML(){
   if(!aiBuilder.brief) return '';
   const ready = !!aiBuilder.brief.readyToGenerate;
   if(ready){
-    return '<button class="btn gold" id="aiGenerateBrief" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate path from this brief') + '</button>';
+    return '<button class="btn gold" id="aiGenerateBrief" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating roadmap...' : 'Confirm brief and generate roadmap') + '</button>';
   }
   return '<button class="btn gold" id="aiAnswerFirst" type="button">Answer questions first</button>'
-    + '<button class="btn" id="aiGenerateAnyway" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating...' : 'Generate anyway') + '</button>';
+    + '<button class="btn" id="aiGenerateAnyway" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating roadmap...' : 'Generate with current assumptions') + '</button>';
 }
 
 function goalBriefHTML(){
@@ -1016,20 +1073,29 @@ function goalBriefHTML(){
     + '<div class="ai-grid">'
     + '<div class="field"><label>Summary</label><textarea class="ai-brief-field" data-key="summary">' + esc(b.summary) + '</textarea></div>'
     + '<div class="field"><label>Goal</label><textarea class="ai-brief-field" data-key="goal">' + esc(b.goal) + '</textarea></div>'
-    + '<div class="field"><label>Path type</label><select class="ai-brief-field" data-key="pathType">' + selectOptions(['skill', 'habit', 'challenge', 'fitness', 'content', 'business', 'spiritual/devotional', 'custom'], b.pathType) + '</select></div>'
+    + '<div class="field"><label>Path type</label><select class="ai-brief-field" data-key="pathType">' + selectOptions(AI_PATH_TYPES.filter(type => type !== 'auto'), b.pathType) + '</select></div>'
+    + '<div class="field"><label>Goal category</label><input type="text" class="ai-brief-field" data-key="goalCategory" value="' + esc(b.goalCategory) + '"/></div>'
     + '<div class="field"><label>Intensity</label><select class="ai-brief-field" data-key="intensity"><option value="">Unknown</option>' + selectOptions(['light', 'moderate', 'intense'], b.intensity) + '</select></div>'
-    + '<div class="field"><label>Duration days</label><input type="number" class="ai-brief-field" data-key="durationDays" value="' + esc(b.durationDays || '') + '" placeholder="75"/></div>'
+    + '<div class="field"><label>Recommended duration days</label><input type="number" class="ai-brief-field" data-key="durationDays" value="' + esc(b.durationDays || '') + '" placeholder="AI recommendation"/></div>'
     + '<div class="field"><label>Daily time</label><input type="text" class="ai-brief-field" data-key="dailyTimeAvailable" value="' + esc(b.dailyTimeAvailable) + '" placeholder="30 minutes"/></div>'
+    + '<div class="field"><label>Estimated daily minutes</label><input type="number" class="ai-brief-field" data-key="estimatedDailyMinutes" value="' + esc(b.estimatedDailyMinutes == null ? '' : b.estimatedDailyMinutes) + '"/></div>'
+    + '<div class="field"><label>Estimated weekly hours</label><input type="number" step="0.5" class="ai-brief-field" data-key="estimatedWeeklyHours" value="' + esc(b.estimatedWeeklyHours == null ? '' : b.estimatedWeeklyHours) + '"/></div>'
     + '</div>'
+    + '<div class="field"><label>Duration recommendation reason</label><textarea class="ai-brief-field" data-key="recommendedDurationReason">' + esc(b.recommendedDurationReason) + '</textarea></div>'
     + '<div class="field"><label>Current stage</label><textarea class="ai-brief-field" data-key="currentStage">' + esc(b.currentStage) + '</textarea></div>'
     + '<div class="field"><label>Desired end state</label><textarea class="ai-brief-field" data-key="desiredEndState">' + esc(b.desiredEndState) + '</textarea></div>'
     + '<div class="ai-grid">'
     + '<div class="field"><label>Known tasks</label><textarea class="ai-brief-array" data-key="knownTasks" placeholder="One per line">' + esc(joinLines(b.knownTasks)) + '</textarea></div>'
-    + '<div class="field"><label>Non-negotiables</label><textarea class="ai-brief-array" data-key="nonNegotiables" placeholder="One per line">' + esc(joinLines(b.nonNegotiables)) + '</textarea></div>'
+    + '<div class="field"><label>Milestones</label><textarea class="ai-brief-array" data-key="milestones" placeholder="One per line">' + esc(joinLines(b.milestones)) + '</textarea></div>'
     + '<div class="field"><label>Constraints</label><textarea class="ai-brief-array" data-key="constraints" placeholder="One per line">' + esc(joinLines(b.constraints)) + '</textarea></div>'
     + '<div class="field"><label>Resources mentioned</label><textarea class="ai-brief-array" data-key="resourcesMentioned" placeholder="One per line">' + esc(joinLines(b.resourcesMentioned)) + '</textarea></div>'
     + '</div>'
+    + '<div class="field"><label>Schedule notes</label><textarea class="ai-brief-field" data-key="scheduleNotes">' + esc(b.scheduleNotes) + '</textarea></div>'
+    + '<div class="field"><label>Optional deadline</label><input type="date" class="ai-brief-field" data-key="deadline" value="' + esc(b.deadline || '') + '"/></div>'
     + '<div class="field"><label>Evidence preference</label><input type="text" class="ai-brief-field" data-key="evidencePreference" value="' + esc(b.evidencePreference) + '"/></div>'
+    + '<div class="field"><label>Suggested evidence types</label><textarea class="ai-brief-array" data-key="suggestedEvidenceTypes" placeholder="One per line">' + esc(joinLines(b.suggestedEvidenceTypes)) + '</textarea></div>'
+    + '<div class="ai-review-head"><b>Core commitments</b><span class="muted">Review these before generating the roadmap.</span></div>'
+    + commitmentsHTML(b.coreCommitments, 'brief')
     + '<div class="field"><label>Progressive targets</label><textarea class="ai-brief-targets" placeholder="area | current | target | unit | notes">' + esc(progressiveTargetsToText(b.progressiveTargets)) + '</textarea></div>'
     + '<div class="ai-grid">'
     + '<div class="field"><label>Assumptions</label><textarea class="ai-brief-array" data-key="assumptions" placeholder="One per line">' + esc(joinLines(b.assumptions)) + '</textarea></div>'
@@ -1071,24 +1137,29 @@ function aiReviewHTML(){
 }
 
 function aiTaskRowHTML(t, i, sectionOptions){
+  const prefix = 'ai-task-' + i;
   return '<div class="ai-task-row">'
-    + '<input class="ai-task-field ai-title" data-i="' + i + '" data-key="title" value="' + esc(t.title) + '" placeholder="Task title"/>'
-    + '<select class="ai-task-field" data-i="' + i + '" data-key="sectionTitle">' + selectOptions(sectionOptions, t.sectionTitle) + '</select>'
-    + '<select class="ai-task-field" data-i="' + i + '" data-key="scheduleType">' + selectOptions(['daily', 'once'], t.scheduleType) + '</select>'
-    + '<select class="ai-task-field" data-i="' + i + '" data-key="taskMode">' + selectOptions(AI_TASK_MODES, t.taskMode || normalizeTaskMode(t.taskMode, t.scheduleType)) + '</select>'
-    + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="startDay" value="' + esc(t.startDay || 1) + '" min="1"/>'
-    + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="endDay" value="' + esc(t.endDay || '') + '" min="1" placeholder="End"/>'
-    + '<input type="number" class="ai-task-field" data-i="' + i + '" data-key="unlockDay" value="' + esc(t.unlockDay || '') + '" min="1" placeholder="Unlock"/>'
-    + '<label><input type="checkbox" class="ai-task-field" data-i="' + i + '" data-key="evidenceRequired" ' + (t.evidenceRequired ? 'checked' : '') + '/> Proof</label>'
-    + '<button class="icon-btn danger" data-ai-act="delTask" data-i="' + i + '">x</button>'
-    + '<input class="ai-task-field" data-i="' + i + '" data-key="progressionMetric" value="' + esc(t.progressionMetric || '') + '" placeholder="Metric"/>'
-    + '<input class="ai-task-field" data-i="' + i + '" data-key="progressionUnit" value="' + esc(t.progressionUnit || '') + '" placeholder="Unit"/>'
-    + '<input type="number" step="any" class="ai-task-field" data-i="' + i + '" data-key="startValue" value="' + esc(t.startValue == null ? '' : t.startValue) + '" placeholder="Start value"/>'
-    + '<input type="number" step="any" class="ai-task-field" data-i="' + i + '" data-key="targetValue" value="' + esc(t.targetValue == null ? '' : t.targetValue) + '" placeholder="Target value"/>'
-    + '<select class="ai-task-field" data-i="' + i + '" data-key="progressionCurve"><option value="">No curve</option>' + selectOptions(AI_PROGRESSION_CURVES, t.progressionCurve || '') + '</select>'
-    + '<input class="ai-task-field" data-i="' + i + '" data-key="resourceUrl" value="' + esc(t.resourceUrl || '') + '" placeholder="Task resource URL"/>'
-    + '<textarea class="ai-task-field" data-i="' + i + '" data-key="progressionNotes" placeholder="Progression notes">' + esc(t.progressionNotes || '') + '</textarea>'
-    + '<textarea class="ai-task-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(t.description || '') + '</textarea>'
+    + '<input id="' + prefix + '-title" name="' + prefix + '-title" aria-label="Task title" class="ai-task-field ai-title" data-i="' + i + '" data-key="title" value="' + esc(t.title) + '" placeholder="Task title"/>'
+    + '<select id="' + prefix + '-section" name="' + prefix + '-section" aria-label="Task section" class="ai-task-field" data-i="' + i + '" data-key="sectionTitle">' + selectOptions(sectionOptions, t.sectionTitle) + '</select>'
+    + '<select id="' + prefix + '-cadence" name="' + prefix + '-cadence" aria-label="Task cadence" class="ai-task-field" data-i="' + i + '" data-key="scheduleType">' + selectOptions(AI_CADENCE_TYPES, t.scheduleType) + '</select>'
+    + '<select id="' + prefix + '-mode" name="' + prefix + '-mode" aria-label="Task mode" class="ai-task-field" data-i="' + i + '" data-key="taskMode">' + selectOptions(AI_TASK_MODES, t.taskMode || normalizeTaskMode(t.taskMode, t.scheduleType)) + '</select>'
+    + '<input id="' + prefix + '-start" name="' + prefix + '-start" aria-label="Task start day" type="number" class="ai-task-field" data-i="' + i + '" data-key="startDay" value="' + esc(t.startDay || 1) + '" min="1"/>'
+    + '<input id="' + prefix + '-end" name="' + prefix + '-end" aria-label="Task end day" type="number" class="ai-task-field" data-i="' + i + '" data-key="endDay" value="' + esc(t.endDay || '') + '" min="1" placeholder="End"/>'
+    + '<input id="' + prefix + '-unlock" name="' + prefix + '-unlock" aria-label="Task unlock day" type="number" class="ai-task-field" data-i="' + i + '" data-key="unlockDay" value="' + esc(t.unlockDay || '') + '" min="1" placeholder="Unlock"/>'
+    + '<input id="' + prefix + '-days" name="' + prefix + '-days" aria-label="Selected days" class="ai-task-field" data-i="' + i + '" data-key="daysOfWeek" value="' + esc((t.daysOfWeek || []).join(', ')) + '" placeholder="Days: mon, wed, fri"/>'
+    + '<input id="' + prefix + '-times" name="' + prefix + '-times" aria-label="Times per week" type="number" min="1" max="7" class="ai-task-field" data-i="' + i + '" data-key="timesPerWeek" value="' + esc(t.timesPerWeek || '') + '" placeholder="Times/week"/>'
+    + '<input id="' + prefix + '-interval" name="' + prefix + '-interval" aria-label="Interval days" type="number" min="1" class="ai-task-field" data-i="' + i + '" data-key="intervalDays" value="' + esc(t.intervalDays || '') + '" placeholder="Interval days"/>'
+    + '<input id="' + prefix + '-scheduled" name="' + prefix + '-scheduled" aria-label="Scheduled day" type="number" min="1" class="ai-task-field" data-i="' + i + '" data-key="scheduledDay" value="' + esc(t.scheduledDay || '') + '" placeholder="Scheduled day"/>'
+    + '<label for="' + prefix + '-proof"><input id="' + prefix + '-proof" name="' + prefix + '-proof" type="checkbox" class="ai-task-field" data-i="' + i + '" data-key="evidenceRequired" ' + (t.evidenceRequired ? 'checked' : '') + '/> Proof</label>'
+    + '<button id="' + prefix + '-remove" name="' + prefix + '-remove" type="button" class="icon-btn danger" data-ai-act="delTask" data-i="' + i + '" aria-label="Remove task ' + (i + 1) + '">x</button>'
+    + '<input id="' + prefix + '-metric" name="' + prefix + '-metric" aria-label="Progression metric" class="ai-task-field" data-i="' + i + '" data-key="progressionMetric" value="' + esc(t.progressionMetric || '') + '" placeholder="Metric"/>'
+    + '<input id="' + prefix + '-unit" name="' + prefix + '-unit" aria-label="Progression unit" class="ai-task-field" data-i="' + i + '" data-key="progressionUnit" value="' + esc(t.progressionUnit || '') + '" placeholder="Unit"/>'
+    + '<input id="' + prefix + '-start-value" name="' + prefix + '-start-value" aria-label="Progression start value" type="number" step="any" class="ai-task-field" data-i="' + i + '" data-key="startValue" value="' + esc(t.startValue == null ? '' : t.startValue) + '" placeholder="Start value"/>'
+    + '<input id="' + prefix + '-target-value" name="' + prefix + '-target-value" aria-label="Progression target value" type="number" step="any" class="ai-task-field" data-i="' + i + '" data-key="targetValue" value="' + esc(t.targetValue == null ? '' : t.targetValue) + '" placeholder="Target value"/>'
+    + '<select id="' + prefix + '-curve" name="' + prefix + '-curve" aria-label="Progression curve" class="ai-task-field" data-i="' + i + '" data-key="progressionCurve"><option value="">No curve</option>' + selectOptions(AI_PROGRESSION_CURVES, t.progressionCurve || '') + '</select>'
+    + '<input id="' + prefix + '-resource" name="' + prefix + '-resource" aria-label="Task resource URL" class="ai-task-field" data-i="' + i + '" data-key="resourceUrl" value="' + esc(t.resourceUrl || '') + '" placeholder="Task resource URL"/>'
+    + '<textarea id="' + prefix + '-progression-notes" name="' + prefix + '-progression-notes" aria-label="Progression notes" class="ai-task-field" data-i="' + i + '" data-key="progressionNotes" placeholder="Progression notes">' + esc(t.progressionNotes || '') + '</textarea>'
+    + '<textarea id="' + prefix + '-description" name="' + prefix + '-description" aria-label="Task description" class="ai-task-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(t.description || '') + '</textarea>'
     + '</div>';
 }
 
@@ -1122,7 +1193,8 @@ function renderAIBuilder(){
     const handler = e => {
       const key = e.target.dataset.key;
       if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
-      if(key === 'durationDays') aiBuilder.brief[key] = e.target.value ? clampDay(e.target.value, 75, 365) : null;
+      if(key === 'durationDays') aiBuilder.brief[key] = e.target.value ? clampDay(e.target.value, 30, 365) : null;
+      else if(['estimatedDailyMinutes', 'estimatedWeeklyHours'].includes(key)) aiBuilder.brief[key] = nullableNumber(e.target.value);
       else aiBuilder.brief[key] = e.target.value;
     };
     el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', handler);
@@ -1139,6 +1211,31 @@ function renderAIBuilder(){
   aiBuilder.overlay.querySelectorAll('.ai-answer-field').forEach(el => el.addEventListener('input', e => {
     aiBuilder.clarifyingAnswers[Number(e.target.dataset.i)] = e.target.value;
   }));
+  aiBuilder.overlay.querySelectorAll('.ai-commitment-field, .ai-commitment-cadence').forEach(el => {
+    const handler = e => {
+      const scope = e.target.dataset.scope;
+      const list = scope === 'brief' ? aiBuilder.brief.coreCommitments : aiBuilder.prompt.coreCommitments;
+      const item = list[Number(e.target.dataset.i)];
+      if(!item) return;
+      const key = e.target.dataset.key;
+      if(key === 'required') item.required = e.target.checked;
+      else if(key === 'cadenceType'){
+        item.cadence = { ...item.cadence, type:e.target.value };
+        renderAIBuilder();
+      } else if(key === 'daysOfWeek') item.cadence.daysOfWeek = e.target.value.split(',').map(value => value.trim()).filter(Boolean);
+      else if(['timesPerWeek', 'intervalDays', 'scheduledDay'].includes(key)) item.cadence[key] = nullableNumber(e.target.value);
+      else if(key === 'estimatedMinutes') item.estimatedMinutes = nullableNumber(e.target.value);
+      else item[key] = e.target.value;
+    };
+    el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
+  });
+  aiBuilder.overlay.querySelectorAll('[data-commitment-action]').forEach(button => button.onclick = () => {
+    const scope = button.dataset.scope;
+    const list = scope === 'brief' ? aiBuilder.brief.coreCommitments : aiBuilder.prompt.coreCommitments;
+    if(button.dataset.commitmentAction === 'add') list.push(emptyCoreCommitment(list.length));
+    if(button.dataset.commitmentAction === 'remove') list.splice(Number(button.dataset.i), 1);
+    renderAIBuilder();
+  });
   aiBuilder.overlay.querySelectorAll('.ai-draft-field').forEach(el => el.addEventListener('input', e => {
     const key = e.target.dataset.key;
     aiBuilder.draft[key] = key === 'durationDays' ? clampDay(e.target.value, aiBuilder.draft.durationDays, 365) : e.target.value;
@@ -1157,7 +1254,8 @@ function renderAIBuilder(){
       const task = aiBuilder.draft.tasks[Number(e.target.dataset.i)];
       const key = e.target.dataset.key;
       if(key === 'evidenceRequired') task[key] = e.target.checked;
-      else if(['startDay', 'endDay', 'unlockDay'].includes(key)) task[key] = e.target.value ? clampDay(e.target.value, 1, aiBuilder.draft.durationDays) : null;
+      else if(['startDay', 'endDay', 'unlockDay', 'timesPerWeek', 'intervalDays', 'scheduledDay'].includes(key)) task[key] = e.target.value ? clampDay(e.target.value, 1, aiBuilder.draft.durationDays) : null;
+      else if(key === 'daysOfWeek') task[key] = e.target.value.split(',').map(value => value.trim()).filter(Boolean);
       else if(['startValue', 'targetValue'].includes(key)) task[key] = nullableNumber(e.target.value);
       else if(key === 'progressionCurve') task[key] = e.target.value || null;
       else task[key] = e.target.value;
@@ -1176,7 +1274,7 @@ function runAIAction(action, i){
   const d = aiBuilder.draft;
   if(action === 'addSection') d.sections.push({ title:'New section', description:'', order:d.sections.length });
   if(action === 'delSection' && d.sections.length > 1) d.sections.splice(i, 1);
-  if(action === 'addTask') d.tasks.push({ title:'New task', description:'', sectionTitle:d.sections[0].title, scheduleType:'once', taskMode:'one_off', startDay:1, endDay:null, unlockDay:1, progressionMetric:null, progressionUnit:null, startValue:null, targetValue:null, progressionCurve:null, progressionNotes:null, evidenceRequired:false, resourceUrl:null, order:d.tasks.length });
+  if(action === 'addTask') d.tasks.push({ title:'New task', description:'', sectionTitle:d.sections[0].title, scheduleType:'once', taskMode:'one_off', startDay:1, endDay:null, unlockDay:1, daysOfWeek:[], timesPerWeek:null, intervalDays:null, scheduledDay:1, progressionMetric:null, progressionUnit:null, startValue:null, targetValue:null, progressionCurve:null, progressionNotes:null, evidenceRequired:false, resourceUrl:null, order:d.tasks.length });
   if(action === 'delTask') d.tasks.splice(i, 1);
   if(action === 'addResource') d.resources.push({ title:'Resource', url:'', description:'' });
   if(action === 'delResource') d.resources.splice(i, 1);
@@ -1185,6 +1283,13 @@ function runAIAction(action, i){
 }
 
 async function interpretGoalBrief(withAnswers){
+  if(aiBuilder?.clarifyLoading || aiBuilder?.loading) return;
+  const validationError = validateAIBuilderInputs();
+  if(validationError){
+    aiBuilder.error = validationError;
+    renderAIBuilder();
+    return;
+  }
   const prompt = collectAIPrompt();
   if(!prompt.goal && !aiBuilder.brief){
     aiBuilder.error = 'Paste rough goal notes before clarifying.';
@@ -1234,6 +1339,12 @@ async function interpretGoalBrief(withAnswers){
 }
 
 function generatePathFromBrief(){
+  const validationError = validateAIBuilderInputs();
+  if(validationError){
+    aiBuilder.error = validationError;
+    renderAIBuilder();
+    return;
+  }
   if(!aiBuilder.brief){
     generateAIPath(false);
     return;
@@ -1260,6 +1371,13 @@ function focusClarifyingQuestions(){
 }
 
 async function generateAIPath(forceBasic, promptOverride = null){
+  if(aiBuilder?.loading || aiBuilder?.clarifyLoading) return;
+  const validationError = validateAIBuilderInputs();
+  if(validationError){
+    aiBuilder.error = validationError;
+    renderAIBuilder();
+    return;
+  }
   const prompt = promptOverride || collectAIPrompt();
   if(!prompt.goal){
     aiBuilder.error = 'Add a goal before generating a path.';
@@ -1449,6 +1567,8 @@ function createPath(){
       durationDays: pickedTemplate ? (pickedTemplate.durationDays || weeks.length * 7) : weeks.length * 7,
       durationLabel: pickedTemplate ? (pickedTemplate.durationLabel || (weeks.length + ' weeks')) : (weeks.length + ' weeks'),
       creatorName: store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
+      creatorId: store.currentUser?.uid || '',
+      creatorEmail: store.currentUser?.email || '',
       visibility: 'private', discoverable: false, previewEnabled: true,
       previewTitle: title, previewDescription: goal, previewIncludesScheme: false,
       coverImage: null, profileImage: null, created: Date.now(), weeks,
@@ -2290,7 +2410,7 @@ export function renderPlan(){
       + '<div class="field" style="margin-top:10px"><label>Goal / description</label><textarea id="pmGoal" placeholder="What does finishing look like?">' + esc(def.goal || '') + '</textarea></div>'
       + '<div class="edit-grid">'
       + '<div class="field"><label>Category</label><input type="text" id="pmCategory" value="' + esc(def.category || '') + '" placeholder="Fitness, 3D, business..."/></div>'
-      + '<div class="field"><label>Duration in days</label><input type="number" id="pmDurationDays" min="1" value="' + esc(def.durationDays || '') + '" placeholder="75"/></div>'
+      + '<div class="field"><label>Duration in days</label><input type="number" id="pmDurationDays" min="1" value="' + esc(def.durationDays || '') + '" placeholder="30"/></div>'
       + '<div class="field"><label>Duration label</label><input type="text" id="pmDuration" value="' + esc(def.durationLabel || '') + '" placeholder="8 weeks, 75 days..."/></div>'
       + '<div class="field"><label>Creator name</label><input type="text" id="pmCreator" value="' + esc(def.creatorName || '') + '"/></div>'
       + '<div class="field"><label>Visibility</label><select id="pmVisibility"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></div>'
@@ -2320,7 +2440,7 @@ export function renderPlan(){
         h += '<div class="row-edit"><input type="text" class="task-input" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.text || '') + '" placeholder="Task"/>'
           + '<button class="icon-btn danger" data-act="delTask" data-wi="' + wi + '" data-ti="' + ti + '" title="Remove">×</button></div>';
         h += '<div class="schedule-edit">'
-          + '<label>Schedule<select class="task-schedule" data-wi="' + wi + '" data-ti="' + ti + '"><option value="once">Once</option><option value="daily">Daily</option></select></label>'
+          + '<label>Schedule<select class="task-schedule" data-wi="' + wi + '" data-ti="' + ti + '">' + selectOptions(AI_CADENCE_TYPES, tk.scheduleType || 'once') + '</select></label>'
           + '<label>Start/unlock day<input type="number" min="1" class="task-start" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.startDay || tk.unlockDay || '') + '"/></label>'
           + '<label>End day<input type="number" min="1" class="task-end" data-wi="' + wi + '" data-ti="' + ti + '" value="' + esc(tk.endDay || '') + '"/></label>'
           + '<label class="checkline"><input type="checkbox" class="task-evidence" data-wi="' + wi + '" data-ti="' + ti + '" ' + (tk.evidenceRequired ? 'checked' : '') + '/> Require proof for this task</label>'
@@ -2402,7 +2522,7 @@ export function renderPlan(){
     const task = def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti];
     const n = Number(e.target.value);
     task.startDay = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
-    task.unlockDay = task.scheduleType === 'daily' ? (task.startDay || null) : task.startDay;
+    task.unlockDay = ['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval'].includes(task.scheduleType) ? null : task.startDay;
     upSaveSoft();
   }));
   $('content').querySelectorAll('.task-end').forEach(inp => inp.addEventListener('input', e => {

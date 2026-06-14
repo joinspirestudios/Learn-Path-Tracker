@@ -630,6 +630,17 @@ export async function dbEnsureEnrollment(pathId, options = {}){
 function upsertPlatformPath(record){
   if(!record || !record.id) return null;
   const existingRecord = store.platformPaths[record.id];
+  if(existingRecord?.path){
+    record.path = {
+      ...existingRecord.path,
+      ...(record.path || {}),
+      sectionCount:record.path?.sectionCount == null ? existingRecord.path.sectionCount : record.path.sectionCount,
+      taskCount:record.path?.taskCount == null ? existingRecord.path.taskCount : record.path.taskCount,
+      creatorName:record.path?.creatorName || existingRecord.path.creatorName || '',
+      creatorId:record.path?.creatorId || existingRecord.path.creatorId || record.path?.ownerId || '',
+      creatorEmail:record.path?.creatorEmail || existingRecord.path.creatorEmail || '',
+    };
+  }
   if(!record.childrenLoaded && existingRecord?.childrenLoaded){
     record = {
       ...record,
@@ -644,6 +655,10 @@ function upsertPlatformPath(record){
   if((!record.sections || !record.sections.length) && existing && existing.weeks && existing.weeks.length){
     local.weeks = existing.weeks;
     local.childrenLoaded = existing.childrenLoaded !== false;
+    if(local.sectionCount == null || local.sectionCount === 0) local.sectionCount = existing.sectionCount || existing.weeks.length;
+    if(local.taskCount == null || local.taskCount === 0){
+      local.taskCount = existing.taskCount || existing.weeks.reduce((total, week) => total + (week.tasks || []).length, 0);
+    }
   }
   store.platformPaths[record.id] = record;
   store.state.userPaths[record.id] = local;
@@ -744,6 +759,11 @@ export async function dbSavePlatformPath(id){
     batch.set(pathRef(id), {
       ...path,
       ownerId,
+      creatorId:path.creatorId || ownerId,
+      creatorName:path.creatorName || (previous && previous.path && previous.path.creatorName) || '',
+      creatorEmail:path.creatorEmail || (previous && previous.path && previous.path.creatorEmail) || '',
+      sectionCount:sections.length,
+      taskCount:tasks.filter(task => task.kind !== 'resource').length,
       updatedAt: new Date(),
       createdAt: (previous && previous.path && previous.path.createdAt) || path.createdAt,
     }, { merge:true });
@@ -783,10 +803,29 @@ export async function dbSavePlatformPath(id){
       targetValue:t.targetValue == null ? null : t.targetValue,
       progressionCurve:t.progressionCurve || null,
       progressionNotes:t.progressionNotes || null,
+      daysOfWeek:Array.isArray(t.daysOfWeek) ? t.daysOfWeek : [],
+      timesPerWeek:t.timesPerWeek == null ? null : t.timesPerWeek,
+      intervalDays:t.intervalDays == null ? null : t.intervalDays,
+      scheduledDay:t.scheduledDay == null ? null : t.scheduledDay,
       kind:t.kind || 'task',
     }, { merge:true }));
     await trackOperation('platform path save', withTimeout(batch.commit(), WRITE_TIMEOUT_MS, 'save platform path'));
-    const record = { id, path:{ ...path, ownerId }, sections, tasks, membership: ownerSaving ? { uid:ownerId, role:'owner' } : local.membership, childrenLoaded:true };
+    const record = {
+      id,
+      path:{
+        ...path,
+        ownerId,
+        creatorId:path.creatorId || ownerId,
+        creatorName:path.creatorName || (previous && previous.path && previous.path.creatorName) || '',
+        creatorEmail:path.creatorEmail || (previous && previous.path && previous.path.creatorEmail) || '',
+        sectionCount:sections.length,
+        taskCount:tasks.filter(task => task.kind !== 'resource').length,
+      },
+      sections,
+      tasks,
+      membership:ownerSaving ? { uid:ownerId, role:'owner' } : local.membership,
+      childrenLoaded:true,
+    };
     upsertPlatformPath(record);
     flash('Path synced');
     return record;

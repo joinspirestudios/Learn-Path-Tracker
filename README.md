@@ -36,6 +36,9 @@ submissions:
 - Tasks support scheduling:
   - `scheduleType: "once"` appears on `unlockDay` or `startDay`.
   - `scheduleType: "daily"` appears every day from `startDay` to `endDay`.
+  - `weekdays`, `selected_days`, `times_per_week`, `weekly`, and `interval`
+    provide recurring schedules without creating one task per calendar day.
+  - `sequential` supports ordered learning or project steps.
   - Legacy tasks without schedule fields still get a safe fallback day.
 - Completing the active day updates `lastCompletedDay`, `lastActivityDate`,
   `currentDay`, and `streak`.
@@ -47,14 +50,18 @@ implemented in this phase.
 
 ---
 
-## Phase 4 AI Path Generator
+## Phase 5.1 goal-agnostic AI builder
 
 Signed-in users can choose **Build path with AI** from the catalog or the manual
 create-path modal. The guided builder accepts rough goal notes, or a cleaner
 goal, duration, level, current stage, desired end state, baseline, target
 outcome, constraints, optional resources, preferred proof style, and daily
-non-negotiables. It then creates an editable draft that the user must review
-before saving.
+time or preferred schedule. Duration and path type start neutral. The interpreter recommends a
+duration and a small set of goal-specific **Core commitments**, which the user
+can edit before generation. The builder does not inject a universal fitness,
+reading, diet, sleep, posting, or 75-day challenge routine into unrelated
+goals. The dedicated 75-Day Consistency Challenge template remains available
+as an explicit manual template.
 
 Phase 4.4 adds a messy-goal interpreter before generation. Users can paste
 scattered notes and choose **Clarify my goal**. The app calls
@@ -80,13 +87,16 @@ The generator is intentionally a starting-point tool:
 - It uses Deepgram only for recorded voice memo transcription. Anthropic still
   handles goal interpretation and path generation.
 - It creates progressive growth paths, not static generic checklists.
-- It uses `scheduleType: "daily"` tasks for recurring work and
-  `scheduleType: "once"` tasks for milestones and reviews.
+- Core commitments include title, description, required status, cadence,
+  estimated minutes, evidence type, and an explanation of why the commitment
+  belongs in the path.
+- Cadence supports `daily`, `weekdays`, `selected_days`, `times_per_week`,
+  `weekly`, `interval`, `once`, and `sequential`. Existing `daily` and `once`
+  paths remain backward compatible.
 - It supports task modes:
-  - `fixed_recurring`: a daily task that stays basically the same.
-  - `progressive_recurring`: a daily task that grows toward a target, such as
-    running distance, workout difficulty, deep-work time, or speaking
-    complexity.
+  - `fixed_recurring`: repeated work that stays basically the same.
+  - `progressive_recurring`: repeated work that grows toward a measurable
+    target.
   - `sequential_learning`: ordered skill work where concepts build over time.
   - `one_off`: milestone checks, reviews, tests, recordings, deliverables, and
     projects.
@@ -94,12 +104,15 @@ The generator is intentionally a starting-point tool:
   `startValue`, `targetValue`, `progressionCurve`, and `progressionNotes`.
   The daily journey view displays a day-specific target when those fields are
   present.
-- Clarified briefs can pass current stage, desired end state, progressive
-  targets, fixed non-negotiables, constraints, resources, and labeled
-  assumptions into the generator.
+- Clarified briefs pass current stage, desired end state, recommended duration,
+  milestones, confirmed core commitments, progressive targets, schedule notes,
+  constraints, resources, and labeled assumptions into the generator.
 - It preserves `durationDays`, task schedules, and `evidenceRequired`.
 - It does not publish generated paths publicly unless the user changes
   visibility.
+- Public platform cards show `BY {CREATOR NAME}`. Creator attribution uses the
+  saved creator name, the current owner's display name, the creator email
+  username, then `Creator` as the final fallback.
 
 AI calls use Anthropic Claude server-side through `api/generate-path.js` and
 `api/interpret-goal.js`. Voice transcription uses Deepgram server-side through

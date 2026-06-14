@@ -6,7 +6,7 @@
 // but can't reassign across module boundaries. Wrapping everything in `store`
 // lets modules do `store.catalogue = store.catalogue.filter(...)` cleanly.
 
-import { normalizeDurationDays } from './journey.js';
+import { normalizeDurationDays, SCHEDULE_TYPES } from './journey.js';
 
 export const STATE_KEY  = 'lpt_state';
 export const CAT_PREFIX = 'lpt_cat:';
@@ -32,7 +32,7 @@ export function migrateState(s){
     path.durationDays = normalizeDurationDays(path.durationDays, path.durationLabel);
     (path.weeks || []).forEach(week => {
       (week.tasks || []).forEach(task => {
-        if(task.scheduleType && !['once', 'daily'].includes(task.scheduleType)) task.scheduleType = null;
+        if(task.scheduleType && !SCHEDULE_TYPES.includes(task.scheduleType)) task.scheduleType = null;
       });
     });
     if(path.platform && path.childrenLoaded == null){

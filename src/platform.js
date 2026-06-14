@@ -3,6 +3,7 @@
 // helpers translate that shape to the top-level Firestore path model.
 
 import { normalizeDurationDays } from './journey.js';
+import { normalizeCoreCommitments } from './ai-builder-model.js';
 
 export const PATH_VISIBILITIES = ['private', 'unlisted', 'public'];
 
@@ -10,6 +11,15 @@ export function nowStamp(){ return new Date(); }
 
 export function creatorName(user){
   return (user && (user.displayName || (user.email || '').split('@')[0])) || 'Creator';
+}
+
+export function resolveCreatorName(path = {}, currentUser = null){
+  const explicit = String(path.creatorName || '').trim();
+  if(explicit && explicit.toLowerCase() !== 'public path') return explicit;
+  if(currentUser && path.ownerId === currentUser.uid && currentUser.displayName) return currentUser.displayName;
+  const email = String(path.creatorEmail || path.ownerEmail || (currentUser && path.ownerId === currentUser.uid ? currentUser.email : '') || '');
+  const username = email.split('@')[0].trim();
+  return username || 'Creator';
 }
 
 export function cleanVisibility(v){
@@ -21,6 +31,7 @@ export function normalizePathDoc(id, data = {}){
   return {
     id,
     ownerId: data.ownerId || '',
+    creatorId: data.creatorId || data.ownerId || '',
     title: data.title || 'Untitled path',
     description: data.description || data.goal || '',
     goal: data.goal || data.description || '',
@@ -29,7 +40,11 @@ export function normalizePathDoc(id, data = {}){
     durationDays: normalizeDurationDays(data.durationDays, data.durationLabel),
     coverImage: data.coverImage || null,
     profileImage: data.profileImage || null,
-    creatorName: data.creatorName || 'Creator',
+    creatorName: data.creatorName || '',
+    creatorEmail: data.creatorEmail || data.ownerEmail || '',
+    sectionCount:Number.isFinite(Number(data.sectionCount)) ? Number(data.sectionCount) : null,
+    taskCount:Number.isFinite(Number(data.taskCount)) ? Number(data.taskCount) : null,
+    coreCommitments:normalizeCoreCommitments(data.coreCommitments, data.nonNegotiables || data.dailyNonNegotiables),
     visibility,
     previewEnabled: data.previewEnabled !== false,
     previewTitle: data.previewTitle || data.title || 'Path preview',
@@ -100,6 +115,13 @@ export function localPathDefaults(localPath = {}, user){
     coverImage: localPath.coverImage || null,
     profileImage: localPath.profileImage || null,
     creatorName: localPath.creatorName || creatorName(user),
+    creatorId: localPath.creatorId || user?.uid || '',
+    creatorEmail: localPath.creatorEmail || user?.email || '',
+    sectionCount:Number.isFinite(Number(localPath.sectionCount)) ? Number(localPath.sectionCount) : weeks.length,
+    taskCount:Number.isFinite(Number(localPath.taskCount))
+      ? Number(localPath.taskCount)
+      : weeks.reduce((total, week) => total + (week.tasks || []).length, 0),
+    coreCommitments:normalizeCoreCommitments(localPath.coreCommitments, localPath.nonNegotiables || localPath.dailyNonNegotiables),
     visibility,
     previewEnabled: localPath.previewEnabled !== false,
     previewTitle: localPath.previewTitle || title,
@@ -117,6 +139,7 @@ export function localToPlatformParts(id, localPath, user, ownerId){
   const path = normalizePathDoc(id, {
     ...base,
     ownerId,
+    creatorId:localPath.creatorId || ownerId,
     createdAt: localPath.createdAt || localPath.created || nowStamp(),
     updatedAt: nowStamp(),
   });
@@ -150,6 +173,10 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         targetValue: task.targetValue == null ? null : Number(task.targetValue),
         progressionCurve: task.progressionCurve || null,
         progressionNotes: task.progressionNotes || null,
+        daysOfWeek:Array.isArray(task.daysOfWeek) ? task.daysOfWeek : [],
+        timesPerWeek:task.timesPerWeek == null ? null : Number(task.timesPerWeek),
+        intervalDays:task.intervalDays == null ? null : Number(task.intervalDays),
+        scheduledDay:task.scheduledDay == null ? null : Number(task.scheduledDay),
         kind: 'task',
       });
     });
@@ -173,6 +200,10 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         targetValue: null,
         progressionCurve: null,
         progressionNotes: null,
+        daysOfWeek:[],
+        timesPerWeek:null,
+        intervalDays:null,
+        scheduledDay:null,
         kind: 'resource',
       });
     });
@@ -208,6 +239,10 @@ export function platformToLocalPath(record){
         targetValue: task.targetValue == null ? null : task.targetValue,
         progressionCurve: task.progressionCurve || null,
         progressionNotes: task.progressionNotes || null,
+        daysOfWeek:Array.isArray(task.daysOfWeek) ? task.daysOfWeek : [],
+        timesPerWeek:task.timesPerWeek == null ? null : task.timesPerWeek,
+        intervalDays:task.intervalDays == null ? null : task.intervalDays,
+        scheduledDay:task.scheduledDay == null ? null : task.scheduledDay,
         order: task.order || 0,
       });
     }
@@ -222,6 +257,12 @@ export function platformToLocalPath(record){
     weeks: sections.map(section => bySection[section.id]),
     platform: true,
     ownerId: path.ownerId,
+    creatorId:path.creatorId,
+    creatorName:path.creatorName,
+    creatorEmail:path.creatorEmail,
+    sectionCount:path.sectionCount == null ? sections.length : path.sectionCount,
+    taskCount:path.taskCount == null ? (record.tasks || []).filter(task => task.kind !== 'resource').length : path.taskCount,
+    coreCommitments:path.coreCommitments,
     membership: record.membership || null,
     platformData: path,
     childrenLoaded: !!record.childrenLoaded || !!((record.sections || []).length || (record.tasks || []).length),
