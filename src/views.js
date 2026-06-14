@@ -30,8 +30,10 @@ import { cachedAuthLabel } from './auth.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath, resolveCreatorName } from './platform.js';
 import {
   AI_CADENCE_TYPES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
+  MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
   aiBriefDefaults, aiPromptDefaults, emptyCoreCommitment,
-  normalizeCoreCommitment, normalizeCoreCommitments,
+  canStartAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
+  normalizeCoreCommitments, recoverAIBuilderState, routeInterpretedBrief,
 } from './ai-builder-model.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
@@ -57,6 +59,8 @@ let isCreatingPath = false;
 let openingPathId = null;
 let startingJourneyId = null;
 let aiSaveClientId = null;
+const AI_INTERPRET_TIMEOUT_MS = 30000;
+const AI_GENERATE_TIMEOUT_MS = 60000;
 function scheduleSave(ms = 650){
   clearTimeout(_noteTimer);
   _noteTimer = setTimeout(saveCurrentPath, ms);
@@ -407,9 +411,9 @@ function briefToPromptPatch(brief){
   ].filter(Boolean).join('\n');
   return {
     goal:b.goal || b.summary,
-    durationDays:b.durationDays || aiBuilder.prompt.durationDays || 30,
+    durationDays:b.durationDays || aiBuilder.prompt.durationDays || null,
     deadline:b.deadline || aiBuilder.prompt.deadline || '',
-    intensity:b.intensity || aiBuilder.prompt.intensity || 'moderate',
+    intensity:b.intensity || aiBuilder.prompt.intensity || '',
     pathType:b.pathType || (aiBuilder.prompt.pathType === 'auto' ? 'custom' : aiBuilder.prompt.pathType) || 'custom',
     currentStage:b.currentStage || aiBuilder.prompt.currentStage || '',
     desiredEndState:b.desiredEndState || aiBuilder.prompt.desiredEndState || '',
@@ -420,7 +424,7 @@ function briefToPromptPatch(brief){
     existingResources:b.resourcesMentioned.join('\n') || aiBuilder.prompt.existingResources || '',
     dailyTime:b.dailyTimeAvailable || aiBuilder.prompt.dailyTime || '',
     evidenceStyle:b.evidencePreference || aiBuilder.prompt.evidenceStyle || '',
-    includeTasks:[joinLines(b.knownTasks), briefText].filter(Boolean).join('\n\n'),
+    includeTasks:[joinLines(b.knownTasks), joinLines(b.milestones), briefText].filter(Boolean).join('\n\n'),
     coreCommitments:b.coreCommitments.length ? b.coreCommitments : aiBuilder.prompt.coreCommitments,
     assumptions:b.assumptions,
     progressiveTargets:b.progressiveTargets,
@@ -696,6 +700,7 @@ function openAIPathBuilder(){
   aiBuilder = {
     overlay,
     mode:'prompt',
+    phase:'input',
     prompt: aiBuilder?.prompt || aiPromptDefaults(),
     draft: aiBuilder?.draft || null,
     loading:false,
@@ -704,6 +709,8 @@ function openAIPathBuilder(){
     message:'',
     brief: aiBuilder?.brief || null,
     clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
+    clarificationRound:0,
+    requestToken:0,
     voice: makeVoiceState(aiBuilder?.voice || {}),
     saving:false,
     dirty:false,
@@ -723,7 +730,7 @@ function collectAIPrompt(){
     goal:($('aiGoal')?.value || '').trim(),
     durationDays:$('aiDuration')?.value ? clampDay($('aiDuration').value, 30, 365) : null,
     deadline:($('aiDeadline')?.value || '').trim(),
-    currentLevel:$('aiLevel')?.value || 'beginner',
+    currentLevel:$('aiLevel')?.value || '',
     currentStage:($('aiCurrentStage')?.value || '').trim(),
     desiredEndState:($('aiDesiredEndState')?.value || '').trim(),
     baseline:($('aiBaseline')?.value || '').trim(),
@@ -731,7 +738,7 @@ function collectAIPrompt(){
     constraints:($('aiConstraints')?.value || '').trim(),
     preferredSchedule:($('aiPreferredSchedule')?.value || '').trim(),
     existingResources:($('aiExistingResources')?.value || '').trim(),
-    intensity:$('aiIntensity')?.value || 'moderate',
+    intensity:$('aiIntensity')?.value || '',
     pathType:$('aiType')?.value || 'auto',
     resourceLinks:($('aiResources')?.value || '').trim(),
     dailyTime:($('aiDailyTime')?.value || '').trim(),
@@ -768,6 +775,37 @@ function validateAIBuilderInputs(){
     return 'Each Core commitment needs a title. Add a title or remove the empty commitment.';
   }
   return '';
+}
+
+function validateMeaningfulGoal(){
+  const goal = ($('aiGoal')?.value || aiBuilder?.prompt?.goal || '').trim();
+  if(!isMeaningfulAIGoal(goal)){
+    const input = $('aiGoal');
+    if(input) input.focus();
+    return 'Describe what you want to achieve before building with AI.';
+  }
+  return '';
+}
+
+function aiInterpretationError(error){
+  if(error?.code === 'operation_timeout') return 'We could not finish understanding your goal in time. Your answers are still saved. Try again.';
+  if(['invalid_goal_brief', 'invalid_ai_json', 'missing_tool_use', 'empty_ai_response'].includes(error?.code)){
+    return 'The AI returned an incomplete goal brief. Please retry.';
+  }
+  if(error?.code === 'missing_anthropic_config') return 'Build with AI is not configured. Use Basic starter or add the Anthropic server configuration.';
+  if(typeof navigator !== 'undefined' && navigator.onLine === false) return 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
+  if(error instanceof TypeError) return 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
+  return error?.message || 'We could not understand your goal. Your answers are still saved. Try again.';
+}
+
+async function parseAIResponse(response, code, message){
+  try{
+    return await response.json();
+  }catch(error){
+    const invalid = new Error(message);
+    invalid.code = code;
+    throw invalid;
+  }
 }
 
 function cleanupVoiceRecording(clearTranscript = false){
@@ -942,7 +980,7 @@ function useTranscriptAsGoalInput(){
   const goal = $('aiGoal');
   if(goal) goal.value = transcript;
   aiBuilder.error = '';
-  aiBuilder.message = 'Transcript added as rough goal input. Edit it, then clarify your goal.';
+  aiBuilder.message = 'Transcript added as rough goal input. Edit it, then choose Build with AI.';
   renderAIBuilder();
 }
 
@@ -1012,19 +1050,15 @@ function commitmentsHTML(commitments, scope){
     + '<button id="ai-' + scope + '-add-commitment" name="ai-' + scope + '-add-commitment" class="add-link" type="button" data-commitment-action="add" data-scope="' + scope + '">+ Add commitment</button></div>';
 }
 
-function aiPromptHTML(){
+function aiInputFieldsHTML(){
   const p = aiBuilder.prompt;
-  return '<div class="modal-box ai-modal"><div class="modal-head"><h3>Build path with AI</h3><button class="modal-x">x</button></div>'
-    + '<div class="modal-body">'
-    + '<div class="ai-note">Generate an editable starting point. Review and save only when it fits your plan.</div>'
-    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
-    + '<div class="field"><label for="aiGoal">Goal</label><textarea id="aiGoal" name="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
+  return '<div class="field"><label for="aiGoal">Goal</label><textarea id="aiGoal" name="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
     + voiceMemoHTML()
     + '<div class="ai-grid">'
     + '<div class="field"><label for="aiDuration">Duration in days</label><input type="number" id="aiDuration" name="aiDuration" min="1" max="365" value="' + esc(p.durationDays == null ? '' : p.durationDays) + '" placeholder="Let AI recommend"/></div>'
     + '<div class="field"><label for="aiDeadline">Optional deadline</label><input type="date" id="aiDeadline" name="aiDeadline" value="' + esc(p.deadline || '') + '"/></div>'
-    + '<div class="field"><label>Current level</label><select id="aiLevel">' + selectOptions(['beginner', 'intermediate', 'advanced'], p.currentLevel) + '</select></div>'
-    + '<div class="field"><label>Intensity</label><select id="aiIntensity">' + selectOptions(['light', 'moderate', 'intense'], p.intensity) + '</select></div>'
+    + '<div class="field"><label>Current level</label><select id="aiLevel"><option value="">Let AI determine</option>' + selectOptions(['beginner', 'intermediate', 'advanced'], p.currentLevel) + '</select></div>'
+    + '<div class="field"><label>Intensity</label><select id="aiIntensity"><option value="">Let AI determine</option>' + selectOptions(['light', 'moderate', 'intense'], p.intensity) + '</select></div>'
     + '<div class="field"><label for="aiType">Path type</label><select id="aiType" name="aiType">' + selectOptions(AI_PATH_TYPES, p.pathType) + '</select></div>'
     + '</div>'
     + '<div class="field"><label>Current ability / stage</label><textarea id="aiCurrentStage" placeholder="Where are you starting from?">' + esc(p.currentStage) + '</textarea></div>'
@@ -1045,31 +1079,46 @@ function aiPromptHTML(){
     + '<div class="field"><label>Resources or courses you want to follow</label><textarea id="aiExistingResources" placeholder="Names, links, books, courses, channels...">' + esc(p.existingResources) + '</textarea></div>'
     + '<div class="field"><label>Tasks to include</label><textarea id="aiInclude" placeholder="Tasks you already know you want">' + esc(p.includeTasks) + '</textarea></div>'
     + '<div class="field"><label>Tasks to avoid</label><textarea id="aiExclude" placeholder="Anything you do not want included">' + esc(p.excludeTasks) + '</textarea></div>'
-    + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>'
-    + goalBriefHTML()
-    + '<div class="ai-actions"><button class="btn" id="aiCancel">Cancel</button><button class="btn" id="aiBasic">Basic starter</button><button class="btn" id="aiClarify" ' + (aiBuilder.clarifyLoading ? 'disabled' : '') + '>' + (aiBuilder.clarifyLoading ? 'Interpreting...' : 'Interpret goal') + '</button>'
-    + goalBriefActionHTML()
-    + '<button class="btn ' + (aiBuilder.brief ? '' : 'gold') + '" id="aiGenerate" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating roadmap...' : (aiBuilder.brief ? 'Fast generate from current inputs' : 'Fast generate without interpretation')) + '</button></div>'
-    + '</div></div>';
+    + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>';
 }
 
-function goalBriefActionHTML(){
-  if(!aiBuilder.brief) return '';
-  const ready = !!aiBuilder.brief.readyToGenerate;
-  if(ready){
-    return '<button class="btn gold" id="aiGenerateBrief" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating roadmap...' : 'Confirm brief and generate roadmap') + '</button>';
+function aiPromptHTML(){
+  const phase = aiBuilder.phase || 'input';
+  const showBrief = !!aiBuilder.brief && ['interpreting', 'clarifying', 'reviewing', 'generating'].includes(phase);
+  const busy = ['interpreting', 'generating'].includes(phase) || aiBuilder.clarifyLoading || aiBuilder.loading;
+  let actions = '<button class="btn" id="aiCancel" type="button">Cancel</button>';
+  if(showBrief){
+    actions += '<button class="btn" id="aiBackToInput" type="button" ' + (busy ? 'disabled' : '') + '>Back to original form</button>';
+    if(phase === 'reviewing'){
+      actions += '<button class="btn gold" id="aiGenerateRoadmap" type="button" ' + (busy ? 'disabled' : '') + '>Generate my roadmap</button>';
+    } else if(phase === 'generating'){
+      actions += '<button class="btn gold" type="button" disabled>Generating roadmap...</button>';
+    } else if(phase === 'interpreting'){
+      actions += '<button class="btn gold" type="button" disabled>Preparing your brief...</button>';
+    }
+  } else {
+    const buildLabel = phase === 'interpreting' ? 'Understanding your goal...' : 'Build with AI';
+    actions += '<button class="btn" id="aiBasic" type="button" ' + (busy ? 'disabled' : '') + '>Basic starter</button>'
+      + '<button class="btn gold" id="aiBuild" type="button" ' + (busy ? 'disabled' : '') + '>' + buildLabel + '</button>';
   }
-  return '<button class="btn gold" id="aiAnswerFirst" type="button">Answer questions first</button>'
-    + '<button class="btn" id="aiGenerateAnyway" ' + (aiBuilder.loading ? 'disabled' : '') + '>' + (aiBuilder.loading ? 'Generating roadmap...' : 'Generate with current assumptions') + '</button>';
+  return '<div class="modal-box ai-modal"><div class="modal-head"><h3>Build path with AI</h3><button class="modal-x" aria-label="Close">x</button></div>'
+    + '<div class="modal-body">'
+    + '<div class="ai-note">AI will review your goal, ask only the questions it needs, and prepare a personalised roadmap brief.</div>'
+    + (aiBuilder.message ? '<div class="ai-note">' + esc(aiBuilder.message) + '</div>' : '')
+    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
+    + (showBrief ? goalBriefHTML() : aiInputFieldsHTML())
+    + '<div class="ai-actions">' + actions + '</div>'
+    + '</div></div>';
 }
 
 function goalBriefHTML(){
   if(!aiBuilder.brief) return '';
   const b = normalizeGoalBrief(aiBuilder.brief);
   const q = b.clarifyingQuestions || [];
+  const clarifying = aiBuilder.phase === 'clarifying' || (aiBuilder.phase === 'interpreting' && !!aiBuilder.brief);
   return '<div class="ai-brief-card">'
-    + '<div class="ai-review-head"><b>Here\'s what I understood.</b><span class="muted">Confidence ' + Math.round((b.confidence || 0) * 100) + '%</span></div>'
-    + (!b.readyToGenerate ? '<div class="ai-warning">You can generate now, but this plan may be less accurate because some important details are missing.</div>' : '')
+    + '<div class="ai-review-head"><b>' + (clarifying ? 'A few details will make your path more accurate' : 'Review your path brief') + '</b></div>'
+    + (clarifying ? '<div class="ai-warning">Answer only what you know. Your earlier goal, commitments, and answers will stay in place.</div>' : '')
     + '<div class="ai-grid">'
     + '<div class="field"><label>Summary</label><textarea class="ai-brief-field" data-key="summary">' + esc(b.summary) + '</textarea></div>'
     + '<div class="field"><label>Goal</label><textarea class="ai-brief-field" data-key="goal">' + esc(b.goal) + '</textarea></div>'
@@ -1101,7 +1150,7 @@ function goalBriefHTML(){
     + '<div class="field"><label>Assumptions</label><textarea class="ai-brief-array" data-key="assumptions" placeholder="One per line">' + esc(joinLines(b.assumptions)) + '</textarea></div>'
     + '<div class="field"><label>Details that would improve your path</label><textarea class="ai-brief-array" data-key="missingCriticalInfo" placeholder="One per line">' + esc(joinLines(b.missingCriticalInfo)) + '</textarea></div>'
     + '</div>'
-    + (q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>Clarifying questions</b><button class="add-link" id="aiApplyAnswers" type="button">Update brief with answers</button></div>'
+    + (clarifying && q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>A few details will make your path more accurate</b><button class="btn gold" id="aiApplyAnswers" type="button">Update my brief</button></div>'
       + q.map((question, i) => '<div class="field"><label>' + esc(question) + '</label><textarea class="ai-answer-field" data-i="' + i + '" placeholder="Your answer">' + esc(aiBuilder.clarifyingAnswers[i] || '') + '</textarea></div>').join('')
       + '</div>' : '')
     + '</div>';
@@ -1169,12 +1218,15 @@ function renderAIBuilder(){
   const close = aiBuilder.overlay.querySelector('.modal-x');
   if(close) close.onclick = closeAIBuilder;
   const cancel = $('aiCancel'); if(cancel) cancel.onclick = closeAIBuilder;
-  const generate = $('aiGenerate'); if(generate) generate.onclick = () => generateAIPath(false);
-  const clarify = $('aiClarify'); if(clarify) clarify.onclick = () => interpretGoalBrief(false);
-  const generateBrief = $('aiGenerateBrief'); if(generateBrief) generateBrief.onclick = generatePathFromBrief;
-  const answerFirst = $('aiAnswerFirst'); if(answerFirst) answerFirst.onclick = focusClarifyingQuestions;
-  const generateAnyway = $('aiGenerateAnyway'); if(generateAnyway) generateAnyway.onclick = generatePathFromBrief;
-  const basic = $('aiBasic'); if(basic) basic.onclick = () => generateAIPath(true);
+  const build = $('aiBuild'); if(build) build.onclick = handleBuildWithAI;
+  const generateRoadmap = $('aiGenerateRoadmap'); if(generateRoadmap) generateRoadmap.onclick = generateRoadmapFromBrief;
+  const backToInput = $('aiBackToInput'); if(backToInput) backToInput.onclick = () => {
+    aiBuilder.phase = 'input';
+    aiBuilder.error = '';
+    aiBuilder.message = '';
+    renderAIBuilder();
+  };
+  const basic = $('aiBasic'); if(basic) basic.onclick = createBasicDraft;
   const recordVoice = $('aiRecordVoice'); if(recordVoice) recordVoice.onclick = startVoiceRecording;
   const stopVoice = $('aiStopVoice'); if(stopVoice) stopVoice.onclick = stopVoiceRecording;
   const playVoice = $('aiPlayVoice'); if(playVoice) playVoice.onclick = () => $('aiAudioPreview')?.play();
@@ -1182,13 +1234,22 @@ function renderAIBuilder(){
   const transcribeVoice = $('aiTranscribeVoice'); if(transcribeVoice) transcribeVoice.onclick = transcribeVoiceRecording;
   const useTranscript = $('aiUseTranscript'); if(useTranscript) useTranscript.onclick = useTranscriptAsGoalInput;
   const voiceTranscript = $('aiVoiceTranscript'); if(voiceTranscript) voiceTranscript.addEventListener('input', e => { aiBuilder.voice.transcript = e.target.value; });
-  const editPrompt = $('aiEditPrompt'); if(editPrompt) editPrompt.onclick = () => { aiBuilder.mode = 'prompt'; renderAIBuilder(); };
+  const editPrompt = $('aiEditPrompt'); if(editPrompt) editPrompt.onclick = () => {
+    aiBuilder.mode = 'prompt';
+    aiBuilder.phase = aiBuilder.brief ? 'reviewing' : 'input';
+    renderAIBuilder();
+  };
   const regenerate = $('aiRegenerate'); if(regenerate) regenerate.onclick = () => {
     if(aiBuilder.dirty && !confirm('Regenerate this draft and replace your edits?')) return;
-    generateAIPath(false);
+    if(aiBuilder.brief){
+      aiBuilder.mode = 'prompt';
+      aiBuilder.phase = 'reviewing';
+      generateRoadmapFromBrief();
+    }
+    else createBasicDraft();
   };
   const save = $('aiSave'); if(save) save.onclick = saveGeneratedPath;
-  const applyAnswers = $('aiApplyAnswers'); if(applyAnswers) applyAnswers.onclick = () => interpretGoalBrief(true);
+  const applyAnswers = $('aiApplyAnswers'); if(applyAnswers) applyAnswers.onclick = () => requestGoalInterpretation(true);
   aiBuilder.overlay.querySelectorAll('.ai-brief-field').forEach(el => {
     const handler = e => {
       const key = e.target.dataset.key;
@@ -1282,153 +1343,202 @@ function runAIAction(action, i){
   renderAIBuilder();
 }
 
-async function interpretGoalBrief(withAnswers){
-  if(aiBuilder?.clarifyLoading || aiBuilder?.loading) return;
-  const validationError = validateAIBuilderInputs();
+async function handleBuildWithAI(){
+  if(!canStartAIRequest(aiBuilder)) return;
+  const validationError = validateAIBuilderInputs() || validateMeaningfulGoal();
   if(validationError){
     aiBuilder.error = validationError;
+    aiBuilder.phase = 'error';
     renderAIBuilder();
     return;
   }
-  const prompt = collectAIPrompt();
-  if(!prompt.goal && !aiBuilder.brief){
-    aiBuilder.error = 'Paste rough goal notes before clarifying.';
+  aiBuilder.prompt = collectAIPrompt();
+  aiBuilder.prompt.assumptions = [];
+  aiBuilder.prompt.progressiveTargets = [];
+  aiBuilder.prompt.clarifiedBrief = null;
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){
+    aiBuilder.error = 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
+    aiBuilder.phase = 'error';
     renderAIBuilder();
     return;
   }
+  aiBuilder.brief = null;
+  aiBuilder.clarifyingAnswers = {};
+  aiBuilder.clarificationRound = 0;
+  await requestGoalInterpretation(false);
+}
+
+async function requestGoalInterpretation(withAnswers){
+  if(!canStartAIRequest(aiBuilder)) return;
+  const previousPhase = aiBuilder.phase;
   const questions = aiBuilder.brief?.clarifyingQuestions || [];
-  const answers = withAnswers ? questions.map((question, i) => ({
+  const answers = withAnswers ? questions.map((question, index) => ({
     question,
-    answer:String(aiBuilder.clarifyingAnswers[i] || '').trim(),
+    answer:String(aiBuilder.clarifyingAnswers[index] || '').trim(),
   })).filter(item => item.answer) : [];
   if(withAnswers && !answers.length){
-    aiBuilder.error = 'Answer at least one clarifying question first.';
+    aiBuilder.error = 'Answer at least one question before updating your brief.';
     renderAIBuilder();
     return;
   }
+  const requestToken = ++aiBuilder.requestToken;
   aiBuilder.clarifyLoading = true;
+  aiBuilder.phase = 'interpreting';
   aiBuilder.error = '';
-  aiBuilder.message = '';
+  aiBuilder.message = withAnswers ? 'Preparing your updated brief...' : 'Understanding your goal...';
   renderAIBuilder();
   try{
-    const res = await fetch('/api/interpret-goal', {
+    const response = await withTimeout(fetch('/api/interpret-goal', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body:JSON.stringify({
-        roughGoal:prompt.goal,
-        context:prompt,
+        roughGoal:aiBuilder.prompt.goal,
+        context:aiBuilder.prompt,
         previousBrief:withAnswers ? aiBuilder.brief : null,
         answers,
+        clarificationRound:withAnswers ? aiBuilder.clarificationRound + 1 : aiBuilder.clarificationRound,
+        maxClarificationRounds:MAX_AI_CLARIFICATION_ROUNDS,
       }),
-    });
-    const payload = await res.json();
-    if(!res.ok || !payload.ok){
-      const err = new Error(payload.message || 'Could not clarify this goal.');
-      err.code = payload.code || '';
-      throw err;
+    }), AI_INTERPRET_TIMEOUT_MS, 'understand goal');
+    const payload = await parseAIResponse(response, 'invalid_goal_brief', 'The AI returned an incomplete goal brief. Please retry.');
+    if(!response.ok || !payload.ok){
+      const error = new Error(payload.message || 'Could not understand this goal.');
+      error.code = payload.code || '';
+      throw error;
     }
-    aiBuilder.brief = normalizeGoalBrief(payload.brief);
+    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
+    const brief = normalizeGoalBrief(payload.brief);
+    if(!isMeaningfulAIGoal(brief.goal || brief.summary)){
+      const error = new Error('The AI returned an incomplete goal brief. Please retry.');
+      error.code = 'invalid_goal_brief';
+      throw error;
+    }
+    if(withAnswers) aiBuilder.clarificationRound += 1;
+    const nextPhase = routeInterpretedBrief(brief, aiBuilder.clarificationRound);
+    if(nextPhase === 'reviewing' && !brief.readyToGenerate){
+      brief.assumptions = assumptionsForFinalClarification(brief);
+      brief.clarifyingQuestions = [];
+    }
+    aiBuilder.brief = brief;
     aiBuilder.clarifyingAnswers = {};
-    aiBuilder.message = payload.message || "Here's what I understood. Review and answer anything missing.";
-  }catch(e){
-    aiBuilder.error = e.message || 'Could not clarify this goal.';
+    aiBuilder.phase = nextPhase;
+    aiBuilder.message = nextPhase === 'clarifying'
+      ? 'Answer the focused questions below so the roadmap can fit your situation.'
+      : 'Your editable path brief is ready. Review it before generating the roadmap.';
+  }catch(error){
+    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
+    const recoveryPhase = aiBuilder.brief ? (previousPhase === 'reviewing' ? 'reviewing' : 'clarifying') : 'error';
+    Object.assign(aiBuilder, recoverAIBuilderState(aiBuilder, aiInterpretationError(error), recoveryPhase), { message:'' });
   }finally{
-    aiBuilder.clarifyLoading = false;
-    renderAIBuilder();
+    if(aiBuilder && requestToken === aiBuilder.requestToken){
+      aiBuilder.clarifyLoading = false;
+      renderAIBuilder();
+    }
   }
 }
 
-function generatePathFromBrief(){
-  const validationError = validateAIBuilderInputs();
+function createBasicDraft(){
+  if(!canStartAIRequest(aiBuilder)) return;
+  const validationError = validateAIBuilderInputs() || validateMeaningfulGoal();
   if(validationError){
     aiBuilder.error = validationError;
+    aiBuilder.phase = 'error';
     renderAIBuilder();
-    return;
-  }
-  if(!aiBuilder.brief){
-    generateAIPath(false);
     return;
   }
   const prompt = collectAIPrompt();
-  const patch = briefToPromptPatch(aiBuilder.brief);
-  aiBuilder.prompt = {
-    ...prompt,
-    ...patch,
-    visibility:prompt.visibility || 'private',
-    currentLevel:prompt.currentLevel || 'beginner',
-    description:prompt.description || patch.goal || patch.summary || '',
-    excludeTasks:prompt.excludeTasks || '',
-    resourceLinks:prompt.resourceLinks || '',
-  };
-  generateAIPath(false, aiBuilder.prompt);
+  prompt.assumptions = [];
+  prompt.progressiveTargets = [];
+  prompt.clarifiedBrief = null;
+  aiBuilder.loading = true;
+  aiBuilder.error = '';
+  aiBuilder.message = '';
+  try{
+    const draft = localGeneratedDraft(prompt);
+    aiBuilder.draft = normalizeGeneratedDraft(draft, prompt);
+    aiBuilder.draft.source = 'fallback';
+    aiBuilder.message = 'Basic starter template created without AI. Review it before saving.';
+    aiBuilder.mode = 'review';
+    aiBuilder.phase = 'complete';
+    aiBuilder.dirty = false;
+  }catch(error){
+    aiBuilder.phase = 'error';
+    aiBuilder.error = error.message || 'Could not create a basic starter draft.';
+  }finally{
+    aiBuilder.loading = false;
+    renderAIBuilder();
+  }
 }
 
-function focusClarifyingQuestions(){
-  const questions = aiBuilder.overlay?.querySelector('.ai-questions') || aiBuilder.overlay?.querySelector('.ai-brief-card');
-  if(questions) questions.scrollIntoView({ behavior:'smooth', block:'start' });
-  const firstAnswer = aiBuilder.overlay?.querySelector('.ai-answer-field');
-  if(firstAnswer) firstAnswer.focus();
-}
-
-async function generateAIPath(forceBasic, promptOverride = null){
-  if(aiBuilder?.loading || aiBuilder?.clarifyLoading) return;
+async function generateRoadmapFromBrief(){
+  if(!canStartAIRequest(aiBuilder) || aiBuilder.phase !== 'reviewing' || !aiBuilder.brief) return;
   const validationError = validateAIBuilderInputs();
   if(validationError){
     aiBuilder.error = validationError;
     renderAIBuilder();
     return;
   }
-  const prompt = promptOverride || collectAIPrompt();
-  if(!prompt.goal){
-    aiBuilder.error = 'Add a goal before generating a path.';
+  const brief = normalizeGoalBrief(aiBuilder.brief);
+  if(!isMeaningfulAIGoal(brief.goal || brief.summary)){
+    aiBuilder.error = 'Review the interpreted goal before generating your roadmap.';
     renderAIBuilder();
     return;
   }
+  if(!brief.durationDays){
+    aiBuilder.error = 'Set a duration in the brief before generating your roadmap.';
+    renderAIBuilder();
+    return;
+  }
+  const patch = briefToPromptPatch(brief);
+  const prompt = {
+    ...aiBuilder.prompt,
+    ...patch,
+    visibility:aiBuilder.prompt.visibility || 'private',
+    description:aiBuilder.prompt.description || patch.goal || '',
+    excludeTasks:aiBuilder.prompt.excludeTasks || '',
+    resourceLinks:aiBuilder.prompt.resourceLinks || '',
+    clarifiedBrief:brief,
+    briefConfirmed:true,
+  };
+  aiBuilder.prompt = prompt;
+  const requestToken = ++aiBuilder.requestToken;
   aiBuilder.loading = true;
+  aiBuilder.phase = 'generating';
   aiBuilder.error = '';
   aiBuilder.message = '';
   renderAIBuilder();
   try{
-    let payload = null;
-    if(!forceBasic){
-      try{
-        const res = await fetch('/api/generate-path', {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body:JSON.stringify(prompt),
-        });
-        payload = await res.json();
-        if(!res.ok || !payload.ok){
-          const err = new Error(payload.message || 'AI generation failed.');
-          err.code = payload.code || '';
-          throw err;
-        }
-      }catch(e){
-        if(e.code === 'missing_anthropic_config'){
-          payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Anthropic is not configured. A basic starter template was created instead.' };
-        } else if(e.code === 'missing_tool_use'){
-          throw new Error('Claude did not return the required structured path draft. Please regenerate.');
-        } else if(e.code === 'invalid_ai_output'){
-          throw new Error('Claude returned a path draft that could not be validated. Please regenerate.');
-        } else if(e.code === 'invalid_ai_json'){
-          throw new Error('Claude returned invalid JSON. Please regenerate.');
-        } else {
-          throw e;
-        }
-      }
-    } else {
-      payload = { ok:true, draft:localGeneratedDraft(prompt), source:'fallback', message:'Basic starter template created without AI.' };
+    const response = await withTimeout(fetch('/api/generate-path', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body:JSON.stringify(prompt),
+    }), AI_GENERATE_TIMEOUT_MS, 'generate roadmap');
+    const payload = await parseAIResponse(response, 'invalid_ai_output', 'Claude returned a path draft that could not be validated. Please regenerate.');
+    if(!response.ok || !payload.ok){
+      const error = new Error(payload.message || 'AI generation failed.');
+      error.code = payload.code || '';
+      throw error;
     }
+    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
     aiBuilder.draft = normalizeGeneratedDraft(payload.draft, prompt);
-    aiBuilder.draft.source = payload.source || aiBuilder.draft.source;
-    aiBuilder.message = payload.message || (payload.source === 'ai' ? 'AI draft generated. Review before saving.' : 'Basic starter template created. Review before saving.');
+    aiBuilder.draft.source = payload.source || 'anthropic';
+    aiBuilder.message = payload.message || 'AI draft generated. Review before saving.';
     aiBuilder.mode = 'review';
+    aiBuilder.phase = 'complete';
     aiBuilder.dirty = false;
-  }catch(e){
-    aiBuilder.error = e.message || 'Could not generate a draft.';
+  }catch(error){
+    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
+    aiBuilder.phase = 'reviewing';
+    if(error.code === 'operation_timeout') aiBuilder.error = 'Roadmap generation took too long. Your confirmed brief is still saved. Try again.';
+    else if(error.code === 'invalid_ai_json') aiBuilder.error = 'Claude returned invalid JSON. Please regenerate.';
+    else if(error.code === 'invalid_ai_output') aiBuilder.error = 'Claude returned a path draft that could not be validated. Please regenerate.';
+    else if(error.code === 'missing_anthropic_config') aiBuilder.error = 'Build with AI is not configured. Your confirmed brief is still saved; Basic starter remains available from the original form.';
+    else aiBuilder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';
   }finally{
-    aiBuilder.loading = false;
-    renderAIBuilder();
+    if(aiBuilder && requestToken === aiBuilder.requestToken){
+      aiBuilder.loading = false;
+      renderAIBuilder();
+    }
   }
 }
 

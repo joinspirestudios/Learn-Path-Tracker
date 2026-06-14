@@ -14,6 +14,13 @@ export const AI_TASK_MODES = [
 
 export const AI_PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 
+export const AI_BUILD_PHASES = [
+  'input', 'interpreting', 'clarifying', 'reviewing',
+  'generating', 'complete', 'error',
+];
+
+export const MAX_AI_CLARIFICATION_ROUNDS = 2;
+
 function cleanText(value, max = 300){
   return String(value == null ? '' : value).trim().slice(0, max);
 }
@@ -92,7 +99,7 @@ export function aiPromptDefaults(){
     goal:'',
     durationDays:null,
     deadline:'',
-    currentLevel:'beginner',
+    currentLevel:'',
     currentStage:'',
     desiredEndState:'',
     baseline:'',
@@ -100,7 +107,7 @@ export function aiPromptDefaults(){
     constraints:'',
     preferredSchedule:'',
     existingResources:'',
-    intensity:'moderate',
+    intensity:'',
     pathType:'auto',
     resourceLinks:'',
     dailyTime:'',
@@ -113,6 +120,47 @@ export function aiPromptDefaults(){
     assumptions:[],
     progressiveTargets:[],
     clarifiedBrief:null,
+  };
+}
+
+export function isMeaningfulAIGoal(value){
+  const cleaned = cleanText(value, 4000);
+  return cleaned.length >= 3 && /[a-z0-9]{2}/i.test(cleaned);
+}
+
+export function routeInterpretedBrief(brief = {}, clarificationRound = 0){
+  const questions = Array.isArray(brief.clarifyingQuestions)
+    ? brief.clarifyingQuestions.filter(question => cleanText(question, 240))
+    : [];
+  if(brief.readyToGenerate || !questions.length || clarificationRound >= MAX_AI_CLARIFICATION_ROUNDS){
+    return 'reviewing';
+  }
+  return 'clarifying';
+}
+
+export function assumptionsForFinalClarification(brief = {}){
+  const assumptions = Array.isArray(brief.assumptions) ? [...brief.assumptions] : [];
+  const missing = Array.isArray(brief.missingCriticalInfo) ? brief.missingCriticalInfo : [];
+  missing.forEach(item => {
+    const note = `Review needed: ${cleanText(item, 180)}`;
+    if(note !== 'Review needed: ' && !assumptions.includes(note)) assumptions.push(note);
+  });
+  return assumptions.slice(0, 16);
+}
+
+export function canStartAIRequest(state = {}){
+  return !state.loading
+    && !state.clarifyLoading
+    && !['interpreting', 'generating'].includes(state.phase);
+}
+
+export function recoverAIBuilderState(state = {}, error = '', phase = 'error'){
+  return {
+    ...state,
+    phase,
+    error:cleanText(error, 500),
+    loading:false,
+    clarifyLoading:false,
   };
 }
 

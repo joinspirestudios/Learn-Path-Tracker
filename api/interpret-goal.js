@@ -153,7 +153,7 @@ function codedError(message, code, status = 400){
 }
 
 export function normalizeBrief(raw){
-  if(!raw || typeof raw !== 'object') throw codedError('Claude returned a goal brief that could not be validated. Please try again.', 'invalid_goal_brief', 502);
+  if(!raw || typeof raw !== 'object') throw codedError('The AI returned an incomplete goal brief. Please retry.', 'invalid_goal_brief', 502);
   const brief = {
     summary:text(raw.summary).slice(0, 700),
     goal:text(raw.goal).slice(0, 700),
@@ -191,7 +191,11 @@ export function normalizeBrief(raw){
   };
   if(!brief.goal && brief.summary) brief.goal = brief.summary;
   if(!brief.summary && brief.goal) brief.summary = brief.goal;
-  if(!brief.goal) throw codedError('Add more goal detail before clarifying.', 'missing_goal_text', 400);
+  if(!brief.goal) throw codedError('The AI returned an incomplete goal brief. Please retry.', 'invalid_goal_brief', 502);
+  const hasBaselineAssumption = brief.assumptions.some(item => /baseline|starting|beginner|current level|current stage/i.test(item));
+  if(!brief.currentStage && !hasBaselineAssumption && !brief.missingCriticalInfo.includes('current baseline')){
+    brief.missingCriticalInfo.push('current baseline');
+  }
   if(!brief.desiredEndState && !brief.missingCriticalInfo.includes('target outcome')) brief.missingCriticalInfo.push('target outcome');
   if(!brief.durationDays && !brief.missingCriticalInfo.includes('duration')) brief.missingCriticalInfo.push('duration');
   if(brief.missingCriticalInfo.length && !brief.clarifyingQuestions.length){
@@ -210,6 +214,8 @@ function normalizeBody(body = {}){
       question:text(item.question).slice(0, 240),
       answer:text(item.answer).slice(0, 700),
     })).filter(item => item.question || item.answer).slice(0, 8),
+    clarificationRound:cleanNumber(body.clarificationRound, 0, 2) || 0,
+    maxClarificationRounds:cleanNumber(body.maxClarificationRounds, 1, 3) || 2,
   };
 }
 
@@ -217,6 +223,9 @@ function buildPrompt(input){
   return [
     'Use the interpret_goal_brief tool and return no prose or markdown.',
     'Interpret the user goal without assuming it is a fitness challenge, habit challenge, content challenge, or 75-day program.',
+    'Act as the intelligent routing layer before roadmap generation. Decide whether missing information would materially change the plan.',
+    'For vague goals such as "become conversational in French", "get fit", "learn design", or "be more productive", set readyToGenerate false and ask 2-5 focused questions about the baseline, outcome, time, constraints, schedule, deadline, equipment, or resources that actually matter.',
+    'For detailed goals that already include a baseline, measurable outcome, timeframe, available time, schedule, and resources, set readyToGenerate true and do not ask unnecessary questions.',
     'Classify the goal category and path type from the actual request. Recommend a realistic duration and explain the recommendation.',
     'Infer estimated time only when useful. Capture deadlines and preferred schedules.',
     'Propose a small set of coreCommitments that directly advance this specific goal. Never add generic reading, exercise, diet, sleep, posting, or deep-work commitments unless the goal calls for them.',
@@ -227,6 +236,7 @@ function buildPrompt(input){
     'If current stage or target outcome is missing, ask a concise clarifying question or make a conservative labeled assumption.',
     'If duration is absent, recommend one instead of automatically asking, unless the goal is too ambiguous to estimate responsibly.',
     'Set readyToGenerate false only when missing information would materially change the plan. Include no more than five useful questions.',
+    'The input includes clarificationRound and maxClarificationRounds. On the final round, prefer clearly labeled editable assumptions over repeating the same questions.',
     'Do not claim web research, citations, source verification, or inspection of linked resources.',
     'If previousBrief and answers are present, merge the answers into the updated brief.',
     `Input: ${JSON.stringify(input)}`,

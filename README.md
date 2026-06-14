@@ -64,11 +64,20 @@ goals. The dedicated 75-Day Consistency Challenge template remains available
 as an explicit manual template.
 
 Phase 4.4 adds a messy-goal interpreter before generation. Users can paste
-scattered notes and choose **Clarify my goal**. The app calls
-`api/interpret-goal.js` server-side, asks Claude to use the
-`interpret_goal_brief` tool, and shows **Here's what I understood.** The user can
-edit the structured brief, answer clarifying questions, and then generate the
-path from the confirmed brief.
+scattered notes and choose **Build with AI**. The app always calls
+`api/interpret-goal.js` first and asks Claude to use the
+`interpret_goal_brief` tool as the routing layer. Vague goals receive two to
+five focused questions; sufficiently detailed goals move directly to an
+editable brief. Both routes require the user to review the goal, duration,
+assumptions, resources, milestones, schedule, evidence preferences, and Core
+Commitments before choosing **Generate my roadmap**.
+
+Phase 5.1.1 removes the separate **Interpret goal** and **Fast generate**
+choices. The initial builder now has only **Basic starter** and **Build with
+AI**. Basic starter remains entirely local and does not call Anthropic. Build
+with AI prevents duplicate requests, keeps entered data after recoverable
+errors, limits clarification to two rounds, and never sends vague raw input
+directly to full roadmap generation.
 
 Phase 4.5 adds voice memo intake. Users can record a short voice idea in the AI
 Builder, transcribe it with Deepgram through `api/transcribe-voice.js`, edit the

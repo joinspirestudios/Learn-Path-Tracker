@@ -501,8 +501,18 @@ export default async function handler(req, res){
   }
   try{
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    if(body.briefConfirmed !== true || !body.clarifiedBrief || typeof body.clarifiedBrief !== 'object'){
+      return res.status(400).json({
+        ok:false,
+        code:'confirmed_brief_required',
+        message:'Review and confirm the goal brief before generating a roadmap.',
+      });
+    }
     const input = normalizePrompt(body);
     if(!input.goal) return res.status(400).json({ ok:false, code:'missing_goal_text', message:'Goal is required.' });
+    if(!input.durationWasProvided){
+      return res.status(400).json({ ok:false, code:'confirmed_duration_required', message:'Set a duration in the confirmed brief before generating a roadmap.' });
+    }
     let raw;
     try{ raw = await callAnthropic(input); }
     catch(e){

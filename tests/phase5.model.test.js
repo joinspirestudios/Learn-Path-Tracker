@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
-import { aiPromptDefaults, normalizeCoreCommitments } from '../src/ai-builder-model.js';
+import {
+  MAX_AI_CLARIFICATION_ROUNDS, aiPromptDefaults, canStartAIRequest,
+  isMeaningfulAIGoal, normalizeCoreCommitments, recoverAIBuilderState,
+  routeInterpretedBrief,
+} from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
 import { platformToLocalPath, resolveCreatorName } from '../src/platform.js';
 import { TEMPLATES } from '../src/templates.js';
-import { basicStarterDraft, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
+import generatePathHandler, { basicStarterDraft, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
 
 test('generic AI builder defaults are neutral', () => {
   const defaults = aiPromptDefaults();
@@ -138,4 +143,97 @@ test('the dedicated 75-day template remains unchanged and available', () => {
   assert.equal(template.weeks[0].tasks.length, 7);
   assert.equal(template.weeks[0].tasks[0].text, 'Read 10 pages');
   assert.deepEqual(aiPromptDefaults().coreCommitments, []);
+});
+
+test('AI builder renders only Basic starter and Build with AI entry actions', () => {
+  const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  assert.match(source, />Basic starter</);
+  assert.match(source, /id=\"aiBuild\"/);
+  assert.match(source, /: 'Build with AI'/);
+  assert.doesNotMatch(source, />Interpret goal</);
+  assert.doesNotMatch(source, />Fast generate without interpretation</);
+  assert.doesNotMatch(source, />Fast generate from current inputs</);
+});
+
+test('meaningful goal validation rejects blank and accidental input', () => {
+  assert.equal(isMeaningfulAIGoal(''), false);
+  assert.equal(isMeaningfulAIGoal(' x '), false);
+  assert.equal(isMeaningfulAIGoal('I want to learn French'), true);
+});
+
+test('vague interpreted goals enter clarification while detailed goals enter review', () => {
+  const vagueFrench = {
+    readyToGenerate:false,
+    clarifyingQuestions:['What is your current French level?', 'How much time can you practise?'],
+  };
+  const detailedFrench = { readyToGenerate:true, clarifyingQuestions:[] };
+  const vagueFitness = {
+    readyToGenerate:false,
+    clarifyingQuestions:['What is your baseline?', 'What equipment is available?'],
+  };
+  const detailedRunning = { readyToGenerate:true, clarifyingQuestions:[] };
+  assert.equal(routeInterpretedBrief(vagueFrench, 0), 'clarifying');
+  assert.equal(routeInterpretedBrief(detailedFrench, 0), 'reviewing');
+  assert.equal(routeInterpretedBrief(vagueFitness, 0), 'clarifying');
+  assert.equal(routeInterpretedBrief(detailedRunning, 0), 'reviewing');
+  assert.equal(routeInterpretedBrief(vagueFrench, MAX_AI_CLARIFICATION_ROUNDS), 'reviewing');
+});
+
+test('duplicate AI requests are blocked while interpretation or generation is active', () => {
+  assert.equal(canStartAIRequest({ phase:'input', loading:false, clarifyLoading:false }), true);
+  assert.equal(canStartAIRequest({ phase:'interpreting', loading:false, clarifyLoading:true }), false);
+  assert.equal(canStartAIRequest({ phase:'generating', loading:true, clarifyLoading:false }), false);
+});
+
+test('recoverable AI errors preserve form, brief, answers, and commitments', () => {
+  const state = {
+    phase:'interpreting',
+    prompt:{ goal:'Learn French', coreCommitments:[{ title:'Speaking practice' }] },
+    brief:{ goal:'Learn French' },
+    clarifyingAnswers:{ 0:'A1' },
+    loading:false,
+    clarifyLoading:true,
+  };
+  const recovered = recoverAIBuilderState(state, 'Try again.', 'clarifying');
+  assert.equal(recovered.phase, 'clarifying');
+  assert.equal(recovered.prompt, state.prompt);
+  assert.equal(recovered.brief, state.brief);
+  assert.equal(recovered.clarifyingAnswers, state.clarifyingAnswers);
+  assert.equal(recovered.clarifyLoading, false);
+});
+
+test('the canonical Build with AI handler interprets before generation and Basic starter stays local', () => {
+  const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const buildHandler = source.slice(source.indexOf('async function handleBuildWithAI'), source.indexOf('async function requestGoalInterpretation'));
+  const basicHandler = source.slice(source.indexOf('function createBasicDraft'), source.indexOf('async function generateRoadmapFromBrief'));
+  const generationHandler = source.slice(source.indexOf('async function generateRoadmapFromBrief'), source.indexOf('async function saveGeneratedPath'));
+  assert.match(buildHandler, /requestGoalInterpretation\(false\)/);
+  assert.doesNotMatch(buildHandler, /\/api\/generate-path/);
+  assert.match(basicHandler, /localGeneratedDraft\(prompt\)/);
+  assert.doesNotMatch(basicHandler, /fetch\(/);
+  assert.match(generationHandler, /aiBuilder\.phase !== 'reviewing'/);
+  assert.match(generationHandler, /briefConfirmed:true/);
+  assert.match(generationHandler, /\/api\/generate-path/);
+});
+
+test('clarification updates send the previous brief and preserved answers back through interpretation', () => {
+  const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const interpretationHandler = source.slice(source.indexOf('async function requestGoalInterpretation'), source.indexOf('function createBasicDraft'));
+  assert.match(interpretationHandler, /previousBrief:withAnswers \? aiBuilder\.brief : null/);
+  assert.match(interpretationHandler, /answers,/);
+  assert.match(interpretationHandler, /aiBuilder\.clarificationRound \+= 1/);
+  assert.match(interpretationHandler, /MAX_AI_CLARIFICATION_ROUNDS/);
+});
+
+test('generation API rejects requests that did not confirm an interpreted brief', async () => {
+  let statusCode = 200;
+  let payload = null;
+  const response = {
+    setHeader(){},
+    status(code){ statusCode = code; return this; },
+    json(value){ payload = value; return value; },
+  };
+  await generatePathHandler({ method:'POST', body:{ goal:'A vague goal' } }, response);
+  assert.equal(statusCode, 400);
+  assert.equal(payload.code, 'confirmed_brief_required');
 });
