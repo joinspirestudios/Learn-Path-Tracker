@@ -31,10 +31,12 @@ import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloud
 import { cachedAuthLabel } from './auth.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath, resolveCreatorName } from './platform.js';
 import {
-  AI_CADENCE_TYPES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
+  AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
   MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
+  answerValueForQuestion,
   aiBriefDefaults, aiPromptDefaults, briefFromPrompt, confirmBrief, emptyCoreCommitment,
   beginAIRequest, cancelAIRequests, canStartAIRequest, createAIRequestState,
+  cadenceLabel, commitmentSummary, creationStageForPhase,
   finishAIRequest, hasActiveAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
   normalizeCoreCommitments, normalizeBriefAssumptions, normalizeClarifyingQuestions,
   normalizeConfirmedBrief, recoverAIBuilderState, routeInterpretedBrief,
@@ -59,6 +61,7 @@ let evidenceBusy = false;
 let evidenceError = '';
 let aiBuilder = null;
 let voiceDurationTimer = null;
+let aiProcessingTimer = null;
 let discardVoiceOnStop = false;
 let isCreatingPath = false;
 let openingPathId = null;
@@ -743,60 +746,115 @@ function openAIPathBuilder(){
     return;
   }
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
+  overlay.className = 'modal-overlay ai-builder-overlay';
   document.body.appendChild(overlay);
+  const triggerElement = document.activeElement;
   aiBuilder = {
     overlay,
-    mode:'prompt',
-    phase:'input',
-    prompt: aiBuilder?.prompt || aiPromptDefaults(),
-    draft: aiBuilder?.draft || null,
+    mode:'guided',
+    phase:'goal',
+    prompt:aiPromptDefaults(),
+    draft:null,
     loading:false,
     clarifyLoading:false,
     error:'',
     message:'',
-    brief: aiBuilder?.brief || null,
-    clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
+    brief:null,
+    clarifyingAnswers:{},
+    clarificationIndex:0,
     clarificationRound:0,
     requests:createAIRequestState(),
-    voice: makeVoiceState(aiBuilder?.voice || {}),
+    voice:makeVoiceState(),
     saving:false,
     dirty:false,
+    voiceOpen:false,
+    advancedOpen:false,
+    fullRoadmap:false,
+    briefEditSection:'',
+    summaryOpen:false,
+    saveOptions:{ visibility:'private' },
+    savedPathId:null,
+    savedPath:null,
+    staleFields:[],
+    triggerElement,
   };
-  overlay.addEventListener('click', e => { if(e.target === overlay && !aiBuilder?.saving) closeAIBuilder(); });
+  overlay.addEventListener('click', e => { if(e.target === overlay) requestCloseAIBuilder(); });
+  document.addEventListener('keydown', handleAIBuilderKeydown);
   renderAIBuilder();
 }
 
 function closeAIBuilder(){
   const builder = aiBuilder;
   abortAIRequest(null, builder);
+  stopAIProcessingTicker();
   cleanupVoiceRecording();
+  document.removeEventListener('keydown', handleAIBuilderKeydown);
   if(builder?.overlay) builder.overlay.remove();
   aiBuilder = null;
+  if(builder?.triggerElement?.focus) builder.triggerElement.focus();
+}
+
+function builderHasMeaningfulWork(builder = aiBuilder){
+  return !!(builder?.prompt?.goal?.trim() || builder?.voice?.transcript?.trim() || builder?.brief || builder?.draft);
+}
+
+function requestCloseAIBuilder(){
+  if(!aiBuilder || aiBuilder.saving || hasActiveAIRequest(aiBuilder.requests)) return;
+  if(aiBuilder.phase !== 'ready' && builderHasMeaningfulWork(aiBuilder) && !confirm('Close path creation and discard this unsaved work?')) return;
+  closeAIBuilder();
+}
+
+function handleAIBuilderKeydown(event){
+  if(!aiBuilder?.overlay) return;
+  if(event.key === 'Escape'){
+    event.preventDefault();
+    requestCloseAIBuilder();
+    return;
+  }
+  if(event.key !== 'Tab') return;
+  const focusable = [...aiBuilder.overlay.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter(element => !element.hidden && element.offsetParent !== null);
+  if(!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if(event.shiftKey && document.activeElement === first){ event.preventDefault(); last.focus(); }
+  else if(!event.shiftKey && document.activeElement === last){ event.preventDefault(); first.focus(); }
+}
+
+function focusAIBuilderStep(){
+  requestAnimationFrame(() => {
+    const target = aiBuilder?.overlay?.querySelector('[data-ai-autofocus], #aiStepHeading');
+    if(target?.focus) target.focus({ preventScroll:true });
+  });
 }
 
 function collectAIPrompt(){
+  const value = (id, fallback = '') => {
+    const field = $(id);
+    return field ? String(field.value || '').trim() : fallback;
+  };
   aiBuilder.prompt = {
-    goal:($('aiGoal')?.value || '').trim(),
-    durationDays:$('aiDuration')?.value ? clampDay($('aiDuration').value, 30, 365) : null,
-    deadline:($('aiDeadline')?.value || '').trim(),
-    currentLevel:$('aiLevel')?.value || '',
-    currentStage:($('aiCurrentStage')?.value || '').trim(),
-    desiredEndState:($('aiDesiredEndState')?.value || '').trim(),
-    baseline:($('aiBaseline')?.value || '').trim(),
-    targetOutcome:($('aiTargetOutcome')?.value || '').trim(),
-    constraints:($('aiConstraints')?.value || '').trim(),
-    preferredSchedule:($('aiPreferredSchedule')?.value || '').trim(),
-    existingResources:($('aiExistingResources')?.value || '').trim(),
-    intensity:$('aiIntensity')?.value || '',
-    pathType:$('aiType')?.value || 'auto',
-    resourceLinks:($('aiResources')?.value || '').trim(),
-    dailyTime:($('aiDailyTime')?.value || '').trim(),
-    evidenceStyle:($('aiEvidenceStyle')?.value || '').trim(),
-    includeTasks:($('aiInclude')?.value || '').trim(),
-    excludeTasks:($('aiExclude')?.value || '').trim(),
-    visibility:$('aiVisibility')?.value || 'private',
-    description:($('aiDescription')?.value || '').trim(),
+    ...aiBuilder.prompt,
+    goal:value('aiGoal', aiBuilder.prompt.goal || ''),
+    durationDays:$('aiDuration') ? ($('aiDuration').value ? clampDay($('aiDuration').value, 30, 365) : null) : aiBuilder.prompt.durationDays,
+    deadline:value('aiDeadline', aiBuilder.prompt.deadline || ''),
+    currentLevel:value('aiLevel', aiBuilder.prompt.currentLevel || ''),
+    currentStage:value('aiCurrentStage', aiBuilder.prompt.currentStage || ''),
+    desiredEndState:value('aiDesiredEndState', aiBuilder.prompt.desiredEndState || ''),
+    baseline:value('aiBaseline', aiBuilder.prompt.baseline || ''),
+    targetOutcome:value('aiTargetOutcome', aiBuilder.prompt.targetOutcome || ''),
+    constraints:value('aiConstraints', aiBuilder.prompt.constraints || ''),
+    preferredSchedule:value('aiPreferredSchedule', aiBuilder.prompt.preferredSchedule || ''),
+    existingResources:value('aiExistingResources', aiBuilder.prompt.existingResources || ''),
+    intensity:value('aiIntensity', aiBuilder.prompt.intensity || ''),
+    pathType:value('aiType', aiBuilder.prompt.pathType || 'auto') || 'auto',
+    resourceLinks:value('aiResources', aiBuilder.prompt.resourceLinks || ''),
+    dailyTime:value('aiDailyTime', aiBuilder.prompt.dailyTime || ''),
+    evidenceStyle:value('aiEvidenceStyle', aiBuilder.prompt.evidenceStyle || ''),
+    includeTasks:value('aiInclude', aiBuilder.prompt.includeTasks || ''),
+    excludeTasks:value('aiExclude', aiBuilder.prompt.excludeTasks || ''),
+    visibility:value('aiVisibility', aiBuilder.saveOptions?.visibility || aiBuilder.prompt.visibility || 'private') || 'private',
+    description:value('aiDescription', aiBuilder.prompt.description || ''),
     coreCommitments:normalizeCoreCommitments(aiBuilder.prompt.coreCommitments),
     assumptions:aiBuilder.brief?.assumptions || [],
     progressiveTargets:aiBuilder.brief?.progressiveTargets || [],
@@ -1095,7 +1153,7 @@ function commitmentRowHTML(commitment, scope, index){
     + '<div class="ai-review-head"><b>Commitment ' + (index + 1) + '</b><button id="' + prefix + '-remove" name="' + prefix + '-remove" type="button" class="icon-btn danger" data-commitment-action="remove" data-scope="' + scope + '" data-i="' + index + '" aria-label="Remove commitment ' + (index + 1) + '">x</button></div>'
     + '<div class="ai-grid">'
     + '<div class="field"><label for="' + prefix + '-title">Title</label><input id="' + prefix + '-title" name="' + prefix + '-title" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="title" value="' + esc(c.title) + '"/></div>'
-    + '<div class="field"><label for="' + prefix + '-cadence">Cadence</label><select id="' + prefix + '-cadence" name="' + prefix + '-cadence" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="cadenceType">' + selectOptions(AI_CADENCE_TYPES, c.cadence.type) + '</select></div>'
+    + '<div class="field"><label for="' + prefix + '-cadence">How often?</label><select id="' + prefix + '-cadence" name="' + prefix + '-cadence" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="cadenceType">' + naturalCadenceOptions(c.cadence.type) + '</select></div>'
     + cadenceFieldsHTML(c, scope, index)
     + '<div class="field"><label for="' + prefix + '-minutes">Estimated minutes</label><input id="' + prefix + '-minutes" name="' + prefix + '-minutes" type="number" min="0" max="1440" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="estimatedMinutes" value="' + esc(c.estimatedMinutes == null ? '' : c.estimatedMinutes) + '"/></div>'
     + '<div class="field"><label for="' + prefix + '-evidence">Evidence type</label><input id="' + prefix + '-evidence" name="' + prefix + '-evidence" class="ai-commitment-field" data-scope="' + scope + '" data-i="' + index + '" data-key="evidenceType" value="' + esc(c.evidenceType) + '" placeholder="reflection, URL, run log..."/></div>'
@@ -1113,65 +1171,215 @@ function commitmentsHTML(commitments, scope){
     + '<button id="ai-' + scope + '-add-commitment" name="ai-' + scope + '-add-commitment" class="add-link" type="button" data-commitment-action="add" data-scope="' + scope + '">+ Add commitment</button></div>';
 }
 
-function aiInputFieldsHTML(){
-  const p = aiBuilder.prompt;
-  return '<div class="field"><label for="aiGoal">Goal</label><textarea id="aiGoal" name="aiGoal" placeholder="I want to learn video editing in 90 days">' + esc(p.goal) + '</textarea></div>'
-    + voiceMemoHTML()
-    + '<div class="ai-grid">'
-    + '<div class="field"><label for="aiDuration">Duration in days</label><input type="number" id="aiDuration" name="aiDuration" min="1" max="365" value="' + esc(p.durationDays == null ? '' : p.durationDays) + '" placeholder="Let AI recommend"/></div>'
-    + '<div class="field"><label for="aiDeadline">Optional deadline</label><input type="date" id="aiDeadline" name="aiDeadline" value="' + esc(p.deadline || '') + '"/></div>'
-    + '<div class="field"><label>Current level</label><select id="aiLevel"><option value="">Let AI determine</option>' + selectOptions(['beginner', 'intermediate', 'advanced'], p.currentLevel) + '</select></div>'
-    + '<div class="field"><label>Intensity</label><select id="aiIntensity"><option value="">Let AI determine</option>' + selectOptions(['light', 'moderate', 'intense'], p.intensity) + '</select></div>'
-    + '<div class="field"><label for="aiType">Path type</label><select id="aiType" name="aiType">' + selectOptions(AI_PATH_TYPES, p.pathType) + '</select></div>'
-    + '</div>'
-    + '<div class="field"><label>Current ability / stage</label><textarea id="aiCurrentStage" placeholder="Where are you starting from?">' + esc(p.currentStage) + '</textarea></div>'
-    + '<div class="field"><label>Desired end state</label><textarea id="aiDesiredEndState" placeholder="What should you be able to do by the end?">' + esc(p.desiredEndState) + '</textarea></div>'
-    + '<div class="ai-grid">'
-    + '<div class="field"><label>Current baseline</label><input type="text" id="aiBaseline" value="' + esc(p.baseline) + '" placeholder="Run 1km, A1 French, beginner Blender..."/></div>'
-    + '<div class="field"><label>Target outcome</label><input type="text" id="aiTargetOutcome" value="' + esc(p.targetOutcome) + '" placeholder="Run 15km, 10-minute conversation..."/></div>'
-    + '</div>'
-    + '<div class="field"><label>Constraints / limitations</label><textarea id="aiConstraints" placeholder="Time, equipment, injury limits, days off, budget...">' + esc(p.constraints) + '</textarea></div>'
-    + '<div class="field"><label for="aiPreferredSchedule">Preferred schedule</label><textarea id="aiPreferredSchedule" name="aiPreferredSchedule" placeholder="Weekdays only, weekends free, Tuesday and Thursday evenings...">' + esc(p.preferredSchedule || '') + '</textarea></div>'
-    + '<div class="ai-nn-wrap"><div class="ai-review-head"><b>Core commitments</b></div><p class="hint">The AI will suggest the essential commitments after understanding your goal. You will be able to edit them before generating your path.</p>' + commitmentsHTML(p.coreCommitments, 'prompt') + '</div>'
-    + '<div class="ai-grid">'
-    + '<div class="field"><label>Daily time available</label><input type="text" id="aiDailyTime" value="' + esc(p.dailyTime) + '" placeholder="30 minutes, 2 hours..."/></div>'
-    + '<div class="field"><label>Default visibility</label><select id="aiVisibility">' + selectOptions(['private', 'unlisted', 'public'], p.visibility) + '</select></div>'
-    + '</div>'
-    + '<div class="field"><label>Preferred proof/evidence style</label><input type="text" id="aiEvidenceStyle" value="' + esc(p.evidenceStyle) + '" placeholder="URL posts, screenshots, photos, final files..."/></div>'
-    + '<div class="field"><label>Existing resource links</label><textarea id="aiResources" placeholder="Paste links, one or many">' + esc(p.resourceLinks) + '</textarea></div>'
-    + '<div class="field"><label>Resources or courses you want to follow</label><textarea id="aiExistingResources" placeholder="Names, links, books, courses, channels...">' + esc(p.existingResources) + '</textarea></div>'
-    + '<div class="field"><label>Tasks to include</label><textarea id="aiInclude" placeholder="Tasks you already know you want">' + esc(p.includeTasks) + '</textarea></div>'
-    + '<div class="field"><label>Tasks to avoid</label><textarea id="aiExclude" placeholder="Anything you do not want included">' + esc(p.excludeTasks) + '</textarea></div>'
-    + '<div class="field"><label>Path description</label><textarea id="aiDescription" placeholder="Optional public-facing description">' + esc(p.description) + '</textarea></div>';
+function naturalCadenceOptions(selected){
+  const labels = {
+    daily:'Every day', weekdays:'Weekdays', selected_days:'Specific days',
+    times_per_week:'A number of times each week', weekly:'Once each week',
+    interval:'Every few days', once:'One time', sequential:'In sequence',
+  };
+  return AI_CADENCE_TYPES.map(value => '<option value="' + esc(value) + '" ' + (value === selected ? 'selected' : '') + '>' + esc(labels[value]) + '</option>').join('');
+}
+
+const AI_GOAL_EXAMPLES = [
+  'Speak French confidently', 'Run my first 15 km', 'Build a design portfolio',
+  'Develop a consistent prayer habit', 'Learn Blender', 'Publish one video each week',
+];
+
+function wizardProgressHTML(){
+  const current = creationStageForPhase(aiBuilder.phase);
+  return '<ol class="ai-stage-progress" aria-label="Path creation progress">' + AI_GUIDED_STAGES.map(stage => {
+    const currentIndex = AI_GUIDED_STAGES.indexOf(current);
+    const stageIndex = AI_GUIDED_STAGES.indexOf(stage);
+    const state = stage === current ? 'current' : (stageIndex < currentIndex ? 'done' : 'upcoming');
+    return '<li class="' + state + '" ' + (stage === current ? 'aria-current="step"' : '') + '><span></span>' + esc(stage) + '</li>';
+  }).join('') + '</ol>';
+}
+
+function guidedSummaryHTML(){
+  const brief = aiBuilder.brief ? normalizeGoalBrief(aiBuilder.brief) : null;
+  const commitments = brief?.coreCommitments || aiBuilder.draft?.coreCommitments || [];
+  if(!brief && !aiBuilder.draft) return '';
+  return '<aside class="ai-wizard-summary" aria-label="Path brief so far">'
+    + '<div class="ai-summary-head"><b>Path brief so far</b><button class="linklike" id="aiToggleSummary" type="button">' + (aiBuilder.summaryOpen ? 'Hide' : 'View') + '</button></div>'
+    + '<div class="ai-summary-body ' + (aiBuilder.summaryOpen ? 'open' : '') + '">'
+    + '<span class="ai-summary-label">Goal</span><p>' + esc(brief?.goal || aiBuilder.draft?.goal || aiBuilder.prompt.goal) + '</p>'
+    + (brief?.durationDays || aiBuilder.draft?.durationDays ? '<span class="ai-summary-label">Duration</span><p>' + esc(brief?.durationDays || aiBuilder.draft.durationDays) + ' days</p>' : '')
+    + (commitments.length ? '<span class="ai-summary-label">Core Commitments</span><ul>' + commitments.slice(0, 4).map((item, index) => '<li>' + esc(commitmentSummary(item, index).title) + '</li>').join('') + '</ul>' : '')
+    + '</div></aside>';
+}
+
+function guidedShellHTML(content, actions = ''){
+  const summary = guidedSummaryHTML();
+  return '<div class="modal-box ai-modal guided-builder" role="dialog" aria-modal="true" aria-labelledby="aiStepHeading">'
+    + '<div class="modal-head ai-wizard-head"><div><span class="ai-builder-kicker">Create a path</span>' + wizardProgressHTML() + '</div><button class="modal-x" type="button" aria-label="Close path creation">x</button></div>'
+    + '<div class="modal-body ai-wizard-body"><div class="ai-wizard-layout"><main class="ai-wizard-main">'
+    + (aiBuilder.message ? '<div class="ai-note" role="status">' + esc(aiBuilder.message) + '</div>' : '')
+    + (aiBuilder.error ? '<div class="form-error" role="alert">' + esc(aiBuilder.error) + '</div>' : '')
+    + content + '</main>' + summary + '</div></div>'
+    + (actions ? '<div class="ai-wizard-actions">' + actions + '</div>' : '') + '</div>';
+}
+
+function goalStepHTML(){
+  const busy = hasActiveAIRequest(aiBuilder.requests);
+  const content = '<section class="ai-step ai-goal-step"><h2 id="aiStepHeading" tabindex="-1">What do you want to achieve?</h2>'
+    + '<p class="ai-step-copy">Start in your own words. The next questions will focus only on details that change the plan.</p>'
+    + '<div class="field ai-goal-field"><label for="aiGoal">Your goal</label><textarea id="aiGoal" name="aiGoal" data-ai-autofocus placeholder="Describe the change, skill, habit or project you want to complete.">' + esc(aiBuilder.prompt.goal) + '</textarea></div>'
+    + '<div class="ai-example-list" aria-label="Example goals">' + AI_GOAL_EXAMPLES.map(example => '<button class="ai-example" type="button" data-goal-example="' + esc(example) + '">' + esc(example) + '</button>').join('') + '</div>'
+    + '<button class="btn ai-voice-toggle" id="aiToggleVoice" type="button">' + (aiBuilder.voiceOpen ? 'Hide voice input' : 'Use voice input') + '</button>'
+    + (aiBuilder.voiceOpen ? voiceMemoHTML() : '') + '</section>';
+  const actions = '<button class="btn" id="aiBasic" type="button" ' + (busy ? 'disabled' : '') + '>Basic starter</button>'
+    + '<button class="btn gold" id="aiBuild" type="button" ' + (busy ? 'disabled' : '') + '>Build with AI</button>';
+  return guidedShellHTML(content, actions);
+}
+
+function processingStepHTML(kind){
+  const messages = kind === 'generating'
+    ? ['Designing your progression...', 'Building your Core Commitments...', 'Structuring your milestones...', 'Preparing your first week...', 'Finalising your roadmap...']
+    : ['Understanding your goal...', 'Identifying what matters most...', 'Checking whether anything important is missing...', 'Preparing your recommendations...'];
+  const index = Math.min(messages.length - 1, Number(aiBuilder.processingMessageIndex || 0));
+  const heading = kind === 'generating' ? 'Building your roadmap' : 'Understanding your goal';
+  const content = '<section class="ai-step ai-processing" role="status" aria-live="polite"><div class="ai-processing-mark" aria-hidden="true"><span></span><span></span><span></span></div>'
+    + '<h2 id="aiStepHeading" tabindex="-1">' + heading + '</h2><p id="aiProcessingMessage">' + esc(messages[index]) + '</p><p class="hint">Your information stays here if the request needs to be retried.</p></section>';
+  return guidedShellHTML(content, '<button class="btn" id="aiCancel" type="button">Cancel request</button>');
+}
+
+function questionControlHTML(question){
+  const saved = aiBuilder.clarifyingAnswers[question.id] || {};
+  const selected = new Set(Array.isArray(saved.selected) ? saved.selected : (saved.selected ? [saved.selected] : []));
+  const type = question.type;
+  if(['single_select', 'multi_select', 'yes_no', 'days_of_week'].includes(type)){
+    let options = question.options;
+    if(type === 'yes_no' && !options.length) options = [{id:'yes',label:'Yes',value:'Yes'},{id:'no',label:'No',value:'No'}];
+    if(type === 'days_of_week' && !options.length) options = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day => ({id:day.toLowerCase(),label:day,value:day}));
+    const multiple = ['multi_select', 'days_of_week'].includes(type);
+    return '<fieldset class="ai-option-grid"><legend class="sr-only">' + esc(question.prompt) + '</legend>'
+      + options.map(option => '<label class="ai-option-card"><input type="' + (multiple ? 'checkbox' : 'radio') + '" name="aiQuestionChoice" value="' + esc(option.id) + '" data-question-choice ' + (selected.has(option.id) ? 'checked' : '') + '/><span><b>' + esc(option.label) + '</b></span></label>').join('')
+      + (question.allowCustomAnswer ? '<label class="ai-option-card custom"><input type="' + (multiple ? 'checkbox' : 'radio') + '" name="aiQuestionChoice" value="__custom" data-question-choice ' + (saved.custom ? 'checked' : '') + '/><span><b>Write my own answer</b></span></label>' : '')
+      + '</fieldset>'
+      + (question.allowCustomAnswer ? '<div class="field ai-custom-answer"><label for="aiQuestionCustom">Custom answer</label><textarea id="aiQuestionCustom" placeholder="Write the detail that best fits you.">' + esc(saved.custom || '') + '</textarea></div>' : '');
+  }
+  if(type === 'resource'){
+    return '<div class="ai-resource-question"><div class="field"><label for="aiQuestionResourceTitle">Resource title</label><input id="aiQuestionResourceTitle" value="' + esc(saved.title || '') + '" placeholder="Course, book or plan"/></div>'
+      + '<div class="field"><label for="aiQuestionResourceUrl">Resource URL</label><input id="aiQuestionResourceUrl" type="url" value="' + esc(saved.url || '') + '" placeholder="https://..."/></div>'
+      + '<div class="field"><label for="aiQuestionResourceNote">Optional note</label><textarea id="aiQuestionResourceNote">' + esc(saved.note || '') + '</textarea></div></div>';
+  }
+  const inputType = type === 'date' ? 'date' : (['number', 'duration'].includes(type) ? 'number' : 'text');
+  const tag = type === 'long_text' ? 'textarea' : 'input';
+  const attrs = tag === 'input' ? ' type="' + inputType + '" value="' + esc(saved.value || '') + '"' : '';
+  return '<div class="field"><label for="aiQuestionAnswer">Your answer</label><' + tag + ' id="aiQuestionAnswer"' + attrs + ' placeholder="' + (type === 'time_availability' ? 'For example, 30 minutes on weekdays' : 'Your answer') + '">' + (tag === 'textarea' ? esc(saved.value || '') : '') + '</' + tag + '></div>';
+}
+
+function clarificationStepHTML(){
+  const questions = normalizeClarifyingQuestions(aiBuilder.brief?.clarifyingQuestions || []);
+  const index = Math.min(aiBuilder.clarificationIndex || 0, Math.max(0, questions.length - 1));
+  const question = questions[index];
+  if(!question) return rhythmStepHTML();
+  const content = '<section class="ai-step ai-question-step"><div class="ai-question-count">Question ' + (index + 1) + ' of ' + questions.length + '</div>'
+    + '<h2 id="aiStepHeading" tabindex="-1">' + esc(question.prompt) + '</h2>'
+    + (question.supportingText || question.reason ? '<p class="ai-step-copy">' + esc(question.supportingText || question.reason) + '</p>' : '')
+    + questionControlHTML(question) + '</section>';
+  const actions = '<button class="btn" id="aiQuestionBack" type="button">Back</button><button class="btn gold" id="aiQuestionContinue" type="button">' + (index === questions.length - 1 ? 'Continue' : 'Next question') + '</button>';
+  return guidedShellHTML(content, actions);
+}
+
+function rhythmAdvancedHTML(brief){
+  return '<div class="ai-advanced-panel" id="aiAdvancedPanel"><div class="ai-grid">'
+    + '<div class="field"><label for="aiDuration">How many days?</label><input id="aiDuration" type="number" min="1" max="365" value="' + esc(brief.durationDays || '') + '"/></div>'
+    + '<div class="field"><label for="aiDailyTime">How much time is available?</label><input id="aiDailyTime" value="' + esc(brief.dailyTimeAvailable || '') + '" placeholder="30 minutes on weekdays"/></div></div>'
+    + '<div class="field"><label for="aiEvidenceStyle">How will you track progress?</label><input id="aiEvidenceStyle" value="' + esc(brief.evidencePreference || '') + '" placeholder="Reflection, URL, photo or activity log"/></div>'
+    + '<div class="field"><label for="aiConstraints">What should the plan work around?</label><textarea id="aiConstraints">' + esc(joinLines(brief.constraints)) + '</textarea></div>'
+    + '<div class="field"><label for="aiExistingResources">Courses, books or resources already in use</label><textarea id="aiExistingResources">' + esc(joinLines(brief.resourcesMentioned)) + '</textarea></div>'
+    + '<div class="ai-review-head"><b>Core Commitments</b></div>' + commitmentsHTML(brief.coreCommitments, 'brief')
+    + assumptionsHTML(brief.assumptions) + '</div>';
+}
+
+function rhythmStepHTML(){
+  const brief = normalizeGoalBrief(aiBuilder.brief || briefFromPrompt(aiBuilder.prompt));
+  const commitments = brief.coreCommitments || [];
+  const content = '<section class="ai-step"><h2 id="aiStepHeading" tabindex="-1">Here is the rhythm that gives you the best chance of succeeding</h2>'
+    + '<p class="ai-step-copy">This is a recommendation, not a lock. Adjust it until it feels realistic.</p>'
+    + '<div class="ai-rhythm-stats"><div><span>Recommended duration</span><b>' + esc(brief.durationDays || 30) + ' days</b></div><div><span>Weekly commitment</span><b>' + esc(brief.estimatedWeeklyHours == null ? (brief.dailyTimeAvailable || 'Flexible') : (brief.estimatedWeeklyHours + ' hours')) + '</b></div><div><span>Progress evidence</span><b>' + esc(brief.evidencePreference || 'Simple reflection or activity log') + '</b></div></div>'
+    + '<div class="ai-commitment-cards">' + (commitments.length ? commitments.map((item, index) => { const summary = commitmentSummary(item, index); return '<article><b>' + esc(summary.title) + '</b><span>' + esc(summary.rhythm || 'Flexible schedule') + '</span><small>' + (summary.required ? 'Core commitment' : 'Optional') + '</small></article>'; }).join('') : '<div class="ai-note">No Core Commitments were suggested yet. Add them under Adjust schedule.</div>') + '</div>'
+    + (brief.assumptions.length ? '<div class="ai-visible-assumptions"><b>Assumptions to review</b><ul>' + brief.assumptions.map(item => '<li>' + esc(item.text) + '</li>').join('') + '</ul></div>' : '')
+    + '<button class="btn" id="aiAdvancedToggle" type="button" aria-expanded="' + (aiBuilder.advancedOpen ? 'true' : 'false') + '">' + (aiBuilder.advancedOpen ? 'Hide adjustments' : 'Adjust schedule') + '</button>'
+    + (aiBuilder.advancedOpen ? rhythmAdvancedHTML(brief) : '') + '</section>';
+  const actions = '<button class="btn" id="aiRhythmBack" type="button">Back</button><button class="btn gold" id="aiRhythmAccept" type="button">Looks right</button>';
+  return guidedShellHTML(content, actions);
+}
+
+function briefItemHTML(title, value, key){
+  const display = Array.isArray(value) ? value.filter(Boolean).join(', ') : value;
+  return '<article class="ai-brief-item"><div><span>' + esc(title) + '</span><p>' + esc(display || 'Not specified') + '</p></div><button class="linklike" type="button" data-brief-edit="' + esc(key) + '">Edit</button></article>';
+}
+
+function conciseBriefHTML(){
+  const brief = normalizeGoalBrief(aiBuilder.brief);
+  const content = '<section class="ai-step"><h2 id="aiStepHeading" tabindex="-1">Review your path brief</h2><p class="ai-step-copy">Claude will build from this confirmed brief, not from a vague prompt.</p>'
+    + '<div class="ai-brief-list">'
+    + briefItemHTML('Goal', brief.goal, 'goal') + briefItemHTML('Desired outcome', brief.desiredEndState, 'outcome')
+    + briefItemHTML('Starting point', brief.currentStage, 'starting') + briefItemHTML('Duration', brief.durationDays ? brief.durationDays + ' days' : '', 'duration')
+    + briefItemHTML('Weekly time', brief.estimatedWeeklyHours == null ? brief.dailyTimeAvailable : brief.estimatedWeeklyHours + ' hours', 'time')
+    + briefItemHTML('Core Commitments', brief.coreCommitments.map(item => item.title), 'commitments')
+    + briefItemHTML('Milestones', brief.milestones, 'milestones') + briefItemHTML('Constraints', brief.constraints, 'constraints')
+    + briefItemHTML('Resources', brief.resourcesMentioned, 'resources') + briefItemHTML('Evidence approach', brief.evidencePreference, 'evidence')
+    + briefItemHTML('Visible assumptions', brief.assumptions.map(item => item.text), 'assumptions') + '</div></section>';
+  return guidedShellHTML(content, '<button class="btn" id="aiBriefBack" type="button">Back</button><button class="btn gold" id="aiGenerateRoadmap" type="button">Generate my roadmap</button>');
+}
+
+function visibilityOptionsHTML(selected){
+  const options = [['private','Only me'],['unlisted','Anyone with access'],['public','Public']];
+  return '<fieldset class="ai-visibility"><legend>Who should be able to see this path?</legend>' + options.map(([value, label]) => '<label><input type="radio" name="aiVisibilityChoice" value="' + value + '" ' + (selected === value ? 'checked' : '') + '/><span>' + label + '</span></label>').join('') + '</fieldset>';
+}
+
+function previewStepHTML(){
+  const draft = aiBuilder.draft;
+  const brief = normalizeGoalBrief(aiBuilder.brief || draft.confirmedBrief || {});
+  const firstTasks = draft.tasks.filter(task => Number(task.startDay || task.unlockDay || 1) <= 7).slice(0, 6);
+  const milestones = brief.milestones.length ? brief.milestones.slice(0, 4) : draft.sections.slice(0, 4).map(section => section.title);
+  const content = '<section class="ai-step ai-preview-step"><h2 id="aiStepHeading" tabindex="-1">Your path is taking shape</h2><p class="ai-step-copy">Review the structure at a glance. The full editor remains available when you want it.</p>'
+    + '<div class="ai-preview-hero"><span>' + esc(draft.durationDays) + ' days</span><h3>' + esc(draft.title) + '</h3><p>' + esc(draft.goal || draft.description) + '</p></div>'
+    + '<div class="ai-preview-grid"><article><h4>Core Commitments</h4><ul>' + (draft.coreCommitments || []).slice(0, 5).map((item, index) => '<li><b>' + esc(item.title) + '</b><span>' + esc(cadenceLabel(item.cadence)) + '</span></li>').join('') + '</ul></article>'
+    + '<article><h4>Major milestones</h4><ol>' + milestones.map(item => '<li>' + esc(item) + '</li>').join('') + '</ol></article>'
+    + '<article><h4>First week</h4><ul>' + firstTasks.map(task => '<li>' + esc(task.title) + '</li>').join('') + '</ul></article>'
+    + '<article><h4>Weekly effort and evidence</h4><p>' + esc(brief.estimatedWeeklyHours == null ? (brief.dailyTimeAvailable || 'A flexible weekly rhythm') : (brief.estimatedWeeklyHours + ' hours each week')) + '</p><p>' + esc(brief.evidencePreference || 'Reflection or activity logs where useful') + '</p></article></div>'
+    + visibilityOptionsHTML(aiBuilder.saveOptions.visibility)
+    + '<button class="btn" id="aiViewFullRoadmap" type="button">View full roadmap</button></section>';
+  return guidedShellHTML(content, '<button class="btn" id="aiPreviewBack" type="button">Back to brief</button><button class="btn gold" id="aiSave" type="button">Create my path</button>');
+}
+
+function savingStepHTML(){
+  return guidedShellHTML('<section class="ai-step ai-processing" role="status" aria-live="polite"><div class="ai-processing-mark" aria-hidden="true"><span></span><span></span><span></span></div><h2 id="aiStepHeading" tabindex="-1">Saving your path...</h2><p>Your roadmap is complete. We are writing the path and its tasks now.</p></section>');
+}
+
+function readyStepHTML(){
+  const path = aiBuilder.savedPath || aiBuilder.draft;
+  const firstTasks = (path?.weeks ? getTasksForDay(path, 1) : (path?.tasks || []).filter(task => Number(task.startDay || task.unlockDay || 1) === 1)).slice(0, 5);
+  const commitments = path?.coreCommitments || [];
+  const nextMilestone = path?.weeks?.[1]?.title || aiBuilder.brief?.milestones?.[0] || path?.sections?.[1]?.title || 'Keep building the routine';
+  const content = '<section class="ai-step ai-ready-step"><div class="ai-ready-mark" aria-hidden="true">&#10003;</div><h2 id="aiStepHeading" tabindex="-1">Your path is ready</h2><p class="ai-step-copy">' + esc(path?.title || 'Your new path') + ' is saved and ready to begin.</p>'
+    + '<div class="ai-ready-grid"><article><span>Duration</span><b>' + esc(path?.durationDays || 30) + ' days</b></article><article><span>Visibility</span><b>' + esc(aiBuilder.saveOptions.visibility === 'private' ? 'Only me' : (aiBuilder.saveOptions.visibility === 'unlisted' ? 'Anyone with access' : 'Public')) + '</b></article></div>'
+    + '<div class="ai-ready-section"><h3>Day 1</h3><ul>' + firstTasks.map(task => '<li>' + esc(task.text || task.title) + '</li>').join('') + '</ul></div>'
+    + '<div class="ai-ready-section"><h3>Next milestone</h3><p>' + esc(nextMilestone) + '</p></div>'
+    + (commitments.length ? '<div class="ai-ready-section"><h3>Core Commitments</h3><ul>' + commitments.slice(0, 4).map(item => '<li>' + esc(item.title) + '</li>').join('') + '</ul></div>' : '') + '</section>';
+  return guidedShellHTML(content, '<button class="btn" id="aiViewSavedPath" type="button">View full path</button><button class="btn gold" id="aiStartDayOne" type="button">Start Day 1</button>');
+}
+
+function errorStepHTML(){
+  const content = '<section class="ai-step"><h2 id="aiStepHeading" tabindex="-1">Your work is still here</h2><p class="ai-step-copy">We could not finish understanding your goal. You can retry or continue with a local Basic starter.</p><div class="ai-goal-recap">' + esc(aiBuilder.prompt.goal) + '</div></section>';
+  return guidedShellHTML(content, '<button class="btn" id="aiBasic" type="button">Use Basic starter</button><button class="btn gold" id="aiRetryInterpret" type="button">Try again</button>');
 }
 
 function aiPromptHTML(){
-  const phase = aiBuilder.phase || 'input';
-  const showBrief = !!aiBuilder.brief && ['interpreting', 'clarifying', 'reviewing', 'generating'].includes(phase);
-  const busy = hasActiveAIRequest(aiBuilder.requests) || aiBuilder.loading;
-  let actions = '<button class="btn" id="aiCancel" type="button">Cancel</button>';
-  if(showBrief){
-    actions += '<button class="btn" id="aiBackToInput" type="button" ' + (busy ? 'disabled' : '') + '>Back to original form</button>';
-    if(phase === 'reviewing'){
-      actions += '<button class="btn gold" id="aiGenerateRoadmap" type="button" ' + (busy ? 'disabled' : '') + '>Generate my roadmap</button>';
-    } else if(phase === 'generating'){
-      actions += '<button class="btn gold" type="button" disabled>Generating roadmap...</button>';
-    } else if(phase === 'interpreting'){
-      actions += '<button class="btn gold" type="button" disabled>Preparing your brief...</button>';
-    }
-  } else {
-    const buildLabel = phase === 'interpreting' ? 'Understanding your goal...' : 'Build with AI';
-    actions += '<button class="btn" id="aiBasic" type="button" ' + (busy ? 'disabled' : '') + '>Basic starter</button>'
-      + '<button class="btn gold" id="aiBuild" type="button" ' + (busy ? 'disabled' : '') + '>' + buildLabel + '</button>';
-  }
-  return '<div class="modal-box ai-modal"><div class="modal-head"><h3>Build path with AI</h3><button class="modal-x" aria-label="Close">x</button></div>'
-    + '<div class="modal-body">'
-    + '<div class="ai-note">AI will review your goal, ask only the questions it needs, and prepare a personalised roadmap brief.</div>'
-    + (aiBuilder.message ? '<div class="ai-note">' + esc(aiBuilder.message) + '</div>' : '')
-    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
-    + (showBrief ? goalBriefHTML() : aiInputFieldsHTML())
-    + '<div class="ai-actions">' + actions + '</div>'
-    + '</div></div>';
+  if(aiBuilder.phase === 'interpreting') return processingStepHTML('interpreting');
+  if(aiBuilder.phase === 'generating') return processingStepHTML('generating');
+  if(aiBuilder.phase === 'clarifying') return clarificationStepHTML();
+  if(aiBuilder.phase === 'rhythm') return rhythmStepHTML();
+  if(aiBuilder.phase === 'brief') return conciseBriefHTML();
+  if(aiBuilder.phase === 'preview' && aiBuilder.draft) return previewStepHTML();
+  if(aiBuilder.phase === 'saving') return savingStepHTML();
+  if(aiBuilder.phase === 'ready') return readyStepHTML();
+  if(aiBuilder.phase === 'error' && builderHasMeaningfulWork(aiBuilder)) return errorStepHTML();
+  return goalStepHTML();
 }
 
 function assumptionsHTML(value){
@@ -1235,8 +1443,9 @@ function goalBriefHTML(){
 function aiReviewHTML(){
   const d = aiBuilder.draft;
   const sectionOptions = d.sections.map(s => s.title);
-  return '<div class="modal-box ai-modal review"><div class="modal-head"><h3>Review generated path</h3><button class="modal-x">x</button></div>'
+  return '<div class="modal-box ai-modal guided-builder review full-roadmap" role="dialog" aria-modal="true" aria-labelledby="aiStepHeading"><div class="modal-head ai-wizard-head"><div><span class="ai-builder-kicker">Create a path</span>' + wizardProgressHTML() + '</div><button class="modal-x" type="button" aria-label="Close path creation">x</button></div>'
     + '<div class="modal-body">'
+    + '<h2 id="aiStepHeading" tabindex="-1">Review the full roadmap</h2><p class="ai-step-copy">Every field remains editable before you create the path.</p>'
     + (aiBuilder.message ? '<div class="ai-note">' + esc(aiBuilder.message) + '</div>' : '')
     + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
     + '<div class="ai-grid">'
@@ -1244,7 +1453,7 @@ function aiReviewHTML(){
     + '<div class="field"><label>Category</label><input type="text" class="ai-draft-field" data-key="category" value="' + esc(d.category) + '"/></div>'
     + '<div class="field"><label>Duration days</label><input type="number" class="ai-draft-field" data-key="durationDays" value="' + esc(d.durationDays) + '"/></div>'
     + '<div class="field"><label>Duration label</label><input type="text" class="ai-draft-field" data-key="durationLabel" value="' + esc(d.durationLabel) + '"/></div>'
-    + '<div class="field"><label>Visibility</label><select class="ai-draft-field" data-key="visibility">' + selectOptions(['private', 'unlisted', 'public'], d.visibility || 'private') + '</select></div>'
+    + '<div class="field"><label>Visibility</label><select class="ai-draft-field" data-key="visibility"><option value="private" ' + ((d.visibility || 'private') === 'private' ? 'selected' : '') + '>Only me</option><option value="unlisted" ' + (d.visibility === 'unlisted' ? 'selected' : '') + '>Anyone with access</option><option value="public" ' + (d.visibility === 'public' ? 'selected' : '') + '>Public</option></select></div>'
     + '<div class="field"><label>Preview title</label><input type="text" class="ai-draft-field" data-key="previewTitle" value="' + esc(d.previewTitle) + '"/></div>'
     + '</div>'
     + '<div class="field"><label>Goal</label><textarea class="ai-draft-field" data-key="goal">' + esc(d.goal) + '</textarea></div>'
@@ -1257,7 +1466,7 @@ function aiReviewHTML(){
     + '<div class="ai-review-head"><b>Resources</b><button class="add-link" data-ai-act="addResource">+ Add resource</button></div>'
     + '<div class="ai-list">' + (d.resources || []).map((r, i) => '<div class="ai-edit-row resource"><input class="ai-resource-field" data-i="' + i + '" data-key="title" value="' + esc(r.title) + '" placeholder="Title"/><input class="ai-resource-field" data-i="' + i + '" data-key="url" value="' + esc(r.url) + '" placeholder="https://..."/><button class="icon-btn danger" data-ai-act="delResource" data-i="' + i + '">x</button><textarea class="ai-resource-field" data-i="' + i + '" data-key="description" placeholder="Description">' + esc(r.description || '') + '</textarea></div>').join('') + '</div>'
     + (d.notes && d.notes.length ? '<div class="ai-note"><b>Notes</b><ul>' + d.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></div>' : '')
-    + '<div class="ai-actions"><button class="btn" id="aiEditPrompt" ' + (aiBuilder.saving ? 'disabled' : '') + '>Edit prompt</button><button class="btn" id="aiRegenerate" ' + (aiBuilder.saving ? 'disabled' : '') + '>Regenerate</button><button class="btn" id="aiCancel" ' + (aiBuilder.saving ? 'disabled' : '') + '>Cancel</button><button class="btn gold" id="aiSave" ' + (aiBuilder.saving ? 'disabled' : '') + '>' + (aiBuilder.saving ? 'Saving path...' : 'Save path') + '</button></div>'
+    + '<div class="ai-actions"><button class="btn" id="aiBackToPreview" type="button">Back to preview</button><button class="btn" id="aiRegenerate" type="button">Regenerate</button><button class="btn gold" id="aiSave" type="button">Create my path</button></div>'
     + '</div></div>';
 }
 
@@ -1266,7 +1475,7 @@ function aiTaskRowHTML(t, i, sectionOptions){
   return '<div class="ai-task-row">'
     + '<input id="' + prefix + '-title" name="' + prefix + '-title" aria-label="Task title" class="ai-task-field ai-title" data-i="' + i + '" data-key="title" value="' + esc(t.title) + '" placeholder="Task title"/>'
     + '<select id="' + prefix + '-section" name="' + prefix + '-section" aria-label="Task section" class="ai-task-field" data-i="' + i + '" data-key="sectionTitle">' + selectOptions(sectionOptions, t.sectionTitle) + '</select>'
-    + '<select id="' + prefix + '-cadence" name="' + prefix + '-cadence" aria-label="Task cadence" class="ai-task-field" data-i="' + i + '" data-key="scheduleType">' + selectOptions(AI_CADENCE_TYPES, t.scheduleType) + '</select>'
+    + '<select id="' + prefix + '-cadence" name="' + prefix + '-cadence" aria-label="Task schedule" class="ai-task-field" data-i="' + i + '" data-key="scheduleType">' + naturalCadenceOptions(t.scheduleType) + '</select>'
     + '<select id="' + prefix + '-mode" name="' + prefix + '-mode" aria-label="Task mode" class="ai-task-field" data-i="' + i + '" data-key="taskMode">' + selectOptions(AI_TASK_MODES, t.taskMode || normalizeTaskMode(t.taskMode, t.scheduleType)) + '</select>'
     + '<input id="' + prefix + '-start" name="' + prefix + '-start" aria-label="Task start day" type="number" class="ai-task-field" data-i="' + i + '" data-key="startDay" value="' + esc(t.startDay || 1) + '" min="1"/>'
     + '<input id="' + prefix + '-end" name="' + prefix + '-end" aria-label="Task end day" type="number" class="ai-task-field" data-i="' + i + '" data-key="endDay" value="' + esc(t.endDay || '') + '" min="1" placeholder="End"/>'
@@ -1298,16 +1507,151 @@ function markBriefFieldConfirmed(key){
   aiBuilder.brief.confirmedFields = [...new Set([...(aiBuilder.brief.confirmedFields || []), canonical])];
 }
 
+function stopAIProcessingTicker(){
+  if(aiProcessingTimer){ clearInterval(aiProcessingTimer); aiProcessingTimer = null; }
+}
+
+function startAIProcessingTicker(builder, count){
+  stopAIProcessingTicker();
+  builder.processingMessageIndex = 0;
+  aiProcessingTimer = setInterval(() => {
+    if(aiBuilder !== builder || !['interpreting', 'generating'].includes(builder.phase)) return stopAIProcessingTicker();
+    builder.processingMessageIndex = ((builder.processingMessageIndex || 0) + 1) % count;
+    renderAIBuilder();
+  }, 1800);
+}
+
+function syncGoalInput(){
+  const goal = $('aiGoal');
+  if(goal) aiBuilder.prompt.goal = goal.value.trim();
+  const transcript = $('aiVoiceTranscript');
+  if(transcript) aiBuilder.voice.transcript = transcript.value;
+}
+
+function applyAdvancedInputsToBrief(){
+  if(!aiBuilder?.brief) return;
+  const brief = aiBuilder.brief;
+  if($('aiDuration')){ brief.durationDays = $('aiDuration').value ? clampDay($('aiDuration').value, 30, 365) : null; markBriefFieldConfirmed('durationDays'); }
+  if($('aiDailyTime')){ brief.dailyTimeAvailable = brief.availableTime = $('aiDailyTime').value.trim(); markBriefFieldConfirmed('availableTime'); }
+  if($('aiEvidenceStyle')){ brief.evidencePreference = brief.evidencePreferences = $('aiEvidenceStyle').value.trim(); markBriefFieldConfirmed('evidencePreferences'); }
+  if($('aiConstraints')){ brief.constraints = splitLines($('aiConstraints').value); markBriefFieldConfirmed('constraints'); }
+  if($('aiExistingResources')){ brief.resourcesMentioned = brief.resources = splitLines($('aiExistingResources').value); markBriefFieldConfirmed('resources'); }
+}
+
+function currentClarifyingQuestion(){
+  const questions = normalizeClarifyingQuestions(aiBuilder.brief?.clarifyingQuestions || []);
+  return questions[Math.min(aiBuilder.clarificationIndex || 0, Math.max(0, questions.length - 1))] || null;
+}
+
+function readQuestionAnswer(question){
+  if(!question) return {};
+  if(question.type === 'resource'){
+    const title = ($('aiQuestionResourceTitle')?.value || '').trim();
+    const url = safeExternalUrl($('aiQuestionResourceUrl')?.value || '') || (($('aiQuestionResourceUrl')?.value || '').trim());
+    const note = ($('aiQuestionResourceNote')?.value || '').trim();
+    return { title, url, note, value:[title, url, note].filter(Boolean).join(' - ') };
+  }
+  const selected = [...(aiBuilder.overlay?.querySelectorAll('[data-question-choice]:checked') || [])].map(input => input.value).filter(value => value !== '__custom');
+  const custom = ($('aiQuestionCustom')?.value || '').trim();
+  if(selected.length || custom) return { selected, custom };
+  const value = ($('aiQuestionAnswer')?.value || '').trim();
+  return { value };
+}
+
+function saveCurrentQuestionAnswer(){
+  const question = currentClarifyingQuestion();
+  if(!question) return true;
+  const previous = answerValueForQuestion(question, aiBuilder.clarifyingAnswers[question.id]);
+  const answer = readQuestionAnswer(question);
+  const value = answerValueForQuestion(question, answer);
+  if(question.required && !value){
+    aiBuilder.error = 'Answer this question before continuing, or write your own answer.';
+    renderAIBuilder();
+    return false;
+  }
+  aiBuilder.clarifyingAnswers[question.id] = answer;
+  if(previous && previous !== value && question.targetField){
+    aiBuilder.staleFields = [...new Set([...(aiBuilder.staleFields || []), question.targetField])];
+    aiBuilder.message = 'This change affects your recommended plan. We will refresh the relevant parts before continuing.';
+  }
+  return true;
+}
+
+async function continueClarification(){
+  if(!saveCurrentQuestionAnswer()) return;
+  aiBuilder.error = '';
+  const questions = normalizeClarifyingQuestions(aiBuilder.brief?.clarifyingQuestions || []);
+  if((aiBuilder.clarificationIndex || 0) < questions.length - 1){
+    aiBuilder.clarificationIndex += 1;
+    renderAIBuilder();
+    return;
+  }
+  await requestGoalInterpretation(true);
+}
+
+function goBackClarification(){
+  if((aiBuilder.clarificationIndex || 0) > 0){
+    saveCurrentQuestionAnswer();
+    aiBuilder.clarificationIndex -= 1;
+    aiBuilder.error = '';
+    renderAIBuilder();
+    return;
+  }
+  aiBuilder.phase = 'goal';
+  aiBuilder.error = '';
+  renderAIBuilder();
+}
+
+function cancelActiveAIRequestFromUI(){
+  if(!hasActiveAIRequest(aiBuilder.requests)) return requestCloseAIBuilder();
+  abortAIRequest(null, aiBuilder);
+  stopAIProcessingTicker();
+  aiBuilder.phase = aiBuilder.phase === 'generating' ? 'brief' : 'goal';
+  aiBuilder.error = 'The request was cancelled. Your information is still here.';
+  aiBuilder.message = '';
+  renderAIBuilder();
+}
+
 function renderAIBuilder(){
   if(!aiBuilder?.overlay) return;
-  aiBuilder.overlay.innerHTML = aiBuilder.mode === 'review' && aiBuilder.draft ? aiReviewHTML() : aiPromptHTML();
+  aiBuilder.overlay.innerHTML = aiBuilder.phase === 'preview' && aiBuilder.fullRoadmap && aiBuilder.draft ? aiReviewHTML() : aiPromptHTML();
   const close = aiBuilder.overlay.querySelector('.modal-x');
-  if(close) close.onclick = closeAIBuilder;
-  const cancel = $('aiCancel'); if(cancel) cancel.onclick = closeAIBuilder;
+  if(close) close.onclick = requestCloseAIBuilder;
+  const cancel = $('aiCancel'); if(cancel) cancel.onclick = cancelActiveAIRequestFromUI;
   const build = $('aiBuild'); if(build) build.onclick = handleBuildWithAI;
   const generateRoadmap = $('aiGenerateRoadmap'); if(generateRoadmap) generateRoadmap.onclick = generateRoadmapFromBrief;
+  const retryInterpret = $('aiRetryInterpret'); if(retryInterpret) retryInterpret.onclick = () => requestGoalInterpretation(false);
+  const goal = $('aiGoal'); if(goal){
+    goal.addEventListener('input', syncGoalInput);
+    goal.addEventListener('keydown', e => {
+      if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleBuildWithAI(); }
+    });
+  }
+  aiBuilder.overlay.querySelectorAll('[data-goal-example]').forEach(button => button.onclick = () => {
+    aiBuilder.prompt.goal = button.dataset.goalExample || '';
+    const input = $('aiGoal'); if(input){ input.value = aiBuilder.prompt.goal; input.focus(); }
+  });
+  const voiceToggle = $('aiToggleVoice'); if(voiceToggle) voiceToggle.onclick = () => { aiBuilder.voiceOpen = !aiBuilder.voiceOpen; renderAIBuilder(); };
+  const summaryToggle = $('aiToggleSummary'); if(summaryToggle) summaryToggle.onclick = () => { aiBuilder.summaryOpen = !aiBuilder.summaryOpen; renderAIBuilder(); };
+  const questionContinue = $('aiQuestionContinue'); if(questionContinue) questionContinue.onclick = continueClarification;
+  const questionBack = $('aiQuestionBack'); if(questionBack) questionBack.onclick = goBackClarification;
+  const rhythmBack = $('aiRhythmBack'); if(rhythmBack) rhythmBack.onclick = () => { aiBuilder.phase = aiBuilder.brief?.clarifyingQuestions?.length ? 'clarifying' : 'goal'; renderAIBuilder(); };
+  const rhythmAccept = $('aiRhythmAccept'); if(rhythmAccept) rhythmAccept.onclick = () => { applyAdvancedInputsToBrief(); aiBuilder.phase = 'brief'; aiBuilder.error = ''; renderAIBuilder(); };
+  const advancedToggle = $('aiAdvancedToggle'); if(advancedToggle) advancedToggle.onclick = () => { applyAdvancedInputsToBrief(); aiBuilder.advancedOpen = !aiBuilder.advancedOpen; renderAIBuilder(); };
+  const briefBack = $('aiBriefBack'); if(briefBack) briefBack.onclick = () => { aiBuilder.phase = 'rhythm'; aiBuilder.advancedOpen = false; renderAIBuilder(); };
+  aiBuilder.overlay.querySelectorAll('[data-brief-edit]').forEach(button => button.onclick = () => { aiBuilder.phase = 'rhythm'; aiBuilder.advancedOpen = true; aiBuilder.briefEditSection = button.dataset.briefEdit || ''; renderAIBuilder(); });
+  const previewBack = $('aiPreviewBack'); if(previewBack) previewBack.onclick = () => { aiBuilder.phase = 'brief'; aiBuilder.fullRoadmap = false; renderAIBuilder(); };
+  const fullRoadmap = $('aiViewFullRoadmap'); if(fullRoadmap) fullRoadmap.onclick = () => { aiBuilder.fullRoadmap = true; renderAIBuilder(); };
+  const backToPreview = $('aiBackToPreview'); if(backToPreview) backToPreview.onclick = () => { aiBuilder.fullRoadmap = false; aiBuilder.phase = 'preview'; renderAIBuilder(); };
+  aiBuilder.overlay.querySelectorAll('input[name="aiVisibilityChoice"]').forEach(input => input.onchange = e => {
+    aiBuilder.saveOptions.visibility = e.target.value;
+    if(aiBuilder.draft) aiBuilder.draft.visibility = e.target.value;
+    aiBuilder.prompt.visibility = e.target.value;
+  });
+  const viewSaved = $('aiViewSavedPath'); if(viewSaved) viewSaved.onclick = async () => { const id = aiBuilder.savedPathId; closeAIBuilder(); if(id) await openSkill(id, { tab:'plan' }); };
+  const startDayOne = $('aiStartDayOne'); if(startDayOne) startDayOne.onclick = startSavedPathDayOne;
   const backToInput = $('aiBackToInput'); if(backToInput) backToInput.onclick = () => {
-    aiBuilder.phase = 'input';
+    aiBuilder.phase = 'goal';
     aiBuilder.error = '';
     aiBuilder.message = '';
     renderAIBuilder();
@@ -1322,14 +1666,14 @@ function renderAIBuilder(){
   const voiceTranscript = $('aiVoiceTranscript'); if(voiceTranscript) voiceTranscript.addEventListener('input', e => { aiBuilder.voice.transcript = e.target.value; });
   const editPrompt = $('aiEditPrompt'); if(editPrompt) editPrompt.onclick = () => {
     aiBuilder.mode = 'prompt';
-    aiBuilder.phase = aiBuilder.brief ? 'reviewing' : 'input';
+    aiBuilder.phase = aiBuilder.brief ? 'brief' : 'goal';
     renderAIBuilder();
   };
   const regenerate = $('aiRegenerate'); if(regenerate) regenerate.onclick = () => {
     if(aiBuilder.dirty && !confirm('Regenerate this draft and replace your edits?')) return;
     if(aiBuilder.brief){
       aiBuilder.mode = 'prompt';
-      aiBuilder.phase = 'reviewing';
+      aiBuilder.phase = 'brief';
       generateRoadmapFromBrief();
     }
     else createBasicDraft();
@@ -1445,6 +1789,7 @@ function renderAIBuilder(){
     el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
   });
   aiBuilder.overlay.querySelectorAll('[data-ai-act]').forEach(btn => btn.onclick = () => runAIAction(btn.dataset.aiAct, Number(btn.dataset.i)));
+  focusAIBuilderStep();
 }
 
 function runAIAction(action, i){
@@ -1500,7 +1845,7 @@ async function requestGoalInterpretation(withAnswers){
     id:question.id,
     targetField:question.targetField,
     question:question.prompt,
-    answer:String(builder.clarifyingAnswers[question.id] || '').trim(),
+    answer:answerValueForQuestion(question, builder.clarifyingAnswers[question.id]),
   })).filter(item => item.answer) : [];
   if(withAnswers && !answers.length){
     aiBuilder.error = 'Answer at least one question before updating your brief.';
@@ -1509,6 +1854,7 @@ async function requestGoalInterpretation(withAnswers){
   }
   const request = beginAIClientRequest(builder, 'interpret');
   builder.phase = 'interpreting';
+  startAIProcessingTicker(builder, 4);
   builder.error = '';
   builder.message = withAnswers ? 'Preparing your updated brief...' : 'Understanding your goal...';
   renderAIBuilder();
@@ -1539,23 +1885,24 @@ async function requestGoalInterpretation(withAnswers){
       throw error;
     }
     if(withAnswers) builder.clarificationRound += 1;
-    const nextPhase = routeInterpretedBrief(brief, builder.clarificationRound);
-    if(nextPhase === 'reviewing' && !brief.readyToGenerate){
+    const routedPhase = routeInterpretedBrief(brief, builder.clarificationRound);
+    if(routedPhase === 'reviewing' && !brief.readyToGenerate){
       brief.assumptions = assumptionsForFinalClarification(brief);
       brief.clarifyingQuestions = [];
     }
     builder.brief = brief;
-    builder.clarifyingAnswers = {};
-    builder.phase = nextPhase;
-    builder.message = nextPhase === 'clarifying'
+    builder.clarificationIndex = 0;
+    builder.phase = routedPhase === 'clarifying' ? 'clarifying' : 'rhythm';
+    builder.message = builder.phase === 'clarifying'
       ? 'Answer the focused questions below so the roadmap can fit your situation.'
-      : 'Your editable path brief is ready. Review it before generating the roadmap.';
+      : 'Your recommended rhythm is ready to review.';
   }catch(error){
     if(!aiRequestIsCurrent(request)) return;
-    const recoveryPhase = builder.brief ? (previousPhase === 'reviewing' ? 'reviewing' : 'clarifying') : 'error';
+    const recoveryPhase = builder.brief ? (['brief', 'rhythm'].includes(previousPhase) ? previousPhase : 'clarifying') : 'error';
     Object.assign(builder, recoverAIBuilderState(builder, aiInterpretationError(error), recoveryPhase), { message:'' });
   }finally{
     finishAIClientRequest(request);
+    stopAIProcessingTicker();
     if(aiBuilder === builder) renderAIBuilder();
   }
 }
@@ -1578,11 +1925,13 @@ function createBasicDraft(){
   aiBuilder.message = '';
   try{
     const draft = localGeneratedDraft(prompt);
-    aiBuilder.draft = normalizeGeneratedDraft(draft, prompt);
+    aiBuilder.brief = confirmBrief(briefFromPrompt(prompt));
+    aiBuilder.draft = normalizeGeneratedDraft(draft, { ...prompt, confirmedBrief:aiBuilder.brief });
     aiBuilder.draft.source = 'fallback';
     aiBuilder.message = 'Basic starter template created without AI. Review it before saving.';
-    aiBuilder.mode = 'review';
-    aiBuilder.phase = 'complete';
+    aiBuilder.mode = 'guided';
+    aiBuilder.phase = 'preview';
+    aiBuilder.fullRoadmap = false;
     aiBuilder.dirty = false;
   }catch(error){
     aiBuilder.phase = 'error';
@@ -1594,7 +1943,8 @@ function createBasicDraft(){
 }
 
 async function generateRoadmapFromBrief(){
-  if(!canStartAIRequest(aiBuilder) || aiBuilder.phase !== 'reviewing' || !aiBuilder.brief) return;
+  if(!canStartAIRequest(aiBuilder) || aiBuilder.phase !== 'brief' || !aiBuilder.brief) return;
+  applyAdvancedInputsToBrief();
   const validationError = validateAIBuilderInputs();
   if(validationError){
     aiBuilder.error = validationError;
@@ -1641,6 +1991,7 @@ async function generateRoadmapFromBrief(){
   const builder = aiBuilder;
   const request = beginAIClientRequest(builder, 'generate');
   builder.phase = 'generating';
+  startAIProcessingTicker(builder, 5);
   builder.error = '';
   builder.message = '';
   renderAIBuilder();
@@ -1663,12 +2014,13 @@ async function generateRoadmapFromBrief(){
     builder.draft = normalizeGeneratedDraft(payload.draft, prompt);
     builder.draft.source = payload.source || 'anthropic';
     builder.message = payload.message || 'AI draft generated. Review before saving.';
-    builder.mode = 'review';
-    builder.phase = 'complete';
+    builder.mode = 'guided';
+    builder.phase = 'preview';
+    builder.fullRoadmap = false;
     builder.dirty = false;
   }catch(error){
     if(!aiRequestIsCurrent(request)) return;
-    builder.phase = 'reviewing';
+    builder.phase = 'brief';
     if(error.code === 'unauthorized') builder.error = 'Your session has expired. Sign in again to continue.';
     else if(error.code === 'rate_limited') builder.error = 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
     else if(['operation_timeout', 'provider_timeout'].includes(error.code)) builder.error = 'The AI request took too long and was cancelled. Your information is still saved.';
@@ -1678,6 +2030,7 @@ async function generateRoadmapFromBrief(){
     else builder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';
   }finally{
     finishAIClientRequest(request);
+    stopAIProcessingTicker();
     if(aiBuilder === builder) renderAIBuilder();
   }
 }
@@ -1687,6 +2040,11 @@ async function saveGeneratedPath(){
   aiBuilder.saving = true;
   aiBuilder.error = '';
   aiBuilder.message = 'Saving generated path...';
+  aiBuilder.phase = 'saving';
+  if(aiBuilder.saveOptions?.visibility){
+    aiBuilder.draft.visibility = aiBuilder.saveOptions.visibility;
+    aiBuilder.prompt.visibility = aiBuilder.saveOptions.visibility;
+  }
   aiSaveClientId = aiSaveClientId || ('ai_' + Date.now().toString(36) + Math.floor(Math.random()*99999).toString(36));
   renderAIBuilder();
   try{
@@ -1705,6 +2063,7 @@ async function saveGeneratedPath(){
     } else if(configPresent()){
       aiBuilder.error = 'Sign in to save this generated path to the platform. Your draft will stay open.';
       aiBuilder.saving = false;
+      aiBuilder.phase = 'preview';
       renderAIBuilder();
       openAuthModal('signup');
       return;
@@ -1713,14 +2072,18 @@ async function saveGeneratedPath(){
       await dbSaveState();
     }
     ensureSkill(id);
-    closeAIBuilder();
-    await openSkill(id, { tab:'plan' });
-    store.editMode = true;
-    renderPlan();
-    flash('Generated path saved as private');
+    aiBuilder.savedPathId = id;
+    aiBuilder.savedPath = store.state.userPaths[id] || localPath;
+    aiBuilder.phase = 'ready';
+    aiBuilder.saving = false;
+    aiBuilder.message = '';
+    aiBuilder.error = '';
+    renderAIBuilder();
+    flash('Generated path saved');
     aiSaveClientId = null;
   }catch(e){
     aiBuilder.saving = false;
+    aiBuilder.phase = 'preview';
     aiBuilder.error = e?.code === 'operation_timeout'
       ? 'Saving is taking too long. Please check your connection/Firebase rules and try again.'
       : (e.message || 'Could not save generated path. Check Firebase rules, connection, or permissions.');
@@ -2518,70 +2881,93 @@ async function resetMissedDay(id, def, day){
   renderPlan();
 }
 
+async function startPathJourney(id, def, triggerButton = null){
+  if(!pathCanStart(def)){
+    flash('Loading tasks. Try again in a moment.');
+    return false;
+  }
+  startingJourneyId = id;
+  if(triggerButton){
+    triggerButton.disabled = true;
+    triggerButton.textContent = 'Starting...';
+  }
+  const today = localDateString();
+  const userId = (store.currentUser && store.currentUser.uid) || 'local';
+  const enrollmentId = enrollmentIdFor(id, userId);
+  const existing = currentEnrollmentForPath(id);
+  const snapshot = snapshotJourneyStart(enrollmentId);
+  const next = makeEnrollment(id, userId, {
+    ...(existing || {}),
+    id: enrollmentId,
+    startDate: existing?.startDate || today,
+    currentDay: 1,
+    status: 'active',
+    missedDate: null,
+  });
+  next.dayLogs = { ...(existing?.dayLogs || {}) };
+  next.dayLogs[1] = makeDayLog(1, {
+    ...(next.dayLogs[1] || {}),
+    dayNumber: 1,
+    date: next.startDate,
+    status: 'active',
+    totalTaskCount: getTasksForDay(def, 1).length,
+  });
+  store.enrollments[enrollmentId] = next;
+  store.state.enrollments = store.state.enrollments || {};
+  store.state.enrollments[enrollmentId] = next;
+  await dbSaveState();
+  selectedJourneyDay = 1;
+  evidenceFormTaskId = null;
+  evidenceProofType = 'url';
+  renderPlan();
+  try{
+    if(configPresent() && store.currentUser && !cloudAvailable()) throw cloudConnectionError();
+    await trackOperation(
+      'start enrollment',
+      withTimeout(dbStartEnrollment(id, getTasksForDay(def, 1).length), ENROLLMENT_TIMEOUT_MS, 'start enrollment')
+    );
+    setJourneyPending(enrollmentId, false);
+    store.syncStatus = '';
+    await dbSaveState();
+    return true;
+  }catch(e){
+    console.warn('start enrollment:', e && e.message ? e.message : e);
+    if(isTemporaryFirebaseError(e)){
+      setJourneyPending(enrollmentId, true);
+      store.syncStatus = 'Started locally - waiting to sync';
+      await dbSaveState();
+      flash(enrollmentStartErrorMessage(e));
+      return true;
+    }
+    restoreJourneyStart(enrollmentId, snapshot);
+    store.syncStatus = '';
+    await dbSaveState();
+    flash(enrollmentStartErrorMessage(e));
+    return false;
+  }finally{
+    startingJourneyId = null;
+    if(store.state.current === id && store.activeTab === 'plan') renderPlan();
+  }
+}
+
+async function startSavedPathDayOne(){
+  const id = aiBuilder?.savedPathId;
+  let def = id ? store.state.userPaths[id] : null;
+  if(!id || !def) return;
+  if(def.platform && !pathTasksReady(def) && cloudAvailable()){
+    try{ await trackOperation('path children load', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load path tasks')); }
+    catch(e){ flash(userSyncMessage(e, 'Could not load path tasks. Try again.')); return; }
+    def = store.state.userPaths[id];
+  }
+  closeAIBuilder();
+  await openSkill(id, { tab:'plan', day:1 });
+  await startPathJourney(id, def, null);
+}
+
 function wireJourneyControls(id, def){
   const start = $('startJourney');
   if(start) start.onclick = async () => {
-    if(!pathCanStart(def)){
-      flash('Loading tasks. Try again in a moment.');
-      return;
-    }
-    startingJourneyId = id;
-    start.disabled = true;
-    start.textContent = 'Starting...';
-    const today = localDateString();
-    const userId = (store.currentUser && store.currentUser.uid) || 'local';
-    const enrollmentId = enrollmentIdFor(id, userId);
-    const existing = currentEnrollmentForPath(id);
-    const snapshot = snapshotJourneyStart(enrollmentId);
-    const next = makeEnrollment(id, userId, {
-      ...(existing || {}),
-      id: enrollmentId,
-      startDate: existing?.startDate || today,
-      currentDay: 1,
-      status: 'active',
-      missedDate: null,
-    });
-    next.dayLogs = { ...(existing?.dayLogs || {}) };
-    next.dayLogs[1] = makeDayLog(1, {
-      ...(next.dayLogs[1] || {}),
-      dayNumber: 1,
-      date: next.startDate,
-      status: 'active',
-      totalTaskCount: getTasksForDay(def, 1).length,
-    });
-    store.enrollments[enrollmentId] = next;
-    store.state.enrollments = store.state.enrollments || {};
-    store.state.enrollments[enrollmentId] = next;
-    await dbSaveState();
-    selectedJourneyDay = 1;
-    evidenceFormTaskId = null;
-    evidenceProofType = 'url';
-    renderPlan();
-    try{
-      if(configPresent() && store.currentUser && !cloudAvailable()) throw cloudConnectionError();
-      await trackOperation(
-        'start enrollment',
-        withTimeout(dbStartEnrollment(id, getTasksForDay(def, 1).length), ENROLLMENT_TIMEOUT_MS, 'start enrollment')
-      );
-      setJourneyPending(enrollmentId, false);
-      store.syncStatus = '';
-      await dbSaveState();
-    }catch(e){
-      console.warn('start enrollment:', e && e.message ? e.message : e);
-      if(isTemporaryFirebaseError(e)){
-        setJourneyPending(enrollmentId, true);
-        store.syncStatus = 'Started locally \u2014 waiting to sync';
-        await dbSaveState();
-      } else {
-        restoreJourneyStart(enrollmentId, snapshot);
-        store.syncStatus = '';
-        await dbSaveState();
-      }
-      flash(enrollmentStartErrorMessage(e));
-    }finally{
-      startingJourneyId = null;
-      if(store.state.current === id && store.activeTab === 'plan') renderPlan();
-    }
+    await startPathJourney(id, def, start);
   };
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
     btn.onclick = async () => {

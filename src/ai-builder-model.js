@@ -15,8 +15,15 @@ export const AI_TASK_MODES = [
 export const AI_PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 
 export const AI_BUILD_PHASES = [
-  'input', 'interpreting', 'clarifying', 'reviewing',
-  'generating', 'complete', 'error',
+  'goal', 'interpreting', 'clarifying', 'rhythm', 'brief',
+  'generating', 'preview', 'saving', 'ready', 'error',
+];
+
+export const AI_GUIDED_STAGES = ['Goal', 'Details', 'Plan', 'Preview', 'Ready'];
+
+export const AI_QUESTION_TYPES = [
+  'single_select', 'multi_select', 'short_text', 'long_text', 'number',
+  'duration', 'date', 'days_of_week', 'time_availability', 'yes_no', 'resource',
 ];
 
 export const MAX_AI_CLARIFICATION_ROUNDS = 2;
@@ -46,6 +53,16 @@ const ANSWER_TARGETS = new Set([
   'constraints', 'scheduleNotes', 'evidencePreferences', 'resources',
 ]);
 
+function normalizeQuestionOption(raw = {}, index = 0){
+  const source = typeof raw === 'string' ? { label:raw, value:raw } : (raw || {});
+  const label = cleanText(source.label ?? source.value, 120);
+  return {
+    id:cleanText(source.id, 80) || `option-${index + 1}`,
+    label,
+    value:cleanText(source.value ?? source.label, 300) || label,
+  };
+}
+
 export function normalizeBriefAssumption(raw = {}, index = 0){
   const source = typeof raw === 'string' ? { text:raw } : (raw || {});
   const field = cleanText(source.field || source.targetField, 80);
@@ -69,12 +86,23 @@ export function normalizeBriefAssumptions(value){
 export function normalizeClarifyingQuestion(raw = {}, index = 0){
   const source = typeof raw === 'string' ? { prompt:raw } : (raw || {});
   const targetField = ANSWER_TARGETS.has(source.targetField) ? source.targetField : '';
+  const options = (Array.isArray(source.options) ? source.options : [])
+    .map(normalizeQuestionOption)
+    .filter(option => option.label)
+    .slice(0, 8);
+  let type = AI_QUESTION_TYPES.includes(source.type) ? source.type : '';
+  if(!type) type = options.length ? 'single_select' : 'long_text';
   return {
     id:cleanText(source.id, 100) || `question-${targetField || index + 1}`,
     targetField,
     prompt:cleanText(source.prompt || source.question, 260),
+    supportingText:cleanText(source.supportingText || source.helpText, 300),
+    type,
     required:source.required !== false,
-    reason:cleanText(source.reason, 300),
+    reason:cleanText(source.reason || source.materialReason, 300),
+    materialReason:cleanText(source.materialReason || source.reason, 300),
+    options,
+    allowCustomAnswer:source.allowCustomAnswer !== false && ['single_select', 'multi_select'].includes(type),
   };
 }
 
@@ -190,6 +218,51 @@ export function routeInterpretedBrief(brief = {}, clarificationRound = 0){
     return 'reviewing';
   }
   return 'clarifying';
+}
+
+export function creationStageForPhase(phase = 'goal'){
+  if(['goal', 'interpreting'].includes(phase)) return 'Goal';
+  if(phase === 'clarifying') return 'Details';
+  if(['rhythm', 'brief', 'generating'].includes(phase)) return 'Plan';
+  if(['preview', 'saving'].includes(phase)) return 'Preview';
+  if(phase === 'ready') return 'Ready';
+  return 'Goal';
+}
+
+export function answerValueForQuestion(questionInput = {}, answer = {}){
+  const question = normalizeClarifyingQuestion(questionInput);
+  if(answer == null) return '';
+  if(typeof answer !== 'object') return cleanText(answer, 700);
+  const selected = Array.isArray(answer.selected) ? answer.selected : (answer.selected ? [answer.selected] : []);
+  const values = selected.map(id => question.options.find(option => option.id === id)?.value || id).filter(Boolean);
+  const custom = cleanText(answer.custom ?? answer.value ?? answer.answer, 700);
+  return [...values, custom].filter(Boolean).join('; ').slice(0, 700);
+}
+
+export function cadenceLabel(cadenceInput = {}){
+  const cadence = normalizeCommitmentCadence(cadenceInput);
+  if(cadence.type === 'daily') return 'Every day';
+  if(cadence.type === 'weekdays') return 'On weekdays';
+  if(cadence.type === 'selected_days'){
+    const days = cadence.daysOfWeek.map(day => day.slice(0, 3)).join(', ');
+    return days ? `On ${days}` : 'On selected days';
+  }
+  if(cadence.type === 'times_per_week') return `${cadence.timesPerWeek || 1} ${cadence.timesPerWeek === 1 ? 'time' : 'times'} each week`;
+  if(cadence.type === 'weekly') return 'Once each week';
+  if(cadence.type === 'interval') return `Every ${cadence.intervalDays || 2} days`;
+  if(cadence.type === 'once') return cadence.scheduledDay ? `Once on day ${cadence.scheduledDay}` : 'One time';
+  if(cadence.type === 'sequential') return cadence.scheduledDay ? `In sequence from day ${cadence.scheduledDay}` : 'In sequence';
+  return 'Flexible schedule';
+}
+
+export function commitmentSummary(commitmentInput = {}, index = 0){
+  const commitment = normalizeCoreCommitment(commitmentInput, index);
+  const time = commitment.estimatedMinutes ? `${commitment.estimatedMinutes} minutes` : '';
+  return {
+    title:commitment.title,
+    rhythm:[time, cadenceLabel(commitment.cadence)].filter(Boolean).join(' - '),
+    required:commitment.required,
+  };
 }
 
 export function assumptionsForFinalClarification(brief = {}){

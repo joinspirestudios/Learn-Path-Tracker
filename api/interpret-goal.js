@@ -12,6 +12,7 @@ import { requireAuth } from './_lib/require-auth.js';
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'creative_project', 'business', 'academic', 'spiritual/devotional', 'content', 'custom'];
 const INTENSITIES = ['light', 'moderate', 'intense'];
 const CADENCE_TYPES = ['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval', 'once', 'sequential'];
+const QUESTION_TYPES = ['single_select', 'multi_select', 'short_text', 'long_text', 'number', 'duration', 'date', 'days_of_week', 'time_availability', 'yes_no', 'resource'];
 const TOOL_NAME = 'interpret_goal_brief';
 const MAX_JSON_BYTES = 64 * 1024;
 const INTERPRET_TIMEOUT_MS = 28_000;
@@ -45,11 +46,20 @@ const assumptionSchema = {
 };
 const questionSchema = {
   type:'object', additionalProperties:false,
-  required:['id', 'targetField', 'prompt', 'required', 'reason'],
+  required:['id', 'targetField', 'prompt', 'supportingText', 'type', 'required', 'materialReason', 'options', 'allowCustomAnswer'],
   properties:{
     id:{ type:'string' },
     targetField:{ type:'string', enum:['currentBaseline', 'desiredOutcome', 'durationDays', 'availableTime', 'constraints', 'scheduleNotes', 'evidencePreferences', 'resources'] },
-    prompt:{ type:'string' }, required:{ type:'boolean' }, reason:{ type:'string' },
+    prompt:{ type:'string' }, supportingText:{ type:'string' }, type:{ type:'string', enum:QUESTION_TYPES },
+    required:{ type:'boolean' }, materialReason:{ type:'string' },
+    options:{
+      type:'array', items:{
+        type:'object', additionalProperties:false,
+        required:['id', 'label', 'value'],
+        properties:{ id:{ type:'string' }, label:{ type:'string' }, value:{ type:'string' } },
+      },
+    },
+    allowCustomAnswer:{ type:'boolean' },
   },
 };
 
@@ -126,8 +136,12 @@ export function normalizeBrief(raw = {}){
       id:`question-gap-${index + 1}`,
       targetField:'constraints',
       prompt:`What should the roadmap account for regarding ${gap}?`,
+      supportingText:'Share only what would change the plan.',
+      type:'long_text',
       required:true,
-      reason:'This information materially changes the roadmap.',
+      materialReason:'This information materially changes the roadmap.',
+      options:[],
+      allowCustomAnswer:false,
     }));
   }
   if(brief.materialGaps.length) brief.readyToGenerate = false;
@@ -171,7 +185,9 @@ function buildPrompt(input){
     'Use the interpret_goal_brief tool and return no prose or markdown.',
     'Ask 2-5 questions only when an answer would materially change duration, difficulty, schedule, progression, commitments, evidence, safety, feasibility, or milestones.',
     'Do not ask questions merely because an optional field is empty. A simple, specific goal may proceed directly to review.',
-    'For vague goals, identify materialGaps and provide stable question ids, target fields, and concise reasons.',
+    'For vague goals, identify materialGaps and provide stable question ids, target fields, supporting text, types, and concise material reasons.',
+    'Prefer useful single-select or multi-select choices when the likely answers are bounded. Always preserve a custom answer option when appropriate.',
+    'Use short_text, long_text, number, duration, date, days_of_week, time_availability, yes_no, or resource only when that control matches the decision.',
     'On the final clarification round, turn only remaining non-critical uncertainty into visible structured assumptions with accepted false.',
     'Never mark an AI assumption accepted. The user must accept, edit, or remove it in the review UI.',
     'The previousBrief already contains deterministic user answers and confirmed fields. Preserve them exactly.',

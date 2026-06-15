@@ -2,7 +2,7 @@
 
 Learn Path Tracker is a Vite + Firebase proof-of-growth app for creating learning paths, habits, challenges, and personal-development roadmaps. It supports local mode, platform paths, creator attribution, enrollments, day logs, streaks, freezes, evidence, templates, and an optional Anthropic-powered AI path builder.
 
-Phase 5.1.3 protects paid AI and transcription routes with Firebase Authentication, per-user rate limits, bounded input validation, server-side provider cancellation, private no-store responses, and isolated client request lifecycles. Live web research is not part of this phase.
+Phase 5.2 adds responsive guided path creation on top of the protected Phase 5 AI and transcription routes. The web app now guides users through goal entry, adaptive clarification, recommended rhythm, concise brief review, roadmap preview, and a path-ready state before Day 1 starts. Live web research is not part of this phase.
 
 ## Install and run
 
@@ -29,6 +29,8 @@ npm run preview
 ```
 
 Firestore Rules tests use the Firebase Emulator Suite and require Java. The test project ID is `learn-path-tracker-rules-test`; tests never connect to production data.
+
+For guided creation QA, use the unit tests plus manual viewport checks at 1440x900, 1280x720, 1024x768, 768x1024, 430x932, 390x844, and 360x800. Manual goal scenarios should include vague and detailed French goals, general fitness, a 1 km to 15 km running plan, design portfolio, prayer habit, weekly video publishing, a fixed 14-day gratitude challenge, and the existing 75 Hard template.
 
 ## Environment variables
 
@@ -82,6 +84,30 @@ Basic starter is local and does not call a protected AI route or consume Anthrop
 ## AI request concurrency
 
 Voice transcription, goal interpretation, and roadmap generation use independent request tokens and abort controllers, but paid operations cannot run concurrently. Starting one disables conflicting paid actions and duplicate submission controls. Closing the builder aborts all active requests, invalidates their tokens, clears loading state, and prevents stale responses from mutating or reopening the modal.
+
+## Guided creation
+
+The Build with AI entry is a guided web flow rather than a dense all-fields form. The first screen asks only what the user wants to achieve, with optional voice input, examples, Basic starter, and Build with AI. Claude interpretation always happens before AI roadmap generation. When the goal is vague, the app shows one material clarification question at a time with structured choices and custom-answer support. When enough information exists, the flow moves through recommended rhythm, concise path brief, roadmap generation, preview, creation, and a ready screen.
+
+Core Commitments and cadence are presented in natural language. Advanced schedule controls remain available behind an adjustment section so users can edit duration, time, commitments, frequency, constraints, resources, evidence preference, and assumptions without returning to the old dense prompt. The saved path model is unchanged: final paths still use the existing sections, tasks, resources, visibility, creator metadata, enrollments, day logs, evidence, streak, and freeze structures.
+
+Basic starter remains a local non-AI route. It uses the same guided shell, creates a simple editable draft from the entered goal, shows the concise preview first, and saves through the normal local or platform path system.
+
+## Responsive behavior
+
+Phase 5.2 improves the responsive web application. It does not create the native mobile application yet.
+
+Desktop and laptop browsers use a centered guided dialog with a first-class active work area and an optional summary panel for the brief so far. Tablet and smaller laptop widths switch to a focused single-column layout with the summary below or collapsed. Mobile browsers use a full-screen creation flow with compact progress, touch-friendly controls, and sticky actions so the primary decision stays reachable.
+
+All viewport presentations use the same canonical builder state, confirmed brief, request controllers, and save path. There is no separate mobile business logic. Future native clients should be able to reuse the product flow, backend contracts, and saved-path data model established here, but Capacitor, React Native, Expo, Android, and iOS packaging remain deferred.
+
+## Product principles
+
+- Ask only material questions that can change the roadmap.
+- Use progressive disclosure so secondary details do not crowd the first decision.
+- Prefer useful choices while keeping a custom answer available where appropriate.
+- Show schedules, commitments, and evidence in human language instead of internal schema labels.
+- Do not fabricate research, citations, social proof, success rates, or live resource verification.
 
 ### Rate limits
 

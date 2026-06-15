@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  MAX_AI_CLARIFICATION_ROUNDS, aiPromptDefaults, canStartAIRequest,
-  isMeaningfulAIGoal, normalizeCoreCommitments, recoverAIBuilderState,
-  routeInterpretedBrief,
+  MAX_AI_CLARIFICATION_ROUNDS, aiPromptDefaults, answerValueForQuestion,
+  cadenceLabel, canStartAIRequest, commitmentSummary, creationStageForPhase,
+  isMeaningfulAIGoal, normalizeClarifyingQuestions, normalizeCoreCommitments,
+  recoverAIBuilderState, routeInterpretedBrief,
 } from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
 import { platformToLocalPath, resolveCreatorName } from '../src/platform.js';
@@ -151,10 +152,43 @@ test('AI builder renders only Basic starter and Build with AI entry actions', ()
   const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   assert.match(source, />Basic starter</);
   assert.match(source, /id=\"aiBuild\"/);
-  assert.match(source, /: 'Build with AI'/);
+  assert.match(source, />Build with AI</);
+  const goalStep = source.slice(source.indexOf('function goalStepHTML'), source.indexOf('function processingStepHTML'));
+  assert.match(goalStep, /What do you want to achieve/);
+  assert.doesNotMatch(goalStep, /aiDuration/);
+  assert.doesNotMatch(goalStep, /aiVisibility/);
+  assert.doesNotMatch(goalStep, /commitmentsHTML/);
   assert.doesNotMatch(source, />Interpret goal</);
   assert.doesNotMatch(source, />Fast generate without interpretation</);
   assert.doesNotMatch(source, />Fast generate from current inputs</);
+});
+
+test('guided clarification questions preserve choices and custom answers', () => {
+  const [question] = normalizeClarifyingQuestions([{
+    id:'current-level', targetField:'currentBaseline', prompt:'Where are you with French?',
+    supportingText:'This changes the starting difficulty.', type:'single_select', required:true,
+    materialReason:'Changes the starting level.', allowCustomAnswer:true,
+    options:[{ id:'zero', label:'Starting from zero', value:'Complete beginner' }],
+  }]);
+  assert.equal(question.type, 'single_select');
+  assert.equal(question.options[0].label, 'Starting from zero');
+  assert.equal(question.materialReason, 'Changes the starting level.');
+  assert.equal(answerValueForQuestion(question, { selected:['zero'], custom:'Can read simple words' }), 'Complete beginner; Can read simple words');
+});
+
+test('guided creation phases map to one canonical progress model', () => {
+  assert.equal(creationStageForPhase('goal'), 'Goal');
+  assert.equal(creationStageForPhase('clarifying'), 'Details');
+  assert.equal(creationStageForPhase('rhythm'), 'Plan');
+  assert.equal(creationStageForPhase('preview'), 'Preview');
+  assert.equal(creationStageForPhase('ready'), 'Ready');
+});
+
+test('recommended rhythm uses natural-language cadence summaries', () => {
+  assert.equal(cadenceLabel({ type:'times_per_week', timesPerWeek:3 }), '3 times each week');
+  assert.equal(cadenceLabel({ type:'selected_days', daysOfWeek:['monday', 'wednesday'] }), 'On mon, wed');
+  const summary = commitmentSummary({ title:'Speaking practice', cadence:{ type:'weekly' }, estimatedMinutes:20 }, 0);
+  assert.equal(summary.rhythm, '20 minutes - Once each week');
 });
 
 test('meaningful goal validation rejects blank and accidental input', () => {
@@ -213,7 +247,7 @@ test('the canonical Build with AI handler interprets before generation and Basic
   assert.doesNotMatch(buildHandler, /\/api\/generate-path/);
   assert.match(basicHandler, /localGeneratedDraft\(prompt\)/);
   assert.doesNotMatch(basicHandler, /fetch\(/);
-  assert.match(generationHandler, /aiBuilder\.phase !== 'reviewing'/);
+  assert.match(generationHandler, /aiBuilder\.phase !== 'brief'/);
   assert.match(generationHandler, /confirmBrief\(brief\)/);
   assert.match(generationHandler, /confirmedBrief,/);
   assert.match(generationHandler, /\/api\/generate-path/);
