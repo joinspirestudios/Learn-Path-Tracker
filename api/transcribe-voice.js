@@ -1,4 +1,4 @@
-import { apiError, methodNotAllowed, sendApiError } from './_lib/errors.js';
+import { apiError, methodNotAllowed, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
 import { contentType } from './_lib/http.js';
 import { runProviderRequest } from './_lib/provider.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
@@ -35,6 +35,7 @@ async function readAudioBody(req){
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
     if(size > MAX_AUDIO_BYTES){
+      req.destroy?.();
       throw apiError('payload_too_large', 'This recording is larger than the 25 MB upload limit.', 413);
     }
     chunks.push(buffer);
@@ -83,27 +84,28 @@ export function createTranscribeVoiceHandler({
   runProvider = runProviderRequest,
 } = {}){
   return async function handler(req, res){
+    setPrivateNoStore(res);
     if(req.method !== 'POST') return methodNotAllowed(res);
     try{
       const auth = await authenticate(req);
       const mimeType = contentType(req);
-      if(!ACCEPTED_AUDIO_TYPES.has(mimeType)){
-        throw apiError('invalid_request', 'This audio format is not supported. Record WebM, MP4, MP3, WAV, or OGG audio.', 415);
-      }
       const contentLength = Number(req.headers?.['content-length'] || 0);
       if(Number.isFinite(contentLength) && contentLength > MAX_AUDIO_BYTES){
         throw apiError('payload_too_large', 'This recording is larger than the 25 MB upload limit.', 413);
       }
+      await rateLimit(auth.uid, 'transcribe');
       const audio = await readAudioBody(req);
       if(!audio.length) throw apiError('invalid_request', 'Add an audio recording before transcribing.', 400);
       if(audio.length > MAX_AUDIO_BYTES) throw apiError('payload_too_large', 'This recording is larger than the 25 MB upload limit.', 413);
+      if(!ACCEPTED_AUDIO_TYPES.has(mimeType)){
+        throw apiError('invalid_request', 'This audio format is not supported. Record WebM, MP4, MP3, WAV, or OGG audio.', 415);
+      }
       const fileName = sanitizeFileName(req.headers?.['x-file-name']);
-      await rateLimit(auth.uid, 'transcribe');
       const result = await runProvider(req, TRANSCRIBE_TIMEOUT_MS, signal => provider({ audio, mimeType, fileName }, signal));
       if(!result?.transcript){
         throw apiError('invalid_provider_response', 'We could not detect speech clearly. Try recording again or type your goal manually.', 422);
       }
-      return res.status(200).json({ ok:true, transcript:result.transcript, duration:result.duration, confidence:result.confidence });
+      return sendPrivateJson(res, 200, { ok:true, transcript:result.transcript, duration:result.duration, confidence:result.confidence });
     }catch(error){
       return sendApiError(res, error);
     }

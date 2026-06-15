@@ -3,7 +3,7 @@ import {
   briefFromPrompt, mergeBriefPreservingConfirmed, mergeClarificationAnswers,
   normalizeBriefAssumptions, normalizeClarifyingQuestions, normalizeConfirmedBrief,
 } from '../src/ai-builder-model.js';
-import { apiError, methodNotAllowed, sendApiError } from './_lib/errors.js';
+import { apiError, methodNotAllowed, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
 import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
 import { runProviderRequest } from './_lib/provider.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
@@ -239,6 +239,7 @@ export function createInterpretGoalHandler({
   runProvider = runProviderRequest,
 } = {}){
   return async function handler(req, res){
+    setPrivateNoStore(res);
     if(req.method !== 'POST') return methodNotAllowed(res);
     try{
       const auth = await authenticate(req);
@@ -250,7 +251,7 @@ export function createInterpretGoalHandler({
       await rateLimit(auth.uid, 'interpret');
       const raw = await runProvider(req, INTERPRET_TIMEOUT_MS, signal => provider(input, signal));
       const brief = mergeBriefPreservingConfirmed(input.previousBrief, normalizeBrief(raw));
-      return res.status(200).json({ ok:true, brief, source:'anthropic', message:"Here's what I understood. Review and answer anything material that is missing." });
+      return sendPrivateJson(res, 200, { ok:true, brief, source:'anthropic', message:"Here's what I understood. Review and answer anything material that is missing." });
     }catch(error){
       return sendApiError(res, error);
     }

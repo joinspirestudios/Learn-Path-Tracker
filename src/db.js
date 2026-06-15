@@ -6,6 +6,7 @@
 import { EXPECTED_FIREBASE_PROJECT_ID, fb, firebaseDiagnostics } from './firebase.js';
 import { store, STATE_KEY, CAT_PREFIX, LEGACY_KEY, migrateState } from './store.js';
 import { Store, flash } from './helpers.js';
+import { safeExternalUrl } from './urls.js';
 import {
   canViewPath, localToPlatformParts, normalizePathDoc, platformToLocalPath,
 } from './platform.js';
@@ -321,7 +322,7 @@ function makeEvidenceSubmission(enrollmentId, payload = {}){
     taskId: String(payload.taskId || ''),
     taskTitle: String(payload.taskTitle || ''),
     evidenceType: cleanEvidenceType(payload.evidenceType),
-    evidenceUrl: payload.evidenceUrl || null,
+    evidenceUrl: safeExternalUrl(payload.evidenceUrl),
     fileName: payload.fileName || null,
     fileType: payload.fileType || null,
     fileSize: payload.fileSize == null ? null : Number(payload.fileSize || 0),
@@ -789,7 +790,7 @@ export async function dbSavePlatformPath(id){
       sectionId:t.sectionId,
       title:t.title,
       description:t.description || '',
-      resourceUrl:t.resourceUrl || null,
+      resourceUrl:safeExternalUrl(t.resourceUrl),
       evidenceRequired:!!t.evidenceRequired,
       order:t.order || 0,
       unlockDay:t.unlockDay == null ? null : t.unlockDay,

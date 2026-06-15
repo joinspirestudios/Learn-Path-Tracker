@@ -8,6 +8,7 @@ import { SKILLS } from './data.js';
 import { TEMPLATES } from './templates.js';
 import { store, STATE_KEY } from './store.js';
 import { $, esc, flash, undoToast } from './helpers.js';
+import { externalLinkHTML, safeExternalUrl } from './urls.js';
 import {
   dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
   dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
@@ -33,7 +34,8 @@ import {
   AI_CADENCE_TYPES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
   MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
   aiBriefDefaults, aiPromptDefaults, briefFromPrompt, confirmBrief, emptyCoreCommitment,
-  canStartAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
+  beginAIRequest, cancelAIRequests, canStartAIRequest, createAIRequestState,
+  finishAIRequest, hasActiveAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
   normalizeCoreCommitments, normalizeBriefAssumptions, normalizeClarifyingQuestions,
   normalizeConfirmedBrief, recoverAIBuilderState, routeInterpretedBrief,
   unacceptedMaterialAssumptions,
@@ -66,28 +68,43 @@ const AI_INTERPRET_TIMEOUT_MS = 30000;
 const AI_GENERATE_TIMEOUT_MS = 60000;
 const VOICE_TRANSCRIBE_TIMEOUT_MS = 50000;
 
-function abortAIRequest(kind = null){
-  const controllers = aiBuilder?.requestControllers || {};
-  Object.entries(controllers).forEach(([key, controller]) => {
-    if(!kind || key === kind) controller?.abort();
-  });
-  if(aiBuilder?.requestControllers){
-    if(kind) delete aiBuilder.requestControllers[kind];
-    else aiBuilder.requestControllers = {};
+function abortAIRequest(kind = null, builder = aiBuilder){
+  if(!builder?.requests) return;
+  if(!kind){
+    cancelAIRequests(builder.requests);
+    return;
   }
+  const slot = builder.requests[kind];
+  if(!slot) return;
+  slot.controller?.abort?.();
+  slot.token += 1;
+  slot.controller = null;
+  slot.loading = false;
 }
 
-async function authenticatedAIRequest(kind, url, options, timeoutMs){
-  abortAIRequest(kind);
+function beginAIClientRequest(builder, kind){
   const controller = new AbortController();
-  aiBuilder.requestControllers[kind] = controller;
+  const token = beginAIRequest(builder.requests, kind, controller);
+  return { builder, kind, controller, token };
+}
+
+function aiRequestIsCurrent(request){
+  return aiBuilder === request.builder
+    && request.builder.requests?.[request.kind]?.token === request.token;
+}
+
+function finishAIClientRequest(request){
+  return finishAIRequest(request.builder.requests, request.kind, request.token);
+}
+
+async function authenticatedAIRequest(request, url, options, timeoutMs){
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    controller.abort();
+    request.controller.abort();
   }, timeoutMs);
   try{
-    return await authFetch(url, { ...options, signal:controller.signal });
+    return await authFetch(url, { ...options, signal:request.controller.signal });
   }catch(error){
     if(timedOut){
       const timeoutError = new Error('The request took too long and was cancelled.');
@@ -97,7 +114,6 @@ async function authenticatedAIRequest(kind, url, options, timeoutMs){
     throw error;
   }finally{
     clearTimeout(timer);
-    if(aiBuilder?.requestControllers?.[kind] === controller) delete aiBuilder.requestControllers[kind];
   }
 }
 
@@ -179,7 +195,27 @@ function renderPathLoadError(id, title = 'Could not load path tasks. Try again.'
 
 function upSave(){     saveCurrentPath(); }
 function upSaveSoft(){ scheduleSave(); }
+function sanitizePersistedUrls(){
+  Object.values(store.state.userPaths || {}).forEach(path => {
+    path.coverImage = safeExternalUrl(path.coverImage);
+    path.profileImage = safeExternalUrl(path.profileImage);
+    (path.weeks || []).forEach(week => {
+      (week.tasks || []).forEach(task => { task.resourceUrl = safeExternalUrl(task.resourceUrl); });
+      (week.resources || []).forEach(resource => { resource.url = safeExternalUrl(resource.url) || ''; });
+    });
+  });
+  Object.values(store.state.skills || {}).forEach(skill => {
+    const edits = skill?.edits;
+    Object.values(edits?.res || {}).forEach(resources => {
+      (resources || []).forEach(resource => { resource.u = safeExternalUrl(resource.u) || ''; });
+    });
+    (edits?.added || []).forEach(week => {
+      (week.res || []).forEach(resource => { resource.u = safeExternalUrl(resource.u) || ''; });
+    });
+  });
+}
 async function saveCurrentPath(){
+  sanitizePersistedUrls();
   await dbSaveState();
   const id = store.state.current;
   if(id && store.state.userPaths[id] && store.state.userPaths[id].platform && canEditUserPath(id)){
@@ -461,6 +497,13 @@ function titleFromGoal(goal){
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
+function resourceLinksHTML(url, label){
+  const safeUrl = safeExternalUrl(url);
+  const title = label || url || 'Unavailable resource';
+  return '<div class="rl">' + externalLinkHTML(safeUrl, title) + '</div>'
+    + (safeUrl ? externalLinkHTML(safeUrl, 'open link', { className:'ext' }) : '<span class="ext invalid-link">not available</span>');
+}
+
 function normalizeGeneratedDraft(raw, prompt){
   if(!raw || typeof raw !== 'object') throw new Error('The generator returned an invalid draft.');
   const durationDays = clampDay(raw.durationDays || prompt.durationDays || 30, 30, 365);
@@ -498,7 +541,7 @@ function normalizeGeneratedDraft(raw, prompt){
       progressionCurve:normalizeProgressionCurve(t.progressionCurve, taskMode),
       progressionNotes:t.progressionNotes ? String(t.progressionNotes).slice(0, 300) : null,
       evidenceRequired:!!t.evidenceRequired,
-      resourceUrl:t.resourceUrl || null,
+      resourceUrl:safeExternalUrl(t.resourceUrl),
       order:Number.isFinite(Number(t.order)) ? Number(t.order) : i,
     };
   }).filter(t => t.title);
@@ -519,7 +562,7 @@ function normalizeGeneratedDraft(raw, prompt){
     tasks:tasks.sort((a, b) => a.order - b.order),
     resources:(Array.isArray(raw.resources) ? raw.resources : []).slice(0, 12).map((r, i) => ({
       title:String(r.title || ('Resource ' + (i + 1))).slice(0, 100),
-      url:r.url ? String(r.url).slice(0, 300) : '',
+      url:safeExternalUrl(r.url) || '',
       description:String(r.description || '').slice(0, 300),
     })).filter(r => r.title || r.url || r.description),
     notes:(Array.isArray(raw.notes) ? raw.notes : []).map(n => String(n || '').slice(0, 300)).filter(Boolean).slice(0, 8),
@@ -715,8 +758,7 @@ function openAIPathBuilder(){
     brief: aiBuilder?.brief || null,
     clarifyingAnswers: aiBuilder?.clarifyingAnswers || {},
     clarificationRound:0,
-    requestToken:0,
-    requestControllers:{},
+    requests:createAIRequestState(),
     voice: makeVoiceState(aiBuilder?.voice || {}),
     saving:false,
     dirty:false,
@@ -726,9 +768,10 @@ function openAIPathBuilder(){
 }
 
 function closeAIBuilder(){
-  abortAIRequest();
+  const builder = aiBuilder;
+  abortAIRequest(null, builder);
   cleanupVoiceRecording();
-  if(aiBuilder?.overlay) aiBuilder.overlay.remove();
+  if(builder?.overlay) builder.overlay.remove();
   aiBuilder = null;
 }
 
@@ -943,19 +986,19 @@ function clearVoiceRecording(){
 }
 
 async function transcribeVoiceRecording(){
-  const voice = aiBuilder.voice;
-  if(voice?.loading) return;
+  const builder = aiBuilder;
+  const voice = builder?.voice;
+  if(!builder || !canStartAIRequest(builder)) return;
   if(!voice?.blob){
     voice.error = 'Record a voice idea before transcribing.';
     renderAIBuilder();
     return;
   }
-  voice.loading = true;
   voice.error = '';
-  const requestToken = ++aiBuilder.requestToken;
+  const request = beginAIClientRequest(builder, 'voice');
   renderAIBuilder();
   try{
-    const res = await authenticatedAIRequest('voice', '/api/transcribe-voice', {
+    const res = await authenticatedAIRequest(request, '/api/transcribe-voice', {
       method:'POST',
       headers:{
         'Content-Type':voice.blob.type || voice.mimeType || 'audio/webm',
@@ -969,16 +1012,14 @@ async function transcribeVoiceRecording(){
       err.code = payload.error || payload.code || '';
       throw err;
     }
-    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
-    aiBuilder.voice.transcript = payload.transcript || '';
-    aiBuilder.voice.error = '';
+    if(!aiRequestIsCurrent(request)) return;
+    builder.voice.transcript = payload.transcript || '';
+    builder.voice.error = '';
   }catch(e){
-    if(aiBuilder && requestToken === aiBuilder.requestToken) aiBuilder.voice.error = voiceErrorCopy(e.code, e.message);
+    if(aiRequestIsCurrent(request)) builder.voice.error = voiceErrorCopy(e.code, e.message);
   }finally{
-    if(aiBuilder && requestToken === aiBuilder.requestToken){
-      aiBuilder.voice.loading = false;
-      renderAIBuilder();
-    }
+    finishAIClientRequest(request);
+    if(aiBuilder === builder) renderAIBuilder();
   }
 }
 
@@ -1006,6 +1047,8 @@ function useTranscriptAsGoalInput(){
 
 function voiceMemoHTML(){
   const voice = aiBuilder.voice || makeVoiceState();
+  const voiceLoading = aiBuilder.requests?.voice?.loading === true;
+  const paidBusy = hasActiveAIRequest(aiBuilder.requests);
   return '<div class="ai-voice-box">'
     + '<div class="ai-voice-copy"><b>Say it naturally.</b><span>You do not need a perfect prompt. The app will help turn your thoughts into a structured goal brief.</span></div>'
     + '<div class="hint">Audio is only used to create your transcript in this version. Raw audio is not permanently saved by the app.</div>'
@@ -1020,7 +1063,7 @@ function voiceMemoHTML(){
     + '<div class="ai-voice-actions">'
     + '<button class="btn" id="aiPlayVoice" ' + (voice.audioUrl ? '' : 'disabled') + '>Play recording</button>'
     + '<button class="btn" id="aiClearVoice" ' + (voice.audioUrl || voice.recording ? '' : 'disabled') + '>Clear recording</button>'
-    + '<button class="btn" id="aiTranscribeVoice" ' + (voice.audioUrl && !voice.loading ? '' : 'disabled') + '>' + (voice.loading ? 'Transcribing...' : 'Transcribe voice') + '</button>'
+    + '<button class="btn" id="aiTranscribeVoice" ' + (voice.audioUrl && !paidBusy ? '' : 'disabled') + '>' + (voiceLoading ? 'Transcribing...' : 'Transcribe voice') + '</button>'
     + '</div>'
     + '<div class="field"><label>Transcript</label><textarea id="aiVoiceTranscript" placeholder="Your transcript will appear here after transcription. You can edit it before using it.">' + esc(voice.transcript || '') + '</textarea></div>'
     + '<button class="btn" id="aiUseTranscript" ' + ((voice.transcript || '').trim() ? '' : 'disabled') + '>Use transcript as goal input</button>'
@@ -1105,7 +1148,7 @@ function aiInputFieldsHTML(){
 function aiPromptHTML(){
   const phase = aiBuilder.phase || 'input';
   const showBrief = !!aiBuilder.brief && ['interpreting', 'clarifying', 'reviewing', 'generating'].includes(phase);
-  const busy = ['interpreting', 'generating'].includes(phase) || aiBuilder.clarifyLoading || aiBuilder.loading;
+  const busy = hasActiveAIRequest(aiBuilder.requests) || aiBuilder.loading;
   let actions = '<button class="btn" id="aiCancel" type="button">Cancel</button>';
   if(showBrief){
     actions += '<button class="btn" id="aiBackToInput" type="button" ' + (busy ? 'disabled' : '') + '>Back to original form</button>';
@@ -1181,7 +1224,7 @@ function goalBriefHTML(){
     + '<div class="field"><label>Progressive targets</label><textarea class="ai-brief-targets" placeholder="area | current | target | unit | notes">' + esc(progressiveTargetsToText(b.progressiveTargets)) + '</textarea></div>'
     + assumptionsHTML(b.assumptions)
     + '<div class="field"><label>Material gaps</label><textarea class="ai-brief-array" data-key="materialGaps" placeholder="One per line">' + esc(joinLines(b.materialGaps)) + '</textarea></div>'
-    + (clarifying && q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>A few details will make your path more accurate</b><button class="btn gold" id="aiApplyAnswers" type="button">Update my brief</button></div>'
+    + (clarifying && q.length ? '<div class="ai-questions"><div class="ai-review-head"><b>A few details will make your path more accurate</b><button class="btn gold" id="aiApplyAnswers" type="button" ' + (hasActiveAIRequest(aiBuilder.requests) ? 'disabled' : '') + '>Update my brief</button></div>'
       + q.map(question => '<div class="field"><label>' + esc(question.prompt) + '</label>'
         + (question.reason ? '<div class="hint">' + esc(question.reason) + '</div>' : '')
         + '<textarea class="ai-answer-field" data-question-id="' + esc(question.id) + '" placeholder="Your answer">' + esc(aiBuilder.clarifyingAnswers[question.id] || '') + '</textarea></div>').join('')
@@ -1450,35 +1493,35 @@ async function handleBuildWithAI(){
 
 async function requestGoalInterpretation(withAnswers){
   if(!canStartAIRequest(aiBuilder)) return;
-  const previousPhase = aiBuilder.phase;
-  const questions = normalizeClarifyingQuestions(aiBuilder.brief?.clarifyingQuestions || []);
+  const builder = aiBuilder;
+  const previousPhase = builder.phase;
+  const questions = normalizeClarifyingQuestions(builder.brief?.clarifyingQuestions || []);
   const answers = withAnswers ? questions.map(question => ({
     id:question.id,
     targetField:question.targetField,
     question:question.prompt,
-    answer:String(aiBuilder.clarifyingAnswers[question.id] || '').trim(),
+    answer:String(builder.clarifyingAnswers[question.id] || '').trim(),
   })).filter(item => item.answer) : [];
   if(withAnswers && !answers.length){
     aiBuilder.error = 'Answer at least one question before updating your brief.';
     renderAIBuilder();
     return;
   }
-  const requestToken = ++aiBuilder.requestToken;
-  aiBuilder.clarifyLoading = true;
-  aiBuilder.phase = 'interpreting';
-  aiBuilder.error = '';
-  aiBuilder.message = withAnswers ? 'Preparing your updated brief...' : 'Understanding your goal...';
+  const request = beginAIClientRequest(builder, 'interpret');
+  builder.phase = 'interpreting';
+  builder.error = '';
+  builder.message = withAnswers ? 'Preparing your updated brief...' : 'Understanding your goal...';
   renderAIBuilder();
   try{
-    const response = await authenticatedAIRequest('interpret', '/api/interpret-goal', {
+    const response = await authenticatedAIRequest(request, '/api/interpret-goal', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body:JSON.stringify({
-        roughGoal:aiBuilder.prompt.goal,
-        context:aiBuilder.prompt,
-        previousBrief:aiBuilder.brief || briefFromPrompt(aiBuilder.prompt),
+        roughGoal:builder.prompt.goal,
+        context:builder.prompt,
+        previousBrief:builder.brief || briefFromPrompt(builder.prompt),
         answers,
-        clarificationRound:withAnswers ? aiBuilder.clarificationRound + 1 : aiBuilder.clarificationRound,
+        clarificationRound:withAnswers ? builder.clarificationRound + 1 : builder.clarificationRound,
         maxClarificationRounds:MAX_AI_CLARIFICATION_ROUNDS,
       }),
     }, AI_INTERPRET_TIMEOUT_MS);
@@ -1488,34 +1531,32 @@ async function requestGoalInterpretation(withAnswers){
       error.code = payload.error || payload.code || '';
       throw error;
     }
-    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
+    if(!aiRequestIsCurrent(request)) return;
     const brief = normalizeGoalBrief(payload.brief);
     if(!isMeaningfulAIGoal(brief.goal || brief.summary)){
       const error = new Error('The AI returned an incomplete goal brief. Please retry.');
       error.code = 'invalid_goal_brief';
       throw error;
     }
-    if(withAnswers) aiBuilder.clarificationRound += 1;
-    const nextPhase = routeInterpretedBrief(brief, aiBuilder.clarificationRound);
+    if(withAnswers) builder.clarificationRound += 1;
+    const nextPhase = routeInterpretedBrief(brief, builder.clarificationRound);
     if(nextPhase === 'reviewing' && !brief.readyToGenerate){
       brief.assumptions = assumptionsForFinalClarification(brief);
       brief.clarifyingQuestions = [];
     }
-    aiBuilder.brief = brief;
-    aiBuilder.clarifyingAnswers = {};
-    aiBuilder.phase = nextPhase;
-    aiBuilder.message = nextPhase === 'clarifying'
+    builder.brief = brief;
+    builder.clarifyingAnswers = {};
+    builder.phase = nextPhase;
+    builder.message = nextPhase === 'clarifying'
       ? 'Answer the focused questions below so the roadmap can fit your situation.'
       : 'Your editable path brief is ready. Review it before generating the roadmap.';
   }catch(error){
-    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
-    const recoveryPhase = aiBuilder.brief ? (previousPhase === 'reviewing' ? 'reviewing' : 'clarifying') : 'error';
-    Object.assign(aiBuilder, recoverAIBuilderState(aiBuilder, aiInterpretationError(error), recoveryPhase), { message:'' });
+    if(!aiRequestIsCurrent(request)) return;
+    const recoveryPhase = builder.brief ? (previousPhase === 'reviewing' ? 'reviewing' : 'clarifying') : 'error';
+    Object.assign(builder, recoverAIBuilderState(builder, aiInterpretationError(error), recoveryPhase), { message:'' });
   }finally{
-    if(aiBuilder && requestToken === aiBuilder.requestToken){
-      aiBuilder.clarifyLoading = false;
-      renderAIBuilder();
-    }
+    finishAIClientRequest(request);
+    if(aiBuilder === builder) renderAIBuilder();
   }
 }
 
@@ -1577,6 +1618,12 @@ async function generateRoadmapFromBrief(){
     renderAIBuilder();
     return;
   }
+  brief.description = aiBuilder.prompt.description || brief.description || brief.goal || '';
+  brief.requestedTasks = aiBuilder.prompt.includeTasks || brief.requestedTasks || '';
+  brief.excludedTasks = aiBuilder.prompt.excludeTasks || brief.excludedTasks || '';
+  const promptResources = [aiBuilder.prompt.existingResources, aiBuilder.prompt.resourceLinks]
+    .filter(Boolean).join('\n').split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  if(promptResources.length) brief.resources = brief.resourcesMentioned = promptResources.slice(0, 12);
   const confirmedBrief = confirmBrief(brief);
   const patch = briefToPromptPatch(brief);
   const prompt = {
@@ -1591,23 +1638,19 @@ async function generateRoadmapFromBrief(){
   };
   aiBuilder.prompt = prompt;
   aiBuilder.brief = confirmedBrief;
-  const requestToken = ++aiBuilder.requestToken;
-  aiBuilder.loading = true;
-  aiBuilder.phase = 'generating';
-  aiBuilder.error = '';
-  aiBuilder.message = '';
+  const builder = aiBuilder;
+  const request = beginAIClientRequest(builder, 'generate');
+  builder.phase = 'generating';
+  builder.error = '';
+  builder.message = '';
   renderAIBuilder();
   try{
-    const response = await authenticatedAIRequest('generate', '/api/generate-path', {
+    const response = await authenticatedAIRequest(request, '/api/generate-path', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body:JSON.stringify({
         confirmedBrief,
-        visibility:prompt.visibility,
-        description:prompt.description,
-        resourceLinks:prompt.resourceLinks,
-        includeTasks:prompt.includeTasks,
-        excludeTasks:prompt.excludeTasks,
+        saveOptions:{ visibility:prompt.visibility },
       }),
     }, AI_GENERATE_TIMEOUT_MS);
     const payload = await parseAIResponse(response, 'invalid_ai_output', 'Claude returned a path draft that could not be validated. Please regenerate.');
@@ -1616,28 +1659,26 @@ async function generateRoadmapFromBrief(){
       error.code = payload.error || payload.code || '';
       throw error;
     }
-    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
-    aiBuilder.draft = normalizeGeneratedDraft(payload.draft, prompt);
-    aiBuilder.draft.source = payload.source || 'anthropic';
-    aiBuilder.message = payload.message || 'AI draft generated. Review before saving.';
-    aiBuilder.mode = 'review';
-    aiBuilder.phase = 'complete';
-    aiBuilder.dirty = false;
+    if(!aiRequestIsCurrent(request)) return;
+    builder.draft = normalizeGeneratedDraft(payload.draft, prompt);
+    builder.draft.source = payload.source || 'anthropic';
+    builder.message = payload.message || 'AI draft generated. Review before saving.';
+    builder.mode = 'review';
+    builder.phase = 'complete';
+    builder.dirty = false;
   }catch(error){
-    if(!aiBuilder || requestToken !== aiBuilder.requestToken) return;
-    aiBuilder.phase = 'reviewing';
-    if(error.code === 'unauthorized') aiBuilder.error = 'Your session has expired. Sign in again to continue.';
-    else if(error.code === 'rate_limited') aiBuilder.error = 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
-    else if(['operation_timeout', 'provider_timeout'].includes(error.code)) aiBuilder.error = 'The AI request took too long and was cancelled. Your information is still saved.';
-    else if(error.code === 'invalid_provider_response') aiBuilder.error = 'Claude returned an invalid roadmap response. Please regenerate.';
-    else if(error.code === 'provider_unavailable') aiBuilder.error = 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
-    else if(error.code === 'brief_not_confirmed') aiBuilder.error = 'Review and confirm your path brief before generating the roadmap.';
-    else aiBuilder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';
+    if(!aiRequestIsCurrent(request)) return;
+    builder.phase = 'reviewing';
+    if(error.code === 'unauthorized') builder.error = 'Your session has expired. Sign in again to continue.';
+    else if(error.code === 'rate_limited') builder.error = 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
+    else if(['operation_timeout', 'provider_timeout'].includes(error.code)) builder.error = 'The AI request took too long and was cancelled. Your information is still saved.';
+    else if(error.code === 'invalid_provider_response') builder.error = 'Claude returned an invalid roadmap response. Please regenerate.';
+    else if(error.code === 'provider_unavailable') builder.error = 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
+    else if(error.code === 'brief_not_confirmed') builder.error = 'Review and confirm your path brief before generating the roadmap.';
+    else builder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';
   }finally{
-    if(aiBuilder && requestToken === aiBuilder.requestToken){
-      aiBuilder.loading = false;
-      renderAIBuilder();
-    }
+    finishAIClientRequest(request);
+    if(aiBuilder === builder) renderAIBuilder();
   }
 }
 
@@ -1961,12 +2002,14 @@ function renderAccessBlocked(record){
 
 function renderPathPreview(record){
   const path = record.path;
+  const coverImage = safeExternalUrl(path.coverImage);
+  const profileImage = safeExternalUrl(path.profileImage);
   const req = store.accessRequests[record.id];
   store.state.current = null; store.editMode = false; applyHeader();
   let h = '<div class="preview-hero panel">'
-    + (path.coverImage ? '<div class="preview-cover" style="background-image:url(\'' + esc(path.coverImage) + '\')"></div>' : '')
+    + (coverImage ? '<div class="preview-cover" style="background-image:url(\'' + esc(coverImage.replace(/'/g, '%27')) + '\')"></div>' : '')
     + '<div class="preview-body">'
-    + (path.profileImage ? '<img class="preview-avatar" src="' + esc(path.profileImage) + '" alt=""/>' : '')
+    + (profileImage ? '<img class="preview-avatar" src="' + esc(profileImage) + '" alt=""/>' : '')
     + '<div class="chip">' + esc(path.visibility) + ' preview</div>'
     + '<div class="section-title" style="margin-top:10px">' + esc(path.previewTitle || path.title) + '</div>'
     + '<div class="muted" style="max-width:680px;margin-top:8px">' + esc(path.previewDescription || path.description || path.goal || '') + '</div>'
@@ -2103,11 +2146,11 @@ function evidenceListHTML(enrollmentId, dayNumber){
   return '<div class="evidence-list">' + submissions.map(s => {
     const title = s.taskTitle || 'Task proof';
     const label = s.evidenceType === 'file' ? (s.fileName || 'Uploaded file') : 'URL proof';
-    const href = s.evidenceUrl || '#';
+    const href = safeExternalUrl(s.evidenceUrl);
     return '<div class="evidence-item"><div><b>' + esc(title) + '</b>'
       + '<span>' + esc(dateText(s.createdAt)) + '</span>'
       + (s.note ? '<p>' + esc(s.note) + '</p>' : '') + '</div>'
-      + (s.evidenceUrl ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(label) + '</a>' : '<em>' + esc(label) + '</em>')
+      + (href ? externalLinkHTML(href, label) : '<em>' + esc(label) + '</em>')
       + '</div>';
   }).join('') + '</div>';
 }
@@ -2325,9 +2368,8 @@ async function submitEvidenceForTask(id, def, taskId){
     evidenceBusy = true;
     evidenceError = '';
     if(type === 'url'){
-      evidenceUrl = ($('evidenceUrl')?.value || '').trim();
-      try{ new URL(evidenceUrl); }
-      catch(e){ throw new Error('Add a valid proof URL.'); }
+      evidenceUrl = safeExternalUrl($('evidenceUrl')?.value);
+      if(!evidenceUrl) throw new Error('Add a valid HTTP or HTTPS proof URL.');
     } else {
       if(!cloudActive()) throw new Error('File uploads require Firebase Storage. Add Storage config or submit URL proof instead.');
       const file = $('evidenceFile')?.files?.[0];
@@ -2666,7 +2708,7 @@ export function renderPlan(){
           + '<input type="text" class="res-url" data-wi="' + wi + '" data-ri="' + ri + '" value="' + esc(r.url || '') + '" placeholder="https://..."/>'
           + '<button class="icon-btn danger" data-act="delRes" data-wi="' + wi + '" data-ri="' + ri + '" title="Remove">×</button></div>';
       } else if(r.url || r.label){
-        h += '<div class="res-item"><input type="checkbox" class="ck sm" data-id="' + rid + '" ' + (p[rid] ? 'checked' : '') + '/><div class="rl"><a href="' + esc(r.url || '#') + '" target="_blank" rel="noopener">' + esc(r.label || r.url) + '</a></div><a class="ext" href="' + esc(r.url || '#') + '" target="_blank" rel="noopener">open ↗</a></div>';
+        h += '<div class="res-item"><input type="checkbox" class="ck sm" data-id="' + rid + '" ' + (p[rid] ? 'checked' : '') + '/>' + resourceLinksHTML(r.url, r.label || r.url) + '</div>';
       }
     });
     if(store.editMode) h += '<button class="add-link" data-act="addRes" data-wi="' + wi + '">+ Add resource</button>';
@@ -2712,8 +2754,18 @@ export function renderPlan(){
     upSaveSoft();
   });
   bindText('pmCreator', 'creatorName');
-  bindText('pmCover', 'coverImage');
-  bindText('pmProfile', 'profileImage');
+  const bindUrl = (id, key) => {
+    const el = $(id);
+    if(!el) return;
+    el.addEventListener('input', e => { def[key] = e.target.value; });
+    el.addEventListener('change', e => {
+      def[key] = safeExternalUrl(e.target.value);
+      e.target.value = def[key] || '';
+      upSave();
+    });
+  };
+  bindUrl('pmCover', 'coverImage');
+  bindUrl('pmProfile', 'profileImage');
   bindText('pmPreviewTitle', 'previewTitle');
   bindText('pmPreviewDescription', 'previewDescription');
   bindCheck('pmDiscoverable', 'discoverable');
@@ -2745,7 +2797,15 @@ export function renderPlan(){
     upSave();
   }));
   $('content').querySelectorAll('.res-label').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].label = e.target.value; upSaveSoft(); }));
-  $('content').querySelectorAll('.res-url').forEach(inp   => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url   = e.target.value; upSaveSoft(); }));
+  $('content').querySelectorAll('.res-url').forEach(inp => {
+    inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri].url = e.target.value; });
+    inp.addEventListener('change', e => {
+      const resource = def.weeks[+e.target.dataset.wi].resources[+e.target.dataset.ri];
+      resource.url = safeExternalUrl(e.target.value) || '';
+      e.target.value = resource.url;
+      upSave();
+    });
+  });
   $('content').querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
     const act = btn.dataset.act, wi = +btn.dataset.wi, ti = +btn.dataset.ti, ri = +btn.dataset.ri;
     if(act === 'addTask'){
@@ -2936,8 +2996,7 @@ export function renderWeek(){
     wk.res.forEach((r, i) => {
       const rid = 'w' + wk.w + '.r' + i;
       h += '<div class="res-item"><input type="checkbox" class="ck sm" data-id="' + rid + '" ' + (P()[rid] ? 'checked' : '') + '/>'
-        + '<div class="rl"><a href="' + esc(r.u) + '" target="_blank" rel="noopener">' + esc(r.l) + '</a></div>'
-        + '<a class="ext" href="' + esc(r.u) + '" target="_blank" rel="noopener">open ↗</a></div>';
+        + resourceLinksHTML(r.u, r.l) + '</div>';
     });
   } else h += '<div class="muted" style="font-size:13px">Reference study week - pull from the Drill Library and the masters channels.</div>';
   h += '<div class="hint" style="margin-top:14px">Tick a resource once youve worked through it. Full library in the <b>Resources</b> tab.</div></div>'
@@ -2958,7 +3017,14 @@ export function renderWeek(){
     const go = $('cmGoal');  if(go) go.addEventListener('input', e => { curState().meta.goal  = e.target.value || undefined; scheduleSave(); });
     const fe = $('focusEdit'); if(fe) fe.addEventListener('input', e => { setWeekFocus(wk.w, e.target.value); scheduleSave(); });
     $('content').querySelectorAll('.cres-l').forEach(inp => inp.addEventListener('input', e => { weekResArr(wk.w)[+e.target.dataset.i].l = e.target.value; scheduleSave(); }));
-    $('content').querySelectorAll('.cres-u').forEach(inp => inp.addEventListener('input', e => { weekResArr(wk.w)[+e.target.dataset.i].u = e.target.value; scheduleSave(); }));
+    $('content').querySelectorAll('.cres-u').forEach(inp => {
+      inp.addEventListener('input', e => { weekResArr(wk.w)[+e.target.dataset.i].u = e.target.value; });
+      inp.addEventListener('change', e => {
+        weekResArr(wk.w)[+e.target.dataset.i].u = safeExternalUrl(e.target.value) || '';
+        e.target.value = weekResArr(wk.w)[+e.target.dataset.i].u;
+        dbSaveState();
+      });
+    });
     $('content').querySelectorAll('[data-cact]').forEach(btn => btn.onclick = () => {
       const act = btn.dataset.cact;
       if(act === 'addRes'){ weekResArr(wk.w).push({ l:'', u:'' }); }
@@ -3071,7 +3137,7 @@ export function renderRes(){
     + '<div class="muted" style="margin-bottom:20px;max-width:640px">Courses are mapped to specific weeks in <b style="color:var(--cream)">This Week</b>. Everything else lives here.</div><div class="grid2">';
   curDef().resources.forEach(grp => {
     h += '<div class="panel card"><h3>' + esc(grp.g) + '</h3>';
-    grp.items.forEach(r => { h += '<div class="res-item"><div class="rl"><a href="' + esc(r.u) + '" target="_blank" rel="noopener">' + esc(r.l) + '</a></div><a class="ext" href="' + esc(r.u) + '" target="_blank" rel="noopener">open ↗</a></div>'; });
+    grp.items.forEach(r => { h += '<div class="res-item">' + resourceLinksHTML(r.u, r.l) + '</div>'; });
     h += '</div>';
   });
   h += '</div>';
@@ -3176,7 +3242,7 @@ function renderGallery(){
     h += '<div class="logcard"><div class="thumb" ' + thumb + '>' + (en.thumb ? '' : icon) + '<span class="kind">' + esc(en.kind || 'note') + '</span></div>'
       + '<div class="lc-body"><div class="lc-top"><span class="lc-wk">Week ' + esc(en.week || '-') + '</span><span class="lc-date">' + esc(ds) + '</span></div>'
       + '<h4>' + esc(en.title || 'Untitled') + '</h4><p>' + esc(en.learned || '') + '</p>'
-      + '<div class="lc-foot">' + (en.url ? ('<a href="' + esc(en.url) + '" target="_blank" rel="noopener" class="ext">open render ↗</a>') : '<span></span>') + '<button class="del" data-id="' + esc(en.id) + '">delete</button></div></div></div>';
+      + '<div class="lc-foot">' + (en.url ? externalLinkHTML(en.url, 'open render', { className:'ext' }) : '<span></span>') + '<button class="del" data-id="' + esc(en.id) + '">delete</button></div></div></div>';
   });
   h += '</div>';
   g.innerHTML = h;
@@ -3193,7 +3259,7 @@ async function addEntry(){
   let kind = pendingKind; if(!kind && url) kind = 'link';
   const entry = {
     id, skill: store.state.current, week, title, learned,
-    url: url || null, kind: kind || 'note',
+    url: safeExternalUrl(url), kind: kind || 'note',
     thumb: pendingThumb || null, name: pendingName || null,
     date: Date.now(),
   };

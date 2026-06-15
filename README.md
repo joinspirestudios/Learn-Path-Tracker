@@ -2,9 +2,11 @@
 
 Learn Path Tracker is a Vite + Firebase proof-of-growth app for creating learning paths, habits, challenges, and personal-development roadmaps. It supports local mode, platform paths, creator attribution, enrollments, day logs, streaks, freezes, evidence, templates, and an optional Anthropic-powered AI path builder.
 
-Phase 5.1.2 protects paid AI and transcription routes with Firebase Authentication, per-user rate limits, bounded input validation, and server-side provider cancellation. Live web research is not part of this phase.
+Phase 5.1.3 protects paid AI and transcription routes with Firebase Authentication, per-user rate limits, bounded input validation, server-side provider cancellation, private no-store responses, and isolated client request lifecycles. Live web research is not part of this phase.
 
 ## Install and run
+
+Use Node.js 20.19 or newer within the Node 20 line, or Node 22.12 through Node 22.x. Node 20 is the recommended local and deployment runtime; `.nvmrc` is included for version managers.
 
 ```bash
 npm install
@@ -49,6 +51,10 @@ Firebase web configuration is public project configuration. Access control still
 
 File evidence upload additionally requires Firebase Storage to be enabled, `storage.rules` to be published, and `VITE_FIREBASE_STORAGE_BUCKET` to identify the enabled bucket.
 
+## Safe external links
+
+Only absolute `http://` and `https://` links are supported. Manual, imported, stored, evidence, legacy, and AI-generated URLs all pass through the same protocol allowlist before storage or rendering. Unsupported schemes such as `javascript:`, `data:`, `file:`, `blob:`, and `vbscript:` remain non-clickable descriptive text; user and AI links are never trusted automatically.
+
 ### Firebase Admin
 
 The protected serverless routes verify Firebase ID tokens with Firebase Admin. Configure these server-only variables in Vercel:
@@ -72,6 +78,10 @@ DEEPGRAM_API_KEY
 `ANTHROPIC_MODEL` is optional and defaults to `claude-sonnet-4-6`. Anthropic powers goal interpretation and roadmap generation. Deepgram powers voice transcription. Provider keys are server-only and must not be prefixed with `VITE_`.
 
 Basic starter is local and does not call a protected AI route or consume Anthropic usage.
+
+## AI request concurrency
+
+Voice transcription, goal interpretation, and roadmap generation use independent request tokens and abort controllers, but paid operations cannot run concurrently. Starting one disables conflicting paid actions and duplicate submission controls. Closing the builder aborts all active requests, invalidates their tokens, clears loading state, and prevents stale responses from mutating or reopening the modal.
 
 ### Rate limits
 
@@ -118,13 +128,19 @@ Routes return normalized errors:
 
 Compatibility fields `ok` and `code` are also included for the current UI. Rate-limited responses include `Retry-After`. Provider requests have route-specific server timeouts and are aborted when the timeout expires or the client disconnects.
 
+Protected success and error responses use `Cache-Control: private, no-store` and include an `X-Request-Id` header plus matching `requestId` response field. Unexpected server failures return a generic message; internal error details are logged only with the request ID and never include request bodies or credentials.
+
 Voice transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 25 MB. The app does not claim a duration limit it cannot verify and does not persist raw voice uploads.
+
+Authentication, declared-size validation, and the per-user voice rate limit run before the audio body is buffered. The stream is still counted while reading and is terminated when it exceeds 25 MB, so a missing or inaccurate `Content-Length` cannot bypass the limit. Duration is not validated in this version.
 
 ## AI brief integrity
 
 Build with AI first creates one canonical brief. Clarification questions have stable IDs and target fields. Answers are merged into those fields in application code before Claude enriches the brief. User-entered and answered fields are recorded in `confirmedFields` and cannot be silently overwritten by the model.
 
 Material uncertainty is represented as visible assumptions. Every material assumption must be accepted, edited, or removed before roadmap generation. Missing level or intensity remains unknown; the server no longer inserts hidden `beginner` or `moderate` defaults. The generation route rejects unconfirmed briefs.
+
+Roadmap generation accepts one canonical `confirmedBrief` plus `saveOptions.visibility`. Legacy duplicate content fields are ignored only when they exactly match the canonical brief; conflicting duplicates are rejected.
 
 No route performs web research, verifies resource URLs, or creates citations.
 
@@ -150,6 +166,8 @@ firebase deploy --only firestore:rules,storage
 ```
 
 Changing repository rules does not update live Firebase automatically. Keep deployed rules synchronized with the repository. Production rules and abuse controls should receive another hardening review before a broad public launch.
+
+Evidence file deletion is not implemented in this version. The current Storage rules intentionally cover upload/read behavior only; do not add a client delete control until ownership checks, Firestore submission cleanup, and Storage deletion are designed and tested together.
 
 The older minimal user-only rules are suitable only for the legacy private tracker mode. Platform paths, members, write-first enrollments, day logs, submissions, and protected operational data require the current repository rules.
 

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 export class ApiError extends Error {
   constructor(code, message, status = 500, details = null){
     super(message);
@@ -12,21 +14,45 @@ export function apiError(code, message, status = 500, details = null){
   return new ApiError(code, message, status, details);
 }
 
+export function setPrivateNoStore(res, requestId = null){
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  if(requestId) res.setHeader('X-Request-Id', requestId);
+}
+
+export function sendPrivateJson(res, status, payload, requestId = randomUUID()){
+  setPrivateNoStore(res, requestId);
+  return res.status(status).json({ ...payload, requestId });
+}
+
 export function sendApiError(res, error){
-  const status = Number(error?.status) || 500;
-  const code = error?.code || 'internal_error';
-  const message = error?.message || 'An unexpected server error occurred.';
-  if(error?.retryAfterSeconds){
+  const requestId = randomUUID();
+  const trusted = error instanceof ApiError;
+  const status = trusted ? (Number(error.status) || 500) : 500;
+  const code = trusted ? (error.code || 'internal_error') : 'internal_error';
+  const message = trusted ? error.message : 'An unexpected server error occurred. Please try again.';
+  const details = trusted ? (error.details ?? null) : null;
+  if(trusted && error.retryAfterSeconds){
     res.setHeader('Retry-After', String(Math.max(1, Math.ceil(error.retryAfterSeconds))));
   }
-  return res.status(status).json({
+  if(!trusted){
+    console.error('Unhandled API error', {
+      requestId,
+      name:error?.name || 'Error',
+      code:error?.code || null,
+      status:Number(error?.status) || null,
+      stackFrames:String(error?.stack || '').split('\n').slice(1, 8),
+    });
+  }
+  return sendPrivateJson(res, status, {
     ok:false,
     error:code,
     code,
     message,
-    details:error?.details ?? null,
-    ...(error?.retryAfterSeconds ? { retryAfterSeconds:Math.ceil(error.retryAfterSeconds) } : {}),
-  });
+    details,
+    ...(trusted && error.retryAfterSeconds ? { retryAfterSeconds:Math.ceil(error.retryAfterSeconds) } : {}),
+  }, requestId);
 }
 
 export function methodNotAllowed(res, allowed = 'POST'){

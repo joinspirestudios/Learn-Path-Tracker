@@ -4,6 +4,7 @@
 
 import { normalizeDurationDays } from './journey.js';
 import { normalizeCoreCommitments } from './ai-builder-model.js';
+import { safeExternalUrl } from './urls.js';
 
 export const PATH_VISIBILITIES = ['private', 'unlisted', 'public'];
 
@@ -38,8 +39,8 @@ export function normalizePathDoc(id, data = {}){
     category: data.category || '',
     durationLabel: data.durationLabel || '',
     durationDays: normalizeDurationDays(data.durationDays, data.durationLabel),
-    coverImage: data.coverImage || null,
-    profileImage: data.profileImage || null,
+    coverImage: safeExternalUrl(data.coverImage),
+    profileImage: safeExternalUrl(data.profileImage),
     creatorName: data.creatorName || '',
     creatorEmail: data.creatorEmail || data.ownerEmail || '',
     sectionCount:Number.isFinite(Number(data.sectionCount)) ? Number(data.sectionCount) : null,
@@ -112,8 +113,8 @@ export function localPathDefaults(localPath = {}, user){
     category: localPath.category || '',
     durationLabel: localPath.durationLabel || (weeks.length ? `${weeks.length} weeks` : ''),
     durationDays: normalizeDurationDays(localPath.durationDays, localPath.durationLabel || (weeks.length ? `${weeks.length} weeks` : '')),
-    coverImage: localPath.coverImage || null,
-    profileImage: localPath.profileImage || null,
+    coverImage: safeExternalUrl(localPath.coverImage),
+    profileImage: safeExternalUrl(localPath.profileImage),
     creatorName: localPath.creatorName || creatorName(user),
     creatorId: localPath.creatorId || user?.uid || '',
     creatorEmail: localPath.creatorEmail || user?.email || '',
@@ -159,7 +160,7 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         sectionId,
         title: task.title || task.text || '',
         description: task.description || '',
-        resourceUrl: task.resourceUrl || null,
+        resourceUrl: safeExternalUrl(task.resourceUrl),
         evidenceRequired: !!task.evidenceRequired,
         order: ti,
         unlockDay: task.unlockDay == null ? null : Number(task.unlockDay),
@@ -186,7 +187,7 @@ export function localToPlatformParts(id, localPath, user, ownerId){
         sectionId,
         title: resource.label || resource.title || resource.url || 'Resource',
         description: resource.description || '',
-        resourceUrl: resource.url || resource.resourceUrl || null,
+        resourceUrl: safeExternalUrl(resource.url || resource.resourceUrl),
         evidenceRequired: false,
         order: 1000 + ri,
         unlockDay: null,
@@ -220,13 +221,13 @@ export function platformToLocalPath(record){
     const week = bySection[task.sectionId];
     if(!week) return;
     if(task.kind === 'resource'){
-      week.resources.push({ label: task.title || task.resourceUrl || 'Resource', url: task.resourceUrl || '' });
+      week.resources.push({ label: task.title || task.resourceUrl || 'Resource', url: safeExternalUrl(task.resourceUrl) || '' });
     } else {
       week.tasks.push({
         id: task.id,
         text: task.title || '',
         description: task.description || '',
-        resourceUrl: task.resourceUrl || null,
+        resourceUrl: safeExternalUrl(task.resourceUrl),
         evidenceRequired: !!task.evidenceRequired,
         unlockDay: task.unlockDay == null ? null : task.unlockDay,
         scheduleType: task.scheduleType || (task.unlockDay == null && task.startDay == null ? null : 'once'),

@@ -7,7 +7,7 @@ import { enforceRateLimit } from '../api/_lib/rate-limit.js';
 import { requireAuth } from '../api/_lib/require-auth.js';
 import { createGeneratePathHandler, basicStarterDraft } from '../api/generate-path.js';
 import { createInterpretGoalHandler, normalizeBrief } from '../api/interpret-goal.js';
-import { createTranscribeVoiceHandler } from '../api/transcribe-voice.js';
+import { createTranscribeVoiceHandler, MAX_AUDIO_BYTES } from '../api/transcribe-voice.js';
 import {
   briefFromPrompt, confirmBrief, mergeBriefPreservingConfirmed,
   mergeClarificationAnswers, normalizeConfirmedBrief,
@@ -105,6 +105,8 @@ test('all paid route handlers reject unauthenticated requests before provider us
     await handler(request, response);
     assert.equal(response.statusCode, 401);
     assert.equal(response.payload.error, 'unauthorized');
+    assert.equal(response.headers['Cache-Control'], 'private, no-store, max-age=0');
+    assert.ok(response.headers['X-Request-Id']);
   }
   assert.equal(providerCalls, 0);
 });
@@ -123,7 +125,9 @@ test('rate-limited generation returns 429 with Retry-After and skips provider', 
   const res = responseRecorder();
   await handler(jsonRequest({ confirmedBrief:confirmBrief({ goal:'Learn piano', durationDays:30 }) }), res);
   assert.equal(res.statusCode, 429);
+  assert.equal(res.payload.message, 'Limit reached.');
   assert.equal(res.headers['Retry-After'], '120');
+  assert.equal(res.headers['Cache-Control'], 'private, no-store, max-age=0');
   assert.equal(providerCalls, 0);
 });
 
@@ -275,7 +279,7 @@ test('interpretation route requires auth and reaches provider only after validat
   assert.equal(calls, 1);
 });
 
-test('voice validation rejects unsupported MIME type before rate limit or provider use', async () => {
+test('voice validation rejects unsupported MIME type after rate limit and before provider use', async () => {
   let rateCalls = 0;
   let providerCalls = 0;
   const handler = createTranscribeVoiceHandler({
@@ -290,8 +294,190 @@ test('voice validation rejects unsupported MIME type before rate limit or provid
   const res = responseRecorder();
   await handler(req, res);
   assert.equal(res.statusCode, 415);
-  assert.equal(rateCalls, 0);
+  assert.equal(rateCalls, 1);
   assert.equal(providerCalls, 0);
+});
+
+test('voice rate limiting happens before the request stream is buffered', async () => {
+  let iterated = false;
+  let providerCalls = 0;
+  const handler = createTranscribeVoiceHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => { throw apiError('rate_limited', 'Limit reached.', 429); },
+    provider:async () => { providerCalls += 1; },
+  });
+  const req = {
+    method:'POST', headers:{ authorization:'Bearer token', 'content-type':'audio/webm' },
+    once(){}, off(){},
+    async *[Symbol.asyncIterator](){ iterated = true; yield Buffer.from('audio'); },
+  };
+  const res = responseRecorder();
+  await handler(req, res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(iterated, false);
+  assert.equal(providerCalls, 0);
+});
+
+test('oversized voice content is rejected before provider use', async () => {
+  let providerCalls = 0;
+  const handler = createTranscribeVoiceHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    provider:async () => { providerCalls += 1; },
+  });
+  const req = {
+    method:'POST', headers:{ authorization:'Bearer token', 'content-type':'audio/webm', 'content-length':String(25 * 1024 * 1024 + 1) },
+    body:Buffer.from('small'), once(){}, off(){},
+  };
+  const res = responseRecorder();
+  await handler(req, res);
+  assert.equal(res.statusCode, 413);
+  assert.equal(providerCalls, 0);
+});
+
+test('oversized streamed voice upload stops reading and never reaches Deepgram', async () => {
+  let providerCalls = 0;
+  let destroyed = false;
+  let chunksRead = 0;
+  const handler = createTranscribeVoiceHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    provider:async () => { providerCalls += 1; },
+  });
+  const req = {
+    method:'POST', headers:{ authorization:'Bearer token', 'content-type':'audio/webm' },
+    once(){}, off(){}, destroy(){ destroyed = true; },
+    async *[Symbol.asyncIterator](){
+      chunksRead += 1;
+      yield Buffer.alloc(MAX_AUDIO_BYTES);
+      chunksRead += 1;
+      yield Buffer.alloc(1);
+      chunksRead += 1;
+      yield Buffer.alloc(1024);
+    },
+  };
+  const res = responseRecorder();
+  await handler(req, res);
+  assert.equal(res.statusCode, 413);
+  assert.equal(destroyed, true);
+  assert.equal(chunksRead, 2);
+  assert.equal(providerCalls, 0);
+});
+
+test('protected responses are private no-store and include a request ID', async () => {
+  const handler = createGeneratePathHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    provider:async input => basicStarterDraft(input, 'test'),
+  });
+  const res = responseRecorder();
+  await handler(jsonRequest({
+    confirmedBrief:confirmBrief({ goal:'Learn piano', durationDays:30 }),
+    saveOptions:{ visibility:'private' },
+  }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Cache-Control'], 'private, no-store, max-age=0');
+  assert.ok(res.headers['X-Request-Id']);
+  assert.equal(res.payload.requestId, res.headers['X-Request-Id']);
+});
+
+test('all protected route successes include private no-store headers', async () => {
+  const confirmedBrief = confirmBrief({ goal:'Learn piano', durationDays:30 });
+  const cases = [
+    [createGeneratePathHandler({
+      authenticate:async () => ({ uid:'verified-user' }), rateLimit:async () => {},
+      provider:async input => basicStarterDraft(input, 'test'),
+    }), jsonRequest({ confirmedBrief, saveOptions:{ visibility:'private' } })],
+    [createInterpretGoalHandler({
+      authenticate:async () => ({ uid:'verified-user' }), rateLimit:async () => {},
+      provider:async () => ({
+        goal:'Learn piano', summary:'Piano practice', pathType:'skill', durationDays:30,
+        materialGaps:[], clarifyingQuestions:[], assumptions:[], readyToGenerate:true,
+      }),
+    }), jsonRequest({ roughGoal:'Learn piano' })],
+    [createTranscribeVoiceHandler({
+      authenticate:async () => ({ uid:'verified-user' }), rateLimit:async () => {},
+      provider:async () => ({ transcript:'Learn piano', duration:2, confidence:0.9 }),
+    }), {
+      method:'POST', headers:{ authorization:'Bearer token', 'content-type':'audio/webm' },
+      body:Buffer.from('audio'), once(){}, off(){},
+    }],
+  ];
+  for(const [handler, req] of cases){
+    const res = responseRecorder();
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['Cache-Control'], 'private, no-store, max-age=0');
+    assert.equal(res.headers.Pragma, 'no-cache');
+    assert.equal(res.headers.Expires, '0');
+    assert.ok(res.headers['X-Request-Id']);
+  }
+});
+
+test('unexpected server errors do not expose internal messages', async () => {
+  const handler = createGeneratePathHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    runProvider:async () => { throw new Error('database password is secret'); },
+  });
+  const res = responseRecorder();
+  await handler(jsonRequest({ confirmedBrief:confirmBrief({ goal:'Learn piano', durationDays:30 }) }), res);
+  assert.equal(res.statusCode, 500);
+  assert.equal(res.payload.error, 'internal_error');
+  assert.doesNotMatch(res.payload.message, /password|secret/i);
+  assert.equal(res.payload.stack, undefined);
+  assert.equal(res.payload.details, null);
+  assert.ok(res.payload.requestId);
+});
+
+test('conflicting legacy generation fields are rejected before provider use', async () => {
+  let providerCalls = 0;
+  const handler = createGeneratePathHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    provider:async () => { providerCalls += 1; },
+  });
+  const confirmedBrief = confirmBrief({ goal:'Learn piano', durationDays:30, description:'Daily piano plan' });
+  const res = responseRecorder();
+  await handler(jsonRequest({ confirmedBrief, description:'A conflicting plan' }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.error, 'conflicting_brief_data');
+  assert.equal(providerCalls, 0);
+});
+
+test('exact legacy duplicates are ignored while material conflicts are rejected', async () => {
+  let providerCalls = 0;
+  const handler = createGeneratePathHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    provider:async input => { providerCalls += 1; return basicStarterDraft(input, 'test'); },
+  });
+  const confirmedBrief = confirmBrief({
+    goal:'Learn piano', durationDays:30, currentLevel:'beginner',
+    resources:['https://example.com/course'], description:'Daily piano plan',
+  });
+  const exact = responseRecorder();
+  await handler(jsonRequest({
+    confirmedBrief,
+    currentLevel:'beginner', durationDays:30,
+    resourceLinks:'https://example.com/course', description:'Daily piano plan',
+    saveOptions:{ visibility:'unlisted' }, visibility:'unlisted',
+  }), exact);
+  assert.equal(exact.statusCode, 200);
+  assert.equal(exact.payload.draft.visibility, 'unlisted');
+  assert.equal(providerCalls, 1);
+
+  for(const conflict of [
+    { currentLevel:'advanced' },
+    { durationDays:60 },
+    { resourceLinks:'https://example.com/other' },
+  ]){
+    const res = responseRecorder();
+    await handler(jsonRequest({ confirmedBrief, ...conflict }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.payload.error, 'conflicting_brief_data');
+  }
+  assert.equal(providerCalls, 1);
 });
 
 test('brief created from prompt keeps original user values authoritative', () => {

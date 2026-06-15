@@ -127,6 +127,7 @@
   .res-item .rl{flex:1;font-size:13.5px}
   .res-item .rl a{color:var(--cream)}.res-item .rl a:hover{color:var(--gold)}
   .res-item .ext{font-size:11px;color:var(--gold);opacity:.8}
+  .invalid-link{color:var(--sand-dim);text-decoration:none;cursor:default}
   textarea.note{width:100%;min-height:120px;background:var(--ink2);border:1px solid var(--line2);border-radius:12px;color:var(--cream);font-family:'Caveat',cursive;font-size:19px;line-height:1.4;padding:14px;resize:vertical}
   textarea.note:focus{outline:none;border-color:var(--gold)}
   .note-wrap label{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--sand);font-weight:700;margin-bottom:8px}

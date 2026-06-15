@@ -21,6 +21,8 @@ export const AI_BUILD_PHASES = [
 
 export const MAX_AI_CLARIFICATION_ROUNDS = 2;
 
+export const AI_REQUEST_KINDS = ['voice', 'interpret', 'generate'];
+
 function cleanText(value, max = 300){
   return String(value == null ? '' : value).trim().slice(0, max);
 }
@@ -243,6 +245,9 @@ export function normalizeConfirmedBrief(input = {}){
       : Math.max(0, Math.min(168, Number(input.estimatedWeeklyHours) || 0)),
     deadline:cleanText(input.deadline, 60),
     scheduleNotes:cleanText(input.scheduleNotes, 500),
+    description:cleanText(input.description, 700),
+    requestedTasks:cleanText(input.requestedTasks ?? input.includeTasks, 1200),
+    excludedTasks:cleanText(input.excludedTasks ?? input.excludeTasks, 1200),
     knownTasks:cleanArray(input.knownTasks, 16, 180),
     coreCommitments:normalizeCoreCommitments(input.coreCommitments, input.nonNegotiables),
     milestones:cleanArray(input.milestones, 16, 260),
@@ -340,6 +345,9 @@ export function briefFromPrompt(prompt = {}){
   mark('intensity', prompt.intensity);
   mark('currentLevel', prompt.currentLevel);
   mark('coreCommitments', prompt.coreCommitments);
+  mark('description', prompt.description);
+  mark('requestedTasks', prompt.includeTasks);
+  mark('excludedTasks', prompt.excludeTasks);
   return normalizeConfirmedBrief({
     goal:prompt.goal,
     interpretedGoal:prompt.goal,
@@ -355,6 +363,9 @@ export function briefFromPrompt(prompt = {}){
     intensity:prompt.intensity,
     currentLevel:prompt.currentLevel,
     coreCommitments:prompt.coreCommitments,
+    description:prompt.description,
+    requestedTasks:prompt.includeTasks,
+    excludedTasks:prompt.excludeTasks,
     confirmedFields,
   });
 }
@@ -366,10 +377,54 @@ export function confirmBrief(briefInput = {}){
   return brief;
 }
 
+export function createAIRequestState(){
+  return Object.fromEntries(AI_REQUEST_KINDS.map(kind => [kind, {
+    token:0,
+    controller:null,
+    loading:false,
+  }]));
+}
+
+export function hasActiveAIRequest(requests = {}){
+  return AI_REQUEST_KINDS.some(kind => requests?.[kind]?.loading === true);
+}
+
 export function canStartAIRequest(state = {}){
-  return !state.loading
+  return !hasActiveAIRequest(state.requests)
+    && !state.loading
     && !state.clarifyLoading
     && !['interpreting', 'generating'].includes(state.phase);
+}
+
+export function beginAIRequest(requests, kind, controller = null){
+  if(!AI_REQUEST_KINDS.includes(kind)) throw new Error('Unknown AI request kind.');
+  const slot = requests[kind] || { token:0, controller:null, loading:false };
+  slot.controller?.abort?.();
+  slot.token += 1;
+  slot.controller = controller;
+  slot.loading = true;
+  requests[kind] = slot;
+  return slot.token;
+}
+
+export function finishAIRequest(requests, kind, token){
+  const slot = requests?.[kind];
+  if(!slot || slot.token !== token) return false;
+  slot.controller = null;
+  slot.loading = false;
+  return true;
+}
+
+export function cancelAIRequests(requests = {}){
+  AI_REQUEST_KINDS.forEach(kind => {
+    const slot = requests[kind] || { token:0, controller:null, loading:false };
+    slot.controller?.abort?.();
+    slot.token += 1;
+    slot.controller = null;
+    slot.loading = false;
+    requests[kind] = slot;
+  });
+  return requests;
 }
 
 export function recoverAIBuilderState(state = {}, error = '', phase = 'error'){
@@ -399,6 +454,9 @@ export function aiBriefDefaults(){
     estimatedWeeklyHours:null,
     deadline:'',
     scheduleNotes:'',
+    description:'',
+    requestedTasks:'',
+    excludedTasks:'',
     knownTasks:[],
     coreCommitments:[],
     milestones:[],

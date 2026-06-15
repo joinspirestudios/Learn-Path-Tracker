@@ -28,18 +28,20 @@ test('legacy daily strings migrate into structured core commitments', () => {
 
 test('generation prompt preserves confirmed commitments and expanded cadence', () => {
   const input = normalizePrompt({
-    goal:'Finish a small documentary edit',
-    durationDays:42,
-    pathType:'creative_project',
-    coreCommitments:[{
-      title:'Edit two focused sessions',
-      description:'Work through the current sequence.',
-      required:true,
-      cadence:{ type:'times_per_week', timesPerWeek:2 },
-      estimatedMinutes:90,
-      evidenceType:'export',
-      reason:'Keeps the project moving.',
-    }],
+    confirmedBrief:{
+      goal:'Finish a small documentary edit',
+      durationDays:42,
+      pathType:'creative_project',
+      coreCommitments:[{
+        title:'Edit two focused sessions',
+        description:'Work through the current sequence.',
+        required:true,
+        cadence:{ type:'times_per_week', timesPerWeek:2 },
+        estimatedMinutes:90,
+        evidenceType:'export',
+        reason:'Keeps the project moving.',
+      }],
+    },
   });
   assert.equal(input.durationDays, 42);
   assert.equal(input.coreCommitments[0].cadence.type, 'times_per_week');
@@ -90,7 +92,7 @@ test('lightweight platform summaries retain creator and task counts', () => {
 });
 
 test('normalized generated drafts preserve selected-days task settings', () => {
-  const input = normalizePrompt({ goal:'Practice guitar', durationDays:21 });
+  const input = normalizePrompt({ confirmedBrief:{ goal:'Practice guitar', durationDays:21 } });
   const draft = normalizeDraft({
     title:'Guitar practice', description:'', goal:'Practice guitar', category:'skill',
     durationDays:21, durationLabel:'21 days', difficulty:'beginner', intensity:'moderate',
@@ -123,11 +125,11 @@ test('eight requested goal scenarios preserve distinct confirmed commitments wit
   ];
   const forbidden = ['read 10 pages', 'run or walk 1km', 'sleep 8 hours', 'avoid soda', 'post one proof-of-work update'];
   for(const [goal, durationDays, title, cadence] of scenarios){
-    const draft = basicStarterDraft(normalizePrompt({
+    const draft = basicStarterDraft(normalizePrompt({ confirmedBrief:{
       goal,
       durationDays,
       coreCommitments:[{ title, required:true, cadence:{ type:cadence } }],
-    }));
+    } }));
     const serialized = JSON.stringify(draft).toLowerCase();
     forbidden.forEach(phrase => assert.equal(serialized.includes(phrase), false, `${goal} inherited ${phrase}`));
     assert.equal(draft.durationDays, durationDays);
@@ -220,9 +222,9 @@ test('the canonical Build with AI handler interprets before generation and Basic
 test('clarification updates send the previous brief and preserved answers back through interpretation', () => {
   const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   const interpretationHandler = source.slice(source.indexOf('async function requestGoalInterpretation'), source.indexOf('function createBasicDraft'));
-  assert.match(interpretationHandler, /previousBrief:aiBuilder\.brief \|\| briefFromPrompt/);
+  assert.match(interpretationHandler, /previousBrief:builder\.brief \|\| briefFromPrompt/);
   assert.match(interpretationHandler, /answers,/);
-  assert.match(interpretationHandler, /aiBuilder\.clarificationRound \+= 1/);
+  assert.match(interpretationHandler, /builder\.clarificationRound \+= 1/);
   assert.match(interpretationHandler, /MAX_AI_CLARIFICATION_ROUNDS/);
 });
 

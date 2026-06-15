@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { normalizeConfirmedBrief, unacceptedMaterialAssumptions } from '../src/ai-builder-model.js';
-import { apiError, methodNotAllowed, sendApiError } from './_lib/errors.js';
+import { safeExternalUrl } from '../src/urls.js';
+import { apiError, methodNotAllowed, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
 import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
 import { runProviderRequest } from './_lib/provider.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
@@ -139,10 +140,7 @@ function text(value, fallback = ''){
 }
 
 function cleanUrl(value){
-  const candidate = text(value);
-  if(!candidate) return null;
-  try{ return new URL(candidate).toString(); }
-  catch(e){ return null; }
+  return safeExternalUrl(value);
 }
 
 function cleanChoice(value, allowed, fallback){
@@ -213,8 +211,7 @@ function normalizeCommitments(value, legacy = []){
 }
 
 export function normalizePrompt(body = {}){
-  const briefSource = body.confirmedBrief || body.clarifiedBrief || body;
-  const confirmedBrief = normalizeConfirmedBrief(briefSource);
+  const confirmedBrief = normalizeConfirmedBrief(body.confirmedBrief || {});
   const suppliedDuration = cleanNullableNumber(confirmedBrief.durationDays, 1, 365);
   const rawType = confirmedBrief.pathType;
   const pathType = rawType === 'auto' ? 'custom' : cleanChoice(rawType, PATH_TYPES, 'custom');
@@ -227,11 +224,11 @@ export function normalizePrompt(body = {}){
     durationDays:suppliedDuration,
     durationWasProvided:!!suppliedDuration,
     deadline:cleanNullableText(confirmedBrief.deadline, 40),
-    currentLevel:cleanChoice(body.currentLevel || confirmedBrief.currentLevel, LEVELS, null),
+    currentLevel:cleanChoice(confirmedBrief.currentLevel, LEVELS, null),
     intensity:cleanChoice(confirmedBrief.intensity, INTENSITIES, null),
     pathType,
     preferredSchedule:text(confirmedBrief.scheduleNotes).slice(0, 500),
-    resourceLinks:text(body.resourceLinks).slice(0, 1200),
+    resourceLinks:confirmedBrief.resources.map(cleanUrl).filter(Boolean).join('\n').slice(0, 1200),
     currentStage:text(confirmedBrief.currentBaseline).slice(0, 700),
     desiredEndState:text(confirmedBrief.desiredOutcome).slice(0, 700),
     baseline:text(confirmedBrief.currentBaseline).slice(0, 700),
@@ -240,10 +237,10 @@ export function normalizePrompt(body = {}){
     existingResources:confirmedBrief.resources.join('\n').slice(0, 1200),
     dailyTime:text(confirmedBrief.availableTime).slice(0, 120),
     evidenceStyle:text(confirmedBrief.evidencePreferences).slice(0, 220),
-    includeTasks:text(body.includeTasks).slice(0, 1200),
-    excludeTasks:text(body.excludeTasks).slice(0, 1200),
-    visibility:['private', 'unlisted', 'public'].includes(body.visibility) ? body.visibility : 'private',
-    description:text(body.description).slice(0, 700),
+    includeTasks:text(confirmedBrief.requestedTasks).slice(0, 1200),
+    excludeTasks:text(confirmedBrief.excludedTasks).slice(0, 1200),
+    visibility:['private', 'unlisted', 'public'].includes(body.saveOptions?.visibility) ? body.saveOptions.visibility : 'private',
+    description:text(confirmedBrief.description).slice(0, 700),
     coreCommitments,
     assumptions:confirmedBrief.assumptions,
     progressiveTargets:(Array.isArray(confirmedBrief.progressiveTargets) ? confirmedBrief.progressiveTargets : []).slice(0, 8).map(target => ({
@@ -256,6 +253,64 @@ export function normalizePrompt(body = {}){
     confirmedBrief,
     clarifiedBrief:confirmedBrief,
   };
+}
+
+function comparable(value){
+  if(value == null) return '';
+  if(typeof value === 'string') return value.trim();
+  if(typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if(Array.isArray(value) && value.every(item => ['string', 'number', 'boolean'].includes(typeof item))){
+    return value.map(item => String(item).trim()).filter(Boolean).join('\n');
+  }
+  try{ return JSON.stringify(value); }
+  catch(error){ return text(value); }
+}
+
+function rejectConflictingLegacyFields(body, confirmedBrief){
+  const mappings = {
+    goal:confirmedBrief.goal,
+    interpretedGoal:confirmedBrief.interpretedGoal,
+    currentLevel:confirmedBrief.currentLevel,
+    currentBaseline:confirmedBrief.currentBaseline,
+    desiredOutcome:confirmedBrief.desiredOutcome,
+    goalCategory:confirmedBrief.goalCategory,
+    pathType:confirmedBrief.pathType,
+    durationDays:confirmedBrief.durationDays,
+    availableTime:confirmedBrief.availableTime,
+    constraints:confirmedBrief.constraints,
+    coreCommitments:confirmedBrief.coreCommitments,
+    milestones:confirmedBrief.milestones,
+    evidencePreferences:confirmedBrief.evidencePreferences,
+    scheduleNotes:confirmedBrief.scheduleNotes,
+    resources:confirmedBrief.resources,
+    description:confirmedBrief.description,
+    resourceLinks:confirmedBrief.resources,
+    requestedTasks:confirmedBrief.requestedTasks,
+    includeTasks:confirmedBrief.requestedTasks,
+    excludedTasks:confirmedBrief.excludedTasks,
+    excludeTasks:confirmedBrief.excludedTasks,
+    assumptions:confirmedBrief.assumptions,
+    confirmedFields:confirmedBrief.confirmedFields,
+    briefConfirmed:confirmedBrief.briefConfirmed,
+  };
+  Object.entries(mappings).forEach(([legacyField, canonicalValue]) => {
+    if(body[legacyField] == null || body[legacyField] === '') return;
+    if(comparable(body[legacyField]) !== comparable(canonicalValue)){
+      throw apiError('conflicting_brief_data', `Conflicting ${legacyField} data was supplied outside confirmedBrief.`, 400);
+    }
+  });
+  if(body.clarifiedBrief != null){
+    const legacyBrief = normalizeConfirmedBrief(body.clarifiedBrief);
+    if(JSON.stringify(legacyBrief) !== JSON.stringify(confirmedBrief)){
+      throw apiError('conflicting_brief_data', 'Conflicting legacy brief data was supplied.', 400);
+    }
+  }
+  if(body.visibility != null && body.visibility !== ''){
+    const canonicalVisibility = body.saveOptions?.visibility || 'private';
+    if(body.visibility !== canonicalVisibility){
+      throw apiError('conflicting_brief_data', 'Conflicting visibility data was supplied outside saveOptions.', 400);
+    }
+  }
 }
 
 function titleFromGoal(goal){
@@ -526,6 +581,7 @@ export function createGeneratePathHandler({
   runProvider = runProviderRequest,
 } = {}){
   return async function handler(req, res){
+    setPrivateNoStore(res);
     if(req.method !== 'POST') return methodNotAllowed(res);
     try{
       const auth = await authenticate(req);
@@ -535,6 +591,7 @@ export function createGeneratePathHandler({
       }
       validateConfirmedBriefInput(body.confirmedBrief);
       const confirmedBrief = normalizeConfirmedBrief(body.confirmedBrief);
+      rejectConflictingLegacyFields(body, confirmedBrief);
       if(!confirmedBrief.briefConfirmed || !confirmedBrief.confirmedAt){
         throw apiError('brief_not_confirmed', 'Review and confirm your path brief before generating the roadmap.', 400);
       }
@@ -551,7 +608,7 @@ export function createGeneratePathHandler({
       let draft;
       try{ draft = normalizeDraft(raw, input, 'anthropic'); }
       catch(error){ throw apiError('invalid_provider_response', 'Claude returned a path draft that could not be validated. Please regenerate.', 502); }
-      return res.status(200).json({ ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
+      return sendPrivateJson(res, 200, { ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
     }catch(error){
       return sendApiError(res, error);
     }
