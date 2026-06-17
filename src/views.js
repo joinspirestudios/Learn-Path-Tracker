@@ -27,6 +27,7 @@ import {
 import { openAuthModal } from './auth.js';
 import { authFetch } from './api.js';
 import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
+import { AI_GENERATE_TIMEOUT_MS, AI_INTERPRET_TIMEOUT_MS, VOICE_TRANSCRIBE_TIMEOUT_MS } from './ai-timeouts.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
@@ -68,9 +69,6 @@ let isCreatingPath = false;
 let openingPathId = null;
 let startingJourneyId = null;
 let aiSaveClientId = null;
-const AI_INTERPRET_TIMEOUT_MS = 30000;
-const AI_GENERATE_TIMEOUT_MS = 60000;
-const VOICE_TRANSCRIBE_TIMEOUT_MS = 50000;
 
 function abortAIRequest(kind = null, builder = aiBuilder){
   if(!builder?.requests) return;
@@ -112,7 +110,7 @@ async function authenticatedAIRequest(request, url, options, timeoutMs){
   }catch(error){
     if(timedOut){
       const timeoutError = new Error('The request took too long and was cancelled.');
-      timeoutError.code = 'provider_timeout';
+      timeoutError.code = 'operation_timeout';
       throw timeoutError;
     }
     throw error;
@@ -759,6 +757,7 @@ function openAIPathBuilder(){
     loading:false,
     clarifyLoading:false,
     error:'',
+    errorRequestId:'',
     message:'',
     brief:null,
     clarifyingAnswers:{},
@@ -1077,7 +1076,7 @@ function voiceErrorCopy(code, fallback){
   if(code === 'rate_limited') return 'You have reached the current transcription limit. Try again later.';
   if(code === 'server_function_failed') return SERVER_FUNCTION_FAILED_MESSAGE;
   if(code === 'invalid_server_response') return 'The server returned an unreadable response. Your recording is still available.';
-  if(code === 'provider_timeout') return 'Voice transcription took too long and was cancelled. Your recording is still available.';
+  if(['operation_timeout', 'provider_timeout'].includes(code)) return 'Voice transcription took too long and was cancelled. Your recording is still available.';
   if(code === 'provider_unavailable') return 'Voice transcription is temporarily unavailable. You can still type your goal manually.';
   if(code === 'invalid_request') return fallback || 'This recording could not be accepted. Try recording again.';
   if(code === 'payload_too_large') return 'This recording is larger than the 25 MB upload limit.';
@@ -1201,13 +1200,19 @@ function guidedSummaryHTML(){
     + '</div></aside>';
 }
 
+function aiErrorDiagnosticHTML(){
+  return aiBuilder.errorRequestId
+    ? '<div class="ai-error-diagnostic">Request ID: ' + esc(aiBuilder.errorRequestId) + '</div>'
+    : '';
+}
+
 function guidedShellHTML(content, actions = ''){
   const summary = guidedSummaryHTML();
   return '<div class="modal-box ai-modal guided-builder" role="dialog" aria-modal="true" aria-labelledby="aiStepHeading">'
     + '<div class="modal-head ai-wizard-head"><div><span class="ai-builder-kicker">Create a path</span>' + wizardProgressHTML() + '</div><button class="modal-x" type="button" aria-label="Close path creation">x</button></div>'
     + '<div class="modal-body ai-wizard-body"><div class="ai-wizard-layout"><main class="ai-wizard-main">'
     + (aiBuilder.message ? '<div class="ai-note" role="status">' + esc(aiBuilder.message) + '</div>' : '')
-    + (aiBuilder.error ? '<div class="form-error" role="alert">' + esc(aiBuilder.error) + '</div>' : '')
+    + (aiBuilder.error ? '<div class="form-error" role="alert">' + esc(aiBuilder.error) + aiErrorDiagnosticHTML() + '</div>' : '')
     + content + '</main>' + summary + '</div></div>'
     + (actions ? '<div class="ai-wizard-actions">' + actions + '</div>' : '') + '</div>';
 }
@@ -1440,7 +1445,7 @@ function aiReviewHTML(){
     + '<div class="modal-body">'
     + '<h2 id="aiStepHeading" tabindex="-1">Review the full roadmap</h2><p class="ai-step-copy">Every field remains editable before you create the path.</p>'
     + (aiBuilder.message ? '<div class="ai-note">' + esc(aiBuilder.message) + '</div>' : '')
-    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + '</div>' : '')
+    + (aiBuilder.error ? '<div class="form-error">' + esc(aiBuilder.error) + aiErrorDiagnosticHTML() + '</div>' : '')
     + '<div class="ai-grid">'
     + '<div class="field"><label>Title</label><input type="text" class="ai-draft-field" data-key="title" value="' + esc(d.title) + '"/></div>'
     + '<div class="field"><label>Category</label><input type="text" class="ai-draft-field" data-key="category" value="' + esc(d.category) + '"/></div>'
@@ -1849,6 +1854,7 @@ async function requestGoalInterpretation(withAnswers){
   builder.phase = 'interpreting';
   startAIProcessingTicker(builder, 4);
   builder.error = '';
+  builder.errorRequestId = '';
   builder.message = withAnswers ? 'Preparing your updated brief...' : 'Understanding your goal...';
   renderAIBuilder();
   try{
@@ -1882,6 +1888,7 @@ async function requestGoalInterpretation(withAnswers){
       brief.clarifyingQuestions = [];
     }
     builder.brief = brief;
+    builder.errorRequestId = '';
     builder.clarificationIndex = 0;
     builder.phase = routedPhase === 'clarifying' ? 'clarifying' : 'rhythm';
     builder.message = builder.phase === 'clarifying'
@@ -1891,6 +1898,7 @@ async function requestGoalInterpretation(withAnswers){
     if(!aiRequestIsCurrent(request)) return;
     const recoveryPhase = builder.brief ? (['brief', 'rhythm'].includes(previousPhase) ? previousPhase : 'clarifying') : 'error';
     Object.assign(builder, recoverAIBuilderState(builder, aiInterpretationError(error), recoveryPhase), { message:'' });
+    builder.errorRequestId = error.requestId || '';
   }finally{
     finishAIClientRequest(request);
     stopAIProcessingTicker();
@@ -1984,6 +1992,7 @@ async function generateRoadmapFromBrief(){
   builder.phase = 'generating';
   startAIProcessingTicker(builder, 5);
   builder.error = '';
+  builder.errorRequestId = '';
   builder.message = '';
   renderAIBuilder();
   try{
@@ -2001,6 +2010,7 @@ async function generateRoadmapFromBrief(){
     }
     if(!aiRequestIsCurrent(request)) return;
     builder.draft = normalizeGeneratedDraft(payload.draft, prompt);
+    builder.errorRequestId = '';
     builder.draft.source = payload.source || 'anthropic';
     builder.message = payload.message || 'AI draft generated. Review before saving.';
     builder.mode = 'guided';
@@ -2019,6 +2029,7 @@ async function generateRoadmapFromBrief(){
     else if(error.code === 'provider_unavailable') builder.error = 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
     else if(error.code === 'brief_not_confirmed') builder.error = 'Review and confirm your path brief before generating the roadmap.';
     else builder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';
+    builder.errorRequestId = error.requestId || '';
   }finally{
     finishAIClientRequest(request);
     stopAIProcessingTicker();

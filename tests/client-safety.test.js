@@ -144,3 +144,12 @@ test('modal close invalidates requests and stale results require a current build
   assert.match(currentCheck, /aiBuilder === request\.builder/);
   assert.match(currentCheck, /token === request\.token/);
 });
+
+test('browser-side AI timeout uses operation_timeout and preserves provider_timeout for server payloads', () => {
+  const source = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const requestStart = source.indexOf('async function authenticatedAIRequest');
+  const requestBlock = source.slice(requestStart, requestStart + 1200);
+  assert.match(requestBlock, /timeoutError\.code = 'operation_timeout'/);
+  assert.doesNotMatch(requestBlock, /timeoutError\.code = 'provider_timeout'/);
+  assert.match(source, /\['operation_timeout', 'provider_timeout'\]\.includes/);
+});

@@ -85,6 +85,24 @@ Basic starter is local and does not call a protected AI route or consume Anthrop
 
 Voice transcription, goal interpretation, and roadmap generation use independent request tokens and abort controllers, but paid operations cannot run concurrently. Starting one disables conflicting paid actions and duplicate submission controls. Closing the builder aborts all active requests, invalidates their tokens, clears loading state, and prevents stale responses from mutating or reopening the modal.
 
+## AI timeout and latency behavior
+
+Protected provider routes use intentional timeout tiers so the server can return structured JSON before the browser or Vercel cancels the request:
+
+| Operation | Provider timeout | Browser timeout | Vercel `maxDuration` |
+| --- | ---: | ---: | ---: |
+| Goal interpretation | 90 seconds | 105 seconds | 120 seconds |
+| Roadmap generation | 180 seconds | 195 seconds | 240 seconds |
+| Voice transcription | 60 seconds | 75 seconds | 90 seconds |
+
+Anthropic goal interpretation and roadmap generation use the SDK streaming API internally, then wait for the accumulated final message before parsing the required tool-use output. The browser still receives one final JSON response; partial AI deltas are not streamed to the UI in this version.
+
+Server provider timers return `provider_timeout`. Browser-side timers use `operation_timeout`, because the browser cannot know whether Anthropic or Deepgram timed out. Both codes keep the builder state intact and show the same safe timeout copy to the user.
+
+Protected AI routes emit safe structured latency logs with a request ID, route, elapsed time, configured timeout, provider elapsed time, result, status/code, model, token usage when the provider returns it, and size/count metadata. Logs must not include raw goals, transcripts, clarification answers, generated roadmap content, auth headers, provider keys, Firebase credentials, email addresses, or private resource URLs. The same request ID appears in safe logs, the `X-Request-Id` response header, and JSON success/error payloads.
+
+Browser `net::ERR_BLOCKED_BY_CLIENT` messages on Firestore Listen/Write channels are separate from AI provider timeouts. Treat them as privacy-blocker or Firestore connectivity issues, not as evidence that Anthropic timed out.
+
 ## Guided creation
 
 The Build with AI entry is a guided web flow rather than a dense all-fields form. The first screen asks only what the user wants to achieve, with optional voice input, examples, Basic starter, and Build with AI. Claude interpretation always happens before AI roadmap generation. When the goal is vague, the app shows one material clarification question at a time with structured choices and custom-answer support. When enough information exists, the flow moves through recommended rhythm, concise path brief, roadmap generation, preview, creation, and a ready screen.
@@ -156,6 +174,14 @@ Compatibility fields `ok` and `code` are also included for the current UI. Rate-
 
 Protected success and error responses use `Cache-Control: private, no-store` and include an `X-Request-Id` header plus matching `requestId` response field. Unexpected server failures return a generic message; internal error details are logged only with the request ID and never include request bodies or credentials.
 
+`vercel.json` sets Node serverless maximum durations for the protected API routes:
+
+```text
+api/interpret-goal.js: 120 seconds
+api/generate-path.js: 240 seconds
+api/transcribe-voice.js: 90 seconds
+```
+
 Voice transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 25 MB. The app does not claim a duration limit it cannot verify and does not persist raw voice uploads.
 
 Authentication, declared-size validation, and the per-user voice rate limit run before the audio body is buffered. The stream is still counted while reading and is terminated when it exceeds 25 MB, so a missing or inaccurate `Content-Length` cannot bypass the limit. Duration is not validated in this version.
@@ -213,6 +239,7 @@ Do not expose Firebase Admin, Anthropic, or Deepgram credentials through `VITE_*
 ```text
 api/
   _lib/
+    diagnostics.js
     errors.js
     firebase-admin.js
     http.js
@@ -230,11 +257,15 @@ src/
   firebase.js
   journey.js
   main.js
+  ai-timeouts.js
   views.js
 tests/
+  anthropic-streaming.test.js
   api-security.test.js
   firestore.rules.test.js
+  latency-logging.test.js
   phase5.model.test.js
+  timeout-alignment.test.js
 ```
 
 `api/analyze.js` was removed because it was an unused public diagnostic surface.

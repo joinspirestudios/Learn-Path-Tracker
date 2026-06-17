@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { normalizeConfirmedBrief, unacceptedMaterialAssumptions } from '../src/ai-builder-model.js';
 import { safeExternalUrl } from '../src/urls.js';
-import { apiError, methodNotAllowed, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
+import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
 import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
 import { runProviderRequest } from './_lib/provider.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
@@ -16,7 +17,7 @@ const TASK_MODES = ['fixed_recurring', 'progressive_recurring', 'one_off', 'sequ
 const PROGRESSION_CURVES = ['linear', 'gradual', 'stepped', 'custom'];
 const TOOL_NAME = 'create_learning_path';
 const MAX_JSON_BYTES = 96 * 1024;
-const GENERATE_TIMEOUT_MS = 55_000;
+export const GENERATE_TIMEOUT_MS = 180_000;
 
 const nullableNumber = { anyOf: [{ type:'number' }, { type:'null' }] };
 const nullableString = { anyOf: [{ type:'string' }, { type:'null' }] };
@@ -552,13 +553,13 @@ function mapAnthropicError(error){
   return apiError('provider_unavailable', 'The AI service is temporarily unavailable. Try again later.', 503);
 }
 
-export async function callAnthropic(input, signal){
+export async function callAnthropic(input, signal, client = null){
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if(!apiKey) throw apiError('provider_unavailable', 'Anthropic is not configured.', 503);
-  const anthropic = new Anthropic({ apiKey });
+  if(!apiKey && !client) throw apiError('provider_unavailable', 'Anthropic is not configured.', 503);
+  const anthropic = client || new Anthropic({ apiKey });
   let message;
   try{
-    message = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model:process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
       max_tokens:7000,
       temperature:0.35,
@@ -567,11 +568,17 @@ export async function callAnthropic(input, signal){
       tool_choice:{ type:'tool', name:TOOL_NAME },
       messages:[{ role:'user', content:buildPrompt(input) }],
     }, { signal });
+    message = await stream.finalMessage();
   }catch(e){
     if(signal?.aborted) throw e;
     throw mapAnthropicError(e);
   }
-  return extractDraftInput(message);
+  const raw = extractDraftInput(message);
+  const usage = usageFromMessage(message);
+  if(raw && typeof raw === 'object' && (usage.inputTokens != null || usage.outputTokens != null)){
+    Object.defineProperty(raw, '__usage', { value:usage, enumerable:false });
+  }
+  return raw;
 }
 
 export function createGeneratePathHandler({
@@ -581,11 +588,28 @@ export function createGeneratePathHandler({
   runProvider = runProviderRequest,
 } = {}){
   return async function handler(req, res){
-    setPrivateNoStore(res);
-    if(req.method !== 'POST') return methodNotAllowed(res);
+    const requestId = createRequestId();
+    const log = createRouteLogger('generate-path', requestId);
+    const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+    setPrivateNoStore(res, requestId);
+    log.event('generate_request_started', {
+      model,
+      requestBodyBytes:requestBodyBytes(req),
+      timeoutMs:GENERATE_TIMEOUT_MS,
+    });
+    if(req.method !== 'POST'){
+      res.setHeader('Allow', 'POST');
+      log.event('generate_response_sent', { status:405, code:'method_not_allowed', result:'error' });
+      return sendApiError(res, apiError('method_not_allowed', 'POST only.', 405), requestId);
+    }
     try{
       const auth = await authenticate(req);
+      log.event('generate_auth_complete', { result:'ok' });
       const body = requireJsonBody(req, MAX_JSON_BYTES);
+      log.event('generate_request_validated', {
+        requestBodyBytes:requestBodyBytes(req, body),
+        result:'ok',
+      });
       if(!body.confirmedBrief || typeof body.confirmedBrief !== 'object'){
         throw apiError('brief_not_confirmed', 'Review and confirm your path brief before generating the roadmap.', 400);
       }
@@ -604,13 +628,50 @@ export function createGeneratePathHandler({
         throw apiError('brief_not_confirmed', 'Set a duration in the confirmed brief before generating a roadmap.', 400);
       }
       await rateLimit(auth.uid, 'generate');
-      const raw = await runProvider(req, GENERATE_TIMEOUT_MS, signal => provider(input, signal));
+      log.event('generate_rate_limit_complete', { result:'ok' });
+      const providerStartedAt = Date.now();
+      log.event('generate_provider_started', {
+        model,
+        timeoutMs:GENERATE_TIMEOUT_MS,
+        durationDays:input.durationDays,
+      });
+      let raw;
+      try{
+        raw = await runProvider(req, GENERATE_TIMEOUT_MS, signal => provider(input, signal));
+        log.event('generate_provider_completed', {
+          model,
+          providerElapsedMs:elapsedMs(providerStartedAt),
+          timeoutMs:GENERATE_TIMEOUT_MS,
+          durationDays:input.durationDays,
+          inputTokens:raw?.__usage?.inputTokens,
+          outputTokens:raw?.__usage?.outputTokens,
+          result:'ok',
+        });
+      }catch(error){
+        if(error?.code === 'provider_timeout'){
+          log.event('generate_provider_timeout', {
+            model,
+            providerElapsedMs:elapsedMs(providerStartedAt),
+            timeoutMs:GENERATE_TIMEOUT_MS,
+            providerStatus:504,
+            durationDays:input.durationDays,
+            result:'timeout',
+          }, 'warn');
+        }
+        throw error;
+      }
       let draft;
       try{ draft = normalizeDraft(raw, input, 'anthropic'); }
       catch(error){ throw apiError('invalid_provider_response', 'Claude returned a path draft that could not be validated. Please regenerate.', 502); }
-      return sendPrivateJson(res, 200, { ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' });
+      log.event('generate_response_sent', { status:200, result:'ok' });
+      return sendPrivateJson(res, 200, { ok:true, draft, source:'anthropic', message:'Claude draft generated. Review before saving.' }, requestId);
     }catch(error){
-      return sendApiError(res, error);
+      log.event('generate_response_sent', {
+        status:Number(error?.status) || 500,
+        code:error?.code || 'internal_error',
+        result:'error',
+      }, error?.code === 'provider_timeout' ? 'warn' : 'info');
+      return sendApiError(res, error, requestId);
     }
   };
 }

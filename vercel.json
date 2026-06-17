@@ -1,4 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/interpret-goal.js": {
+      "maxDuration": 120
+    },
+    "api/generate-path.js": {
+      "maxDuration": 240
+    },
+    "api/transcribe-voice.js": {
+      "maxDuration": 90
+    }
+  },
   "rewrites": [
     {
       "source": "/__/auth/:path*",

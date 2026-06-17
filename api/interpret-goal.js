@@ -3,7 +3,8 @@ import {
   briefFromPrompt, mergeBriefPreservingConfirmed, mergeClarificationAnswers,
   normalizeBriefAssumptions, normalizeClarifyingQuestions, normalizeConfirmedBrief,
 } from '../src/ai-builder-model.js';
-import { apiError, methodNotAllowed, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
+import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
 import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
 import { runProviderRequest } from './_lib/provider.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
@@ -15,7 +16,7 @@ const CADENCE_TYPES = ['daily', 'weekdays', 'selected_days', 'times_per_week', '
 const QUESTION_TYPES = ['single_select', 'multi_select', 'short_text', 'long_text', 'number', 'duration', 'date', 'days_of_week', 'time_availability', 'yes_no', 'resource'];
 const TOOL_NAME = 'interpret_goal_brief';
 const MAX_JSON_BYTES = 64 * 1024;
-const INTERPRET_TIMEOUT_MS = 28_000;
+export const INTERPRET_TIMEOUT_MS = 90_000;
 
 const nullableNumber = { anyOf:[{ type:'number' }, { type:'null' }] };
 const nullableString = { anyOf:[{ type:'string' }, { type:'null' }] };
@@ -227,12 +228,12 @@ function mapAnthropicError(error){
   return apiError('provider_unavailable', 'The AI service is temporarily unavailable. Try again later.', 503);
 }
 
-export async function callAnthropic(input, signal){
+export async function callAnthropic(input, signal, client = null){
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if(!apiKey) throw apiError('provider_unavailable', 'Anthropic is not configured.', 503);
-  const anthropic = new Anthropic({ apiKey });
+  if(!apiKey && !client) throw apiError('provider_unavailable', 'Anthropic is not configured.', 503);
+  const anthropic = client || new Anthropic({ apiKey });
   try{
-    const message = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model:process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
       max_tokens:4000,
       temperature:0.2,
@@ -241,7 +242,13 @@ export async function callAnthropic(input, signal){
       tool_choice:{ type:'tool', name:TOOL_NAME },
       messages:[{ role:'user', content:buildPrompt(input) }],
     }, { signal });
-    return extractBriefInput(message);
+    const message = await stream.finalMessage();
+    const raw = extractBriefInput(message);
+    const usage = usageFromMessage(message);
+    if(raw && typeof raw === 'object' && (usage.inputTokens != null || usage.outputTokens != null)){
+      Object.defineProperty(raw, '__usage', { value:usage, enumerable:false });
+    }
+    return raw;
   }catch(error){
     if(signal?.aborted) throw error;
     throw mapAnthropicError(error);
@@ -255,21 +262,76 @@ export function createInterpretGoalHandler({
   runProvider = runProviderRequest,
 } = {}){
   return async function handler(req, res){
-    setPrivateNoStore(res);
-    if(req.method !== 'POST') return methodNotAllowed(res);
+    const requestId = createRequestId();
+    const log = createRouteLogger('interpret-goal', requestId);
+    const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+    setPrivateNoStore(res, requestId);
+    log.event('interpret_request_started', {
+      model,
+      requestBodyBytes:requestBodyBytes(req),
+      timeoutMs:INTERPRET_TIMEOUT_MS,
+    });
+    if(req.method !== 'POST'){
+      res.setHeader('Allow', 'POST');
+      log.event('interpret_response_sent', { status:405, code:'method_not_allowed', result:'error' });
+      return sendApiError(res, apiError('method_not_allowed', 'POST only.', 405), requestId);
+    }
     try{
       const auth = await authenticate(req);
+      log.event('interpret_auth_complete', { result:'ok' });
       const body = requireJsonBody(req, MAX_JSON_BYTES);
       const input = normalizeBody(body);
+      log.event('interpret_request_validated', {
+        requestBodyBytes:requestBodyBytes(req, body),
+        goalCharacterCount:(input.roughGoal || input.previousBrief.goal || '').length,
+        clarificationRound:input.clarificationRound,
+        result:'ok',
+      });
       if(!input.roughGoal && !input.previousBrief.goal){
         throw apiError('invalid_request', 'Add rough goal notes before clarifying.', 400);
       }
       await rateLimit(auth.uid, 'interpret');
-      const raw = await runProvider(req, INTERPRET_TIMEOUT_MS, signal => provider(input, signal));
+      log.event('interpret_rate_limit_complete', { result:'ok' });
+      const providerStartedAt = Date.now();
+      log.event('interpret_provider_started', {
+        model,
+        timeoutMs:INTERPRET_TIMEOUT_MS,
+        goalCharacterCount:(input.roughGoal || input.previousBrief.goal || '').length,
+        clarificationRound:input.clarificationRound,
+      });
+      let raw;
+      try{
+        raw = await runProvider(req, INTERPRET_TIMEOUT_MS, signal => provider(input, signal));
+        log.event('interpret_provider_completed', {
+          model,
+          providerElapsedMs:elapsedMs(providerStartedAt),
+          timeoutMs:INTERPRET_TIMEOUT_MS,
+          inputTokens:raw?.__usage?.inputTokens,
+          outputTokens:raw?.__usage?.outputTokens,
+          result:'ok',
+        });
+      }catch(error){
+        if(error?.code === 'provider_timeout'){
+          log.event('interpret_provider_timeout', {
+            model,
+            providerElapsedMs:elapsedMs(providerStartedAt),
+            timeoutMs:INTERPRET_TIMEOUT_MS,
+            providerStatus:504,
+            result:'timeout',
+          }, 'warn');
+        }
+        throw error;
+      }
       const brief = mergeBriefPreservingConfirmed(input.previousBrief, normalizeBrief(raw));
-      return sendPrivateJson(res, 200, { ok:true, brief, source:'anthropic', message:"Here's what I understood. Review and answer anything material that is missing." });
+      log.event('interpret_response_sent', { status:200, result:'ok' });
+      return sendPrivateJson(res, 200, { ok:true, brief, source:'anthropic', message:"Here's what I understood. Review and answer anything material that is missing." }, requestId);
     }catch(error){
-      return sendApiError(res, error);
+      log.event('interpret_response_sent', {
+        status:Number(error?.status) || 500,
+        code:error?.code || 'internal_error',
+        result:'error',
+      }, error?.code === 'provider_timeout' ? 'warn' : 'info');
+      return sendApiError(res, error, requestId);
     }
   };
 }

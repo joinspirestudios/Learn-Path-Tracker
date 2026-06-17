@@ -26,8 +26,7 @@ export function sendPrivateJson(res, status, payload, requestId = randomUUID()){
   return res.status(status).json({ ...payload, requestId });
 }
 
-export function sendApiError(res, error){
-  const requestId = randomUUID();
+export function sendApiError(res, error, requestId = randomUUID()){
   const trusted = error instanceof ApiError;
   const status = trusted ? (Number(error.status) || 500) : 500;
   const code = trusted ? (error.code || 'internal_error') : 'internal_error';
@@ -58,4 +57,8 @@ export function sendApiError(res, error){
 export function methodNotAllowed(res, allowed = 'POST'){
   res.setHeader('Allow', allowed);
   return sendApiError(res, apiError('method_not_allowed', `${allowed} only.`, 405));
+}
+
+export function createRequestId(){
+  return randomUUID();
 }
