@@ -17,6 +17,12 @@ test('safe latency logs include correlation and timing metadata', () => {
     providerElapsedMs:240,
     result:'ok',
     model:'claude-sonnet-4-6',
+    stopReason:'tool_use',
+    contentBlockTypes:['tool_use'],
+    toolUseFound:true,
+    rawTaskCount:12,
+    rawSectionCount:3,
+    validationReason:'missing_tool_use',
   });
 
   assert.equal(records.length, 1);
@@ -26,6 +32,12 @@ test('safe latency logs include correlation and timing metadata', () => {
   assert.equal(records[0].entry.providerElapsedMs, 240);
   assert.equal(records[0].entry.timeoutMs, 90_000);
   assert.equal(records[0].entry.result, 'ok');
+  assert.equal(records[0].entry.stopReason, 'tool_use');
+  assert.deepEqual(records[0].entry.contentBlockTypes, ['tool_use']);
+  assert.equal(records[0].entry.toolUseFound, true);
+  assert.equal(records[0].entry.rawTaskCount, 12);
+  assert.equal(records[0].entry.rawSectionCount, 3);
+  assert.equal(records[0].entry.validationReason, 'missing_tool_use');
 });
 
 test('safe latency logs drop user content and sensitive fields', () => {
@@ -44,12 +56,17 @@ test('safe latency logs drop user content and sensitive fields', () => {
     firebasePrivateKey:'-----BEGIN PRIVATE KEY-----',
     requestBody:{ goal:'private' },
     url:'https://private.example/resource',
+    confirmedBrief:{ goal:'private' },
+    coreCommitmentTitle:'Private commitment',
+    generatedTaskDescription:'Private generated task',
+    prompt:'Private prompt',
+    claudeResponse:'Private Claude content',
   });
 
   const serialized = records.join('\n');
   assert.match(serialized, /req-123/);
   assert.match(serialized, /goalCharacterCount/);
-  assert.doesNotMatch(serialized, /private goal|private transcript|secret-token|sk-ant|PRIVATE KEY|private\.example|requestBody/);
+  assert.doesNotMatch(serialized, /private goal|private transcript|secret-token|sk-ant|PRIVATE KEY|private\.example|requestBody|Private commitment|Private generated task|Private prompt|Private Claude/);
 });
 
 test('request body byte helper uses declared length before inspecting body', () => {

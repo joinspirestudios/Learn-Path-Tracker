@@ -2025,7 +2025,11 @@ async function generateRoadmapFromBrief(){
     else if(error.code === 'server_function_failed') builder.error = SERVER_FUNCTION_FAILED_MESSAGE;
     else if(error.code === 'invalid_server_response') builder.error = 'The server returned an unreadable response. Your confirmed brief is still saved. Try again.';
     else if(['operation_timeout', 'provider_timeout'].includes(error.code)) builder.error = 'The AI request took too long and was cancelled. Your information is still saved.';
-    else if(error.code === 'invalid_provider_response') builder.error = 'Claude returned an invalid roadmap response. Please regenerate.';
+    else if(error.code === 'provider_output_truncated') builder.error = "Claude's roadmap was cut off before it finished. Your confirmed brief is still saved. Please regenerate.";
+    else if(error.code === 'missing_tool_use') builder.error = 'Claude did not return the required roadmap format. Your confirmed brief is still saved. Please regenerate.';
+    else if(error.code === 'provider_refusal') builder.error = 'Claude could not generate this roadmap as written. Review the brief and try again.';
+    else if(error.code === 'provider_context_limit') builder.error = 'The roadmap request was too large to complete in one response. Your confirmed brief is still saved.';
+    else if(error.code === 'invalid_provider_response') builder.error = 'The roadmap response could not be validated. Your confirmed brief is still saved.';
     else if(error.code === 'provider_unavailable') builder.error = 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
     else if(error.code === 'brief_not_confirmed') builder.error = 'Review and confirm your path brief before generating the roadmap.';
     else builder.error = error.message || 'Could not generate a roadmap. Your confirmed brief is still saved.';

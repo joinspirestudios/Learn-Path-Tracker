@@ -46,7 +46,7 @@ test('platform conversion removes unsafe task, resource, cover, and profile URLs
   assert.equal(local.weeks[0].tasks[0].resourceUrl, null);
 });
 
-test('AI-generated unsafe resource URLs are removed during draft normalization', () => {
+test('AI-generated unsafe resource URLs are removed or ignored during draft normalization', () => {
   const input = normalizePrompt({ confirmedBrief:{ goal:'Learn safely', durationDays:7 } });
   const draft = normalizeDraft({
     title:'Safe path', goal:'Learn safely', description:'', category:'skill', durationDays:7,
@@ -61,8 +61,7 @@ test('AI-generated unsafe resource URLs are removed during draft normalization',
     resources:[{ title:'Unsafe', url:'data:text/html,no', description:'Kept as descriptive text.' }], notes:[],
   }, input);
   assert.equal(draft.tasks[0].resourceUrl, null);
-  assert.equal(draft.resources[0].url, null);
-  assert.equal(draft.resources[0].title, 'Unsafe');
+  assert.deepEqual(draft.resources, []);
 });
 
 test('AI request slots isolate stale cleanup and block cross-category overlap', () => {

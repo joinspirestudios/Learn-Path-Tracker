@@ -3,6 +3,8 @@ const SAFE_LOG_FIELDS = new Set([
   'result', 'providerStatus', 'model', 'inputTokens', 'outputTokens',
   'requestBodyBytes', 'goalCharacterCount', 'clarificationRound',
   'durationDays', 'contentLength', 'audioBytes', 'mimeType', 'status', 'code',
+  'stopReason', 'contentBlockTypes', 'toolUseFound', 'rawTaskCount',
+  'rawSectionCount', 'validationReason',
 ]);
 
 export function elapsedMs(startedAt, now = Date.now()){
@@ -36,6 +38,7 @@ export function safeLog(logger, level, event, fields = {}){
     if(!SAFE_LOG_FIELDS.has(key)) return;
     if(value == null) return;
     if(['string', 'number', 'boolean'].includes(typeof value)) entry[key] = value;
+    else if(Array.isArray(value) && value.every(item => typeof item === 'string')) entry[key] = value.slice(0, 20);
   });
   const target = level === 'warn' ? 'warn' : 'info';
   logger?.[target]?.(event, entry);

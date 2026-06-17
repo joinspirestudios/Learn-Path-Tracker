@@ -103,6 +103,20 @@ Protected AI routes emit safe structured latency logs with a request ID, route, 
 
 Browser `net::ERR_BLOCKED_BY_CLIENT` messages on Firestore Listen/Write channels are separate from AI provider timeouts. Treat them as privacy-blocker or Firestore connectivity issues, not as evidence that Anthropic timed out.
 
+## Structured roadmap generation
+
+Roadmap generation uses a compact strict Anthropic tool schema. Claude returns a supporting roadmap specification: title, description, sections, bounded reusable task definitions, preview copy, and notes. The server owns the confirmed brief fields and deterministically assembles the saved draft.
+
+Confirmed Core Commitments are never regenerated, weakened, or removed by Claude. The server converts every confirmed commitment into a canonical task using its confirmed cadence, required status, evidence preference, and the confirmed duration. Claude may add supporting milestones, progression tasks, implementation checks, and review tasks, but the AI output is limited to 40 supporting task definitions. Roadmap tasks are reusable definitions; the journey engine calculates which recurring tasks apply to each day.
+
+Unused AI task fields use neutral values in the strict tool contract: `0` for unused numbers, empty strings for unused text, empty arrays for unused arrays, and `"none"` for unused progression curves. Server normalization converts those sentinels to canonical `null` values before saving so they do not leak into the UI or saved-path model.
+
+The generation route checks Anthropic `stop_reason` before normalization. `max_tokens` returns `provider_output_truncated`, context exhaustion returns `provider_context_limit`, refusal returns `provider_refusal`, and a completed response without the required tool call returns `missing_tool_use`. Partial or unexpected output is not normalized as a finished roadmap.
+
+If Claude returns a valid compact response with no usable supporting tasks, and the confirmed commitments are sufficient to build a coherent draft, the server recovers a safe editable draft from those commitments plus deterministic review milestones. That recovery uses no second paid provider request and is labeled `anthropic_recovered` in the response.
+
+Generation diagnostics add safe validation metadata such as stop reason, content block types, expected tool-use presence, raw task count, raw section count, and validation reason. They still exclude prompts, confirmed brief text, Core Commitment titles, generated task descriptions, resource URLs, credentials, and auth data.
+
 ## Guided creation
 
 The Build with AI entry is a guided web flow rather than a dense all-fields form. The first screen asks only what the user wants to achieve, with optional voice input, examples, Basic starter, and Build with AI. Claude interpretation always happens before AI roadmap generation. When the goal is vague, the app shows one material clarification question at a time with structured choices and custom-answer support. When enough information exists, the flow moves through recommended rhythm, concise path brief, roadmap generation, preview, creation, and a ready screen.
@@ -263,6 +277,7 @@ tests/
   anthropic-streaming.test.js
   api-security.test.js
   firestore.rules.test.js
+  generation-reliability.test.js
   latency-logging.test.js
   phase5.model.test.js
   timeout-alignment.test.js

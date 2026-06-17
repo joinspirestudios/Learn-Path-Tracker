@@ -68,6 +68,7 @@ test('roadmap generation uses Anthropic messages.stream and awaits final tool-us
   const input = normalizePrompt({ confirmedBrief:{ goal:'Learn piano', durationDays:30 } });
   const toolInput = basicStarterDraft(input, 'test');
   const mock = streamClient({
+    stop_reason:'tool_use',
     content:[{ type:'tool_use', name:'create_learning_path', input:toolInput }],
     usage:{ input_tokens:333, output_tokens:444 },
   }, (params, options) => {
