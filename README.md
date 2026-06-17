@@ -6,7 +6,7 @@ Phase 5.2 adds responsive guided path creation on top of the protected Phase 5 A
 
 ## Install and run
 
-Use Node.js 20.19 or newer within the Node 20 line, or Node 22.12 through Node 22.x. Node 20 is the recommended local and deployment runtime; `.nvmrc` is included for version managers.
+Use Node.js 22.x. The production Vercel runtime, `package.json` engines, and `.nvmrc` are aligned on Node 22 for the protected API routes.
 
 ```bash
 npm install

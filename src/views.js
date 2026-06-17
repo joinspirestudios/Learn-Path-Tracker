@@ -26,6 +26,7 @@ import {
 } from './plan.js';
 import { openAuthModal } from './auth.js';
 import { authFetch } from './api.js';
+import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
@@ -898,6 +899,8 @@ function validateMeaningfulGoal(){
 function aiInterpretationError(error){
   if(error?.code === 'unauthorized') return 'Your session has expired. Sign in again to continue.';
   if(error?.code === 'rate_limited') return 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
+  if(error?.code === 'server_function_failed') return SERVER_FUNCTION_FAILED_MESSAGE;
+  if(error?.code === 'invalid_server_response') return 'The server returned an unreadable response. Your goal is still saved. Try again.';
   if(['operation_timeout', 'provider_timeout'].includes(error?.code)) return 'The AI request took too long and was cancelled. Your information is still saved.';
   if(['invalid_goal_brief', 'invalid_ai_json', 'missing_tool_use', 'empty_ai_response', 'invalid_provider_response'].includes(error?.code)){
     return 'The AI returned an incomplete goal brief. Please retry.';
@@ -906,16 +909,6 @@ function aiInterpretationError(error){
   if(typeof navigator !== 'undefined' && navigator.onLine === false) return 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
   if(error instanceof TypeError) return 'Build with AI requires a connection. Your goal is still saved, and Basic starter remains available.';
   return error?.message || 'We could not understand your goal. Your answers are still saved. Try again.';
-}
-
-async function parseAIResponse(response, code, message){
-  try{
-    return await response.json();
-  }catch(error){
-    const invalid = new Error(message);
-    invalid.code = code;
-    throw invalid;
-  }
 }
 
 function cleanupVoiceRecording(clearTranscript = false){
@@ -1064,11 +1057,9 @@ async function transcribeVoiceRecording(){
       },
       body:voice.blob,
     }, VOICE_TRANSCRIBE_TIMEOUT_MS);
-    const payload = await res.json();
+    const payload = await parseAIResponse(res);
     if(!res.ok || !payload.ok){
-      const err = new Error(payload.message || 'Voice transcription failed.');
-      err.code = payload.error || payload.code || '';
-      throw err;
+      throw errorFromAIPayload(payload, 'Voice transcription failed.');
     }
     if(!aiRequestIsCurrent(request)) return;
     builder.voice.transcript = payload.transcript || '';
@@ -1084,6 +1075,8 @@ async function transcribeVoiceRecording(){
 function voiceErrorCopy(code, fallback){
   if(code === 'unauthorized') return 'Your session has expired. Sign in again to transcribe this recording.';
   if(code === 'rate_limited') return 'You have reached the current transcription limit. Try again later.';
+  if(code === 'server_function_failed') return SERVER_FUNCTION_FAILED_MESSAGE;
+  if(code === 'invalid_server_response') return 'The server returned an unreadable response. Your recording is still available.';
   if(code === 'provider_timeout') return 'Voice transcription took too long and was cancelled. Your recording is still available.';
   if(code === 'provider_unavailable') return 'Voice transcription is temporarily unavailable. You can still type your goal manually.';
   if(code === 'invalid_request') return fallback || 'This recording could not be accepted. Try recording again.';
@@ -1871,11 +1864,9 @@ async function requestGoalInterpretation(withAnswers){
         maxClarificationRounds:MAX_AI_CLARIFICATION_ROUNDS,
       }),
     }, AI_INTERPRET_TIMEOUT_MS);
-    const payload = await parseAIResponse(response, 'invalid_goal_brief', 'The AI returned an incomplete goal brief. Please retry.');
+    const payload = await parseAIResponse(response);
     if(!response.ok || !payload.ok){
-      const error = new Error(payload.message || 'Could not understand this goal.');
-      error.code = payload.error || payload.code || '';
-      throw error;
+      throw errorFromAIPayload(payload, 'Could not understand this goal.');
     }
     if(!aiRequestIsCurrent(request)) return;
     const brief = normalizeGoalBrief(payload.brief);
@@ -2004,11 +1995,9 @@ async function generateRoadmapFromBrief(){
         saveOptions:{ visibility:prompt.visibility },
       }),
     }, AI_GENERATE_TIMEOUT_MS);
-    const payload = await parseAIResponse(response, 'invalid_ai_output', 'Claude returned a path draft that could not be validated. Please regenerate.');
+    const payload = await parseAIResponse(response);
     if(!response.ok || !payload.ok){
-      const error = new Error(payload.message || 'AI generation failed.');
-      error.code = payload.error || payload.code || '';
-      throw error;
+      throw errorFromAIPayload(payload, 'AI generation failed.');
     }
     if(!aiRequestIsCurrent(request)) return;
     builder.draft = normalizeGeneratedDraft(payload.draft, prompt);
@@ -2023,6 +2012,8 @@ async function generateRoadmapFromBrief(){
     builder.phase = 'brief';
     if(error.code === 'unauthorized') builder.error = 'Your session has expired. Sign in again to continue.';
     else if(error.code === 'rate_limited') builder.error = 'You have reached the current AI usage limit. Your brief is saved. Try again later.';
+    else if(error.code === 'server_function_failed') builder.error = SERVER_FUNCTION_FAILED_MESSAGE;
+    else if(error.code === 'invalid_server_response') builder.error = 'The server returned an unreadable response. Your confirmed brief is still saved. Try again.';
     else if(['operation_timeout', 'provider_timeout'].includes(error.code)) builder.error = 'The AI request took too long and was cancelled. Your information is still saved.';
     else if(error.code === 'invalid_provider_response') builder.error = 'Claude returned an invalid roadmap response. Please regenerate.';
     else if(error.code === 'provider_unavailable') builder.error = 'The AI service is temporarily unavailable. Try again, or use Basic starter.';
