@@ -70,6 +70,16 @@ import {
   AI_SAVE_TIMEOUT_MS, ENROLLMENT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS,
   enrollmentStartErrorMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
+import {
+  aiDraftToLocalPath as aiGeneratedDraftToLocalPath,
+  AI_GOAL_EXAMPLES as AI_ROTATING_GOAL_EXAMPLES,
+  AI_GOAL_SUGGESTIONS,
+  localGeneratedDraft as createLocalGeneratedDraft,
+  normalizeGeneratedDraft as normalizeAIGeneratedDraft,
+  startExampleRotation,
+  stopExampleRotation,
+  updateGoalSuggestionButtons,
+} from './views/ai-builder/index.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -83,7 +93,6 @@ let dailySessionError = '';
 let dailySessionActionToken = 0;
 let aiBuilder = null;
 let aiProcessingTimer = null;
-let aiExampleTimer = null;
 let suppressNextAIBuilderFocus = false;
 let isCreatingPath = false;
 let openingPathId = null;
@@ -1214,20 +1223,6 @@ function naturalCadenceOptions(selected){
   return AI_CADENCE_TYPES.map(value => '<option value="' + esc(value) + '" ' + (value === selected ? 'selected' : '') + '>' + esc(labels[value]) + '</option>').join('');
 }
 
-const AI_GOAL_SUGGESTIONS = [
-  'Speak French confidently', 'Run my first 15 km', 'Build a design portfolio',
-  'Develop a prayer habit', 'Complete a challenge', 'Learn Blender',
-];
-
-const AI_ROTATING_GOAL_EXAMPLES = [
-  'I want to speak French confidently in nine months',
-  'I want to run my first 15 km',
-  'I want to finish my design course',
-  'I want to read and study one book this month',
-  'I want to build a portfolio with four case studies',
-  'I want to develop a consistent prayer habit',
-];
-
 function wizardProgressHTML(){
   const current = creationStageForPhase(aiBuilder.phase);
   return '<ol class="ai-stage-progress" aria-label="Path creation progress">' + AI_GUIDED_STAGES.map(stage => {
@@ -1599,33 +1594,19 @@ function userPrefersReducedMotion(){
 }
 
 function stopAIExampleRotation(markInteracted = false){
-  if(aiExampleTimer){ clearInterval(aiExampleTimer); aiExampleTimer = null; }
-  if(markInteracted && aiBuilder) aiBuilder.exampleRotationStopped = true;
+  stopExampleRotation(aiBuilder, { markInteracted });
 }
 
 function updateGoalSuggestionState(){
-  const goal = $('aiGoal');
-  const hasText = !!(goal?.value || '').trim();
-  aiBuilder?.overlay?.querySelectorAll('[data-goal-suggestion]').forEach(button => {
-    button.disabled = hasText;
-    button.setAttribute('aria-disabled', hasText ? 'true' : 'false');
-  });
+  updateGoalSuggestionButtons(aiBuilder?.overlay, $('aiGoal')?.value || '');
 }
 
 function startAIExampleRotation(builder){
-  stopAIExampleRotation(false);
-  if(!builder || builder.phase !== 'goal' || builder.exampleRotationStopped || userPrefersReducedMotion()) return;
-  const goal = $('aiGoal');
-  if(!goal || goal.value.trim()) return;
-  builder.exampleIndex = Number(builder.exampleIndex || 0) % AI_ROTATING_GOAL_EXAMPLES.length;
-  goal.placeholder = AI_ROTATING_GOAL_EXAMPLES[builder.exampleIndex];
-  aiExampleTimer = setInterval(() => {
-    if(aiBuilder !== builder || builder.phase !== 'goal' || builder.exampleRotationStopped) return stopAIExampleRotation(false);
-    const input = $('aiGoal');
-    if(!input || input.value.trim() || document.activeElement === input) return stopAIExampleRotation(true);
-    builder.exampleIndex = ((builder.exampleIndex || 0) + 1) % AI_ROTATING_GOAL_EXAMPLES.length;
-    input.placeholder = AI_ROTATING_GOAL_EXAMPLES[builder.exampleIndex];
-  }, 3500);
+  startExampleRotation(builder, {
+    getGoalInput: () => $('aiGoal'),
+    getActiveElement: () => document.activeElement,
+    isCurrentBuilder: candidate => aiBuilder === candidate && candidate?.phase === 'goal',
+  });
 }
 
 function startAIProcessingTicker(builder, count){
@@ -2073,9 +2054,9 @@ function createBasicDraft(){
   aiBuilder.error = '';
   aiBuilder.message = '';
   try{
-    const draft = localGeneratedDraft(prompt);
+    const draft = createLocalGeneratedDraft(prompt);
     aiBuilder.brief = confirmBrief(briefFromPrompt(prompt));
-    aiBuilder.draft = normalizeGeneratedDraft(draft, { ...prompt, confirmedBrief:aiBuilder.brief });
+    aiBuilder.draft = normalizeAIGeneratedDraft(draft, { ...prompt, confirmedBrief:aiBuilder.brief });
     aiBuilder.draft.source = 'fallback';
     aiBuilder.message = 'Basic starter template created without AI. Review it before saving.';
     aiBuilder.mode = 'guided';
@@ -2159,7 +2140,7 @@ async function generateRoadmapFromBrief(){
       throw errorFromAIPayload(payload, 'AI generation failed.');
     }
     if(!aiRequestIsCurrent(request)) return;
-    builder.draft = normalizeGeneratedDraft(payload.draft, prompt);
+    builder.draft = normalizeAIGeneratedDraft(payload.draft, prompt);
     builder.errorRequestId = '';
     builder.draft.source = payload.source || 'anthropic';
     builder.message = payload.message || 'AI draft generated. Review before saving.';
@@ -2207,7 +2188,7 @@ async function saveGeneratedPath(){
   try{
     if(configPresent() && store.currentUser && !cloudAvailable()) throw new Error(cloudFailureMessage());
     const localPath = {
-      ...aiDraftToLocalPath(normalizeGeneratedDraft(aiBuilder.draft, aiBuilder.prompt)),
+      ...aiGeneratedDraftToLocalPath(normalizeAIGeneratedDraft(aiBuilder.draft, aiBuilder.prompt), store.currentUser),
       clientSaveId: aiSaveClientId,
     };
     let id = 'up_' + Date.now().toString(36) + Math.floor(Math.random()*999).toString(36);

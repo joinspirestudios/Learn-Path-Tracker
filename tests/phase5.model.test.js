@@ -394,7 +394,8 @@ test('the canonical Build with AI handler interprets before generation and Basic
   const generationHandler = source.slice(source.indexOf('async function generateRoadmapFromBrief'), source.indexOf('async function saveGeneratedPath'));
   assert.match(buildHandler, /requestGoalInterpretation\(false\)/);
   assert.doesNotMatch(buildHandler, /\/api\/generate-path/);
-  assert.match(basicHandler, /localGeneratedDraft\(prompt\)/);
+  assert.match(basicHandler, /createLocalGeneratedDraft\(prompt\)/);
+  assert.match(source, /localGeneratedDraft as createLocalGeneratedDraft/);
   assert.doesNotMatch(basicHandler, /fetch\(/);
   assert.match(generationHandler, /aiBuilder\.phase !== 'brief'/);
   assert.match(generationHandler, /confirmBrief\(brief\)/);

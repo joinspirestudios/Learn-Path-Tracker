@@ -125,6 +125,10 @@ Core Commitments and cadence are presented in natural language. Advanced schedul
 
 Basic starter remains a local non-AI route. It uses the same guided shell, creates a simple editable draft from the entered goal, shows the concise preview first, and saves through the normal local or platform path system.
 
+### AI builder module layout
+
+The guided AI builder is split into focused frontend modules under `src/views/ai-builder/`. `src/views.js` remains the app coordinator for modal lifecycle, authenticated requests, saving, live voice wiring, and navigation, while AI builder rendering, suggestion state, example rotation, draft normalization, and save-shape conversion live in the `ai-builder` modules. Add future AI builder screens or review controls there instead of growing the main view coordinator.
+
 ### Domain-aware setup
 
 Phase 5.5 helps Learn Path Tracker recognize course, book, fitness and general goal context during setup. The builder shows six lightweight goal suggestions, rotates calm empty-field examples until the user focuses, types, pastes or starts voice input, and asks only missing questions that materially affect duration, schedule, sequence, milestones, safety, evidence or progression.
