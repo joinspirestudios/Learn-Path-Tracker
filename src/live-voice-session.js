@@ -131,6 +131,14 @@ export function deepgramLiveSocketUrl({ language = 'en' } = {}){
   return url.toString();
 }
 
+export function deepgramLiveSocketProtocols(accessToken){
+  const normalized = String(accessToken || '').trim();
+  if(!normalized){
+    throw Object.assign(new Error('Missing Deepgram access token.'), { code:'live_token_failed' });
+  }
+  return ['bearer', normalized];
+}
+
 export function supportsLiveVoiceInput(){
   return supportsVoiceRecording() && typeof WebSocket !== 'undefined';
 }
@@ -153,6 +161,22 @@ function notifyPhase(session, phase, statusMessage = ''){
     visibleSessionTranscript:sessionTranscript(session.transcriptState),
     interimTranscript:session.transcriptState.interimTranscript,
     finalizedSegments:session.transcriptState.finalizedSegments,
+  });
+}
+
+function notifyDiagnostic(session, event, fields = {}){
+  if(activeSession !== session || session.closed) return;
+  session.callbacks.onDiagnostic?.({
+    event,
+    phase:session.phase,
+    socketReadyState:Number(session.websocket?.readyState ?? -1),
+    credentialPresent:!!session.websocketSessionToken,
+    fallbackRequired:session.fallbackRequired,
+    recordedBytes:session.recordedBytes,
+    binaryChunkCount:session.binaryChunkCount,
+    finalEventCount:session.finalEventCount,
+    interimEventCount:session.interimEventCount,
+    ...fields,
   });
 }
 
@@ -232,17 +256,21 @@ async function requestTokenWithTimeout(session){
   });
 }
 
-async function openSocketWithTimeout(session, token){
+async function openSocketWithTimeout(session, accessToken){
   const url = deepgramLiveSocketUrl({ language:session.language });
   return await new Promise((resolve, reject) => {
     let settled = false;
-    const socket = new WebSocket(url, ['token', token]);
+    const protocols = deepgramLiveSocketProtocols(accessToken);
+    const socket = new WebSocket(url, protocols);
     session.websocket = socket;
-    session.websocketSessionToken = token;
+    session.websocketSessionToken = protocols[1];
     session.tokenExpiresIn = null;
+    notifyDiagnostic(session, 'socket_connecting', { protocol:protocols[0] });
     session.connectTimerId = setTimeout(() => {
       if(settled) return;
       settled = true;
+      session.websocketSessionToken = null;
+      notifyDiagnostic(session, 'socket_connect_timeout', { protocol:protocols[0] });
       safeCloseSocket(socket, 1000, 'connect-timeout');
       reject(Object.assign(new Error('Live socket timed out.'), { code:'live_connect_failed' }));
     }, LIVE_SOCKET_CONNECT_TIMEOUT_MS);
@@ -252,6 +280,7 @@ async function openSocketWithTimeout(session, token){
       clearTimer(session.connectTimerId);
       session.connectTimerId = null;
       session.websocketSessionToken = null;
+      notifyDiagnostic(session, 'socket_open', { protocol:protocols[0] });
       resolve(socket);
     };
     socket.onmessage = event => handleDeepgramMessage(session, event.data);
@@ -259,21 +288,25 @@ async function openSocketWithTimeout(session, token){
       if(settled){
         session.fallbackRequired = true;
         session.fallbackReason = 'live_interrupted';
+        session.websocketSessionToken = null;
+        notifyDiagnostic(session, 'socket_error_after_open', { protocol:protocols[0] });
         notifyPhase(session, 'fallback_recording', 'Live transcription interrupted. Keep speaking, then stop to transcribe.');
         return;
       }
       settled = true;
       clearTimer(session.connectTimerId);
       session.connectTimerId = null;
+      session.websocketSessionToken = null;
+      notifyDiagnostic(session, 'socket_connect_error', { protocol:protocols[0] });
       reject(Object.assign(new Error('Live socket failed.'), { code:'live_connect_failed' }));
     };
     socket.onclose = event => {
       if(activeSession !== session || session.closed || session.stopping || session.cancelled) return;
-      if(event?.code && event.code !== 1000){
-        session.fallbackRequired = true;
-        session.fallbackReason = 'live_interrupted';
-        notifyPhase(session, 'fallback_recording', 'Live transcription interrupted. Keep speaking, then stop to transcribe.');
-      }
+      session.websocketSessionToken = null;
+      session.fallbackRequired = true;
+      session.fallbackReason = 'live_interrupted';
+      notifyDiagnostic(session, 'socket_unexpected_close', { closeCode:Number(event?.code || 0) });
+      notifyPhase(session, 'fallback_recording', 'Live transcription interrupted. Keep speaking, then stop to transcribe.');
     };
   });
 }
@@ -288,7 +321,13 @@ function startRecorder(session){
     if(activeSession !== session || session.closed || !event.data || !event.data.size) return;
     session.chunks.push(event.data);
     session.recordedBytes += Number(event.data.size || 0);
-    if(!session.fallbackRequired) sendSocket(session, event.data);
+    session.binaryChunkCount += 1;
+    if(!session.fallbackRequired && !sendSocket(session, event.data)){
+      session.fallbackRequired = true;
+      session.fallbackReason = 'live_interrupted';
+      notifyDiagnostic(session, 'binary_send_failed');
+      notifyPhase(session, 'fallback_recording', 'Live transcription interrupted. Keep speaking, then stop to transcribe.');
+    }
     session.callbacks.onMetrics?.({
       recordedBytes:session.recordedBytes,
       durationSeconds:session.durationSeconds,
@@ -455,6 +494,7 @@ export async function startLiveVoiceSession({
     mimeType:supportedRecordingMimeType(),
     interimEventCount:0,
     finalEventCount:0,
+    binaryChunkCount:0,
     fallbackRequired:false,
     fallbackReason:'',
     stopping:false,

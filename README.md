@@ -129,6 +129,8 @@ Basic starter remains a local non-AI route. It uses the same guided shell, creat
 
 Eligible path-creation text fields include an inline microphone button. Tap the microphone, grant permission, and the browser requests an authenticated short-lived Deepgram token from `POST /api/deepgram-token`. The browser then opens a direct live WebSocket to Deepgram, starts recording only after the socket is connected, and streams microphone chunks while the user speaks.
 
+The server uses the permanent Deepgram API key to request a short-lived JWT from `/v1/auth/grant`. The browser uses that short-lived JWT to authenticate the direct Deepgram WebSocket with the Bearer scheme through `Sec-WebSocket-Protocol`; the JWT is not placed in the URL or stored in persistent browser storage.
+
 Interim words appear live in the active field and may be refined as recognition improves. Finalized phrases become stable, Stop sends a finalization request, and the normal field remains editable after the microphone and socket close. Multiple voice sessions can be added to the same field without replacing existing text unless text was deliberately selected.
 
 Voice input is available for useful natural-language fields in goal entry, clarification text answers, resource title and note fields, rhythm adjustments, brief review, and high-level roadmap review fields. It is intentionally excluded from URLs, dates, numbers, selectors, booleans, authentication fields, and repeated generated task rows so the interface stays calm.
@@ -240,7 +242,7 @@ api/deepgram-token.js: 15 seconds
 api/transcribe-voice.js: 90 seconds
 ```
 
-The live token route verifies Firebase Authentication, applies the voice transcription rate limit, calls Deepgram's temporary-token grant endpoint with the server-side `DEEPGRAM_API_KEY`, and returns only the temporary access token, expiration metadata, and request ID. The permanent Deepgram key is never returned to the browser.
+The live token route verifies Firebase Authentication, applies the voice transcription rate limit, calls Deepgram's temporary-token grant endpoint with the server-side `DEEPGRAM_API_KEY`, and returns only the temporary JWT, expiration metadata, and request ID. The permanent Deepgram key is never returned to the browser.
 
 Voice fallback transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 4 MB. Inline browser recording stops at 120 seconds or near the safe byte threshold before upload.
 
