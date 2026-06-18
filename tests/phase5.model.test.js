@@ -5,10 +5,12 @@ import { readFileSync } from 'node:fs';
 import {
   AI_INTENSITY_DETAILS, AI_INTENSITY_LEVELS,
   MAX_AI_CLARIFICATION_ROUNDS, aiPromptDefaults, answerValueForQuestion,
+  answerPayloadForQuestion,
   cadenceLabel, canStartAIRequest, commitmentSummary, creationStageForPhase,
   isMeaningfulAIGoal, normalizeClarifyingQuestions, normalizeCoreCommitments,
-  mergeBriefPreservingConfirmed, normalizeConfirmedBrief, normalizeDomainProfile,
+  mergeBriefPreservingConfirmed, mergeClarificationAnswers, normalizeConfirmedBrief, normalizeDomainProfile,
   normalizeIntensity, normalizeStructuredResources, recoverAIBuilderState, routeInterpretedBrief,
+  validatePhase55Brief,
 } from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
 import { platformToLocalPath, resolveCreatorName } from '../src/platform.js';
@@ -41,6 +43,8 @@ test('domain detection preserves course, book, fitness, and multi-domain signals
   const multi = normalizeDomainProfile({}, 'Complete a running course and prepare for a 5 km race');
   assert.deepEqual(multi.detected.sort(), ['course', 'fitness']);
   assert.equal(normalizeDomainProfile({}, 'I want to learn Blender').primary, 'general');
+  assert.equal(normalizeDomainProfile({}, 'I want to train my dog').primary, 'general');
+  assert.equal(normalizeDomainProfile({}, 'Build high-converting landing pages').primary, 'general');
 });
 
 test('structured resources normalize, dedupe, sanitize URLs, and preserve fixed sequences', () => {
@@ -72,6 +76,72 @@ test('confirmed domain resources cannot be overwritten by a later provider brief
   });
   assert.equal(merged.structuredResources.courses[0].title, 'Original Course');
   assert.equal(merged.structuredResources.courses[0].fixedSequence, true);
+});
+
+test('structured clarification answers merge into precise domain fields', () => {
+  const brief = normalizeConfirmedBrief({
+    goal:'Finish a course and keep running safely',
+    clarifyingQuestions:[
+      { id:'course', targetField:'courseResource', prompt:'Which course?', type:'resource' },
+      { id:'module', targetField:'course.currentPosition.index', prompt:'Current module?', type:'number' },
+      { id:'total', targetField:'course.totalUnits', prompt:'Total modules?', type:'number' },
+      { id:'fixed', targetField:'course.fixedSequence', prompt:'Fixed order?', type:'yes_no' },
+      { id:'baseline', targetField:'fitness.baseline', prompt:'Baseline?', type:'short_text' },
+    ],
+  });
+  const merged = mergeClarificationAnswers(brief, {
+    course:{ targetField:'courseResource', value:{ title:'Design Course', url:'https://example.com/course', notes:'Use supplied order' } },
+    module:{ targetField:'course.currentPosition.index', value:3 },
+    total:{ targetField:'course.totalUnits', value:12 },
+    fixed:{ targetField:'course.fixedSequence', value:'yes' },
+    baseline:{ targetField:'fitness.baseline', value:'Run 1 km comfortably' },
+  });
+  assert.equal(merged.structuredResources.courses[0].title, 'Design Course');
+  assert.equal(merged.structuredResources.courses[0].currentPosition.index, 3);
+  assert.equal(merged.structuredResources.courses[0].totalUnits, 12);
+  assert.equal(merged.structuredResources.courses[0].fixedSequence, true);
+  assert.equal(merged.fitnessContext.baseline, 'Run 1 km comfortably');
+  assert.equal(merged.fitnessContext.limitations, '');
+  assert.deepEqual(merged.constraints, []);
+});
+
+test('fitness limitations merge separately from fitness baseline', () => {
+  const brief = normalizeConfirmedBrief({
+    goal:'Run safely',
+    clarifyingQuestions:[
+      { id:'limits', targetField:'fitness.limitations', prompt:'Limitations?', type:'short_text' },
+    ],
+  });
+  const merged = mergeClarificationAnswers(brief, {
+    limits:{ targetField:'fitness.limitations', value:'No hills this month' },
+  });
+  assert.equal(merged.fitnessContext.baseline, '');
+  assert.equal(merged.fitnessContext.limitations, 'No hills this month');
+  assert.deepEqual(merged.constraints, ['No hills this month']);
+});
+
+test('resource answer payload preserves structured objects while display remains readable', () => {
+  const [question] = normalizeClarifyingQuestions([{
+    id:'course', targetField:'courseResource', prompt:'Which course?', type:'resource',
+  }]);
+  const answer = { title:'Course A', url:'https://example.com/a', notes:'Module 2' };
+  assert.deepEqual(answerPayloadForQuestion(question, answer), answer);
+  assert.equal(answerValueForQuestion(question, answer), 'Course A - https://example.com/a - Module 2');
+});
+
+test('Phase 5.5 validation rejects impossible progress and unsafe fitness load', () => {
+  const errors = validatePhase55Brief({
+    goal:'Finish course and train',
+    structuredResources:{
+      courses:[{ title:'Course', currentPosition:{ index:14 }, totalUnits:12 }],
+      books:[{ title:'Book', currentPage:520, pageCount:420 }],
+    },
+    fitnessContext:{ activity:'running', frequencyPerWeek:9, sessionMinutes:360 },
+  });
+  assert.ok(errors.some(error => error.field === 'course.currentPosition.index'));
+  assert.ok(errors.some(error => error.field === 'book.currentPage'));
+  assert.ok(errors.some(error => error.field === 'fitness.frequencyPerWeek'));
+  assert.ok(errors.some(error => error.field === 'fitness.sessionMinutes'));
 });
 
 test('legacy daily strings migrate into structured core commitments', () => {

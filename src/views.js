@@ -36,14 +36,14 @@ import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
   AI_INTENSITY_DETAILS, AI_INTENSITY_LEVELS,
   MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
-  answerValueForQuestion,
+  answerPayloadForQuestion, answerValueForQuestion,
   aiBriefDefaults, aiPromptDefaults, briefFromPrompt, confirmBrief, emptyCoreCommitment,
   beginAIRequest, cancelAIRequests, canStartAIRequest, createAIRequestState,
   cadenceLabel, commitmentSummary, creationStageForPhase,
   finishAIRequest, hasActiveAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
   normalizeCoreCommitments, normalizeBriefAssumptions, normalizeClarifyingQuestions,
   normalizeConfirmedBrief, normalizeIntensity, recoverAIBuilderState, routeInterpretedBrief,
-  unacceptedMaterialAssumptions,
+  firstPhase55ValidationMessage, unacceptedMaterialAssumptions,
 } from './ai-builder-model.js';
 import {
   canCompleteDay, canOpenDay, dateForJourneyDay, getDayStatus,
@@ -681,6 +681,7 @@ function localGeneratedDraft(prompt){
 }
 
 function aiDraftToLocalPath(draft){
+  const confirmed = normalizeGoalBrief(draft.confirmedBrief || {});
   const sections = draft.sections.length ? draft.sections : [{ title:'Foundation', description:'', order:0 }];
   const weeks = sections.map(section => ({
     title:section.title,
@@ -724,12 +725,15 @@ function aiDraftToLocalPath(draft){
     category:draft.category,
     durationDays:clampDay(draft.durationDays, 1, 365),
     durationLabel:draft.durationLabel || (draft.durationDays + ' days'),
-    intensity:normalizeIntensity(draft.intensity || draft.confirmedBrief?.intensity),
+    intensity:normalizeIntensity(draft.intensity || confirmed.intensity),
+    domainProfile:confirmed.domainProfile,
+    structuredResources:confirmed.structuredResources,
+    fitnessContext:confirmed.fitnessContext,
     creatorName:store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
     creatorId:store.currentUser?.uid || '',
     creatorEmail:store.currentUser?.email || '',
     coreCommitments:normalizeCoreCommitments(draft.coreCommitments),
-    aiBrief:draft.confirmedBrief || null,
+    aiBrief:draft.confirmedBrief ? confirmed : null,
     visibility:draft.visibility || 'private',
     discoverable:false,
     previewEnabled:true,
@@ -888,6 +892,8 @@ function validateAIBuilderInputs(){
     emptyCommitment.focus();
     return 'Each Core commitment needs a title. Add a title or remove the empty commitment.';
   }
+  const phase55Message = aiBuilder?.brief ? firstPhase55ValidationMessage(aiBuilder.brief) : '';
+  if(phase55Message) return phase55Message;
   return '';
 }
 
@@ -1660,6 +1666,15 @@ function readQuestionAnswer(question){
     const title = ($('aiQuestionResourceTitle')?.value || '').trim();
     const url = safeExternalUrl($('aiQuestionResourceUrl')?.value || '') || (($('aiQuestionResourceUrl')?.value || '').trim());
     const note = ($('aiQuestionResourceNote')?.value || '').trim();
+    if(question.targetField === 'bookResource' || question.targetField.startsWith('book.')){
+      return { title, url, notesOrExercises:note, notes:note };
+    }
+    if(question.targetField === 'courseResource' || question.targetField.startsWith('course.')){
+      return { title, url, notes:note };
+    }
+    if(question.targetField === 'programmeResource' || question.targetField.startsWith('programme.')){
+      return { title, url, notes:note };
+    }
     return { title, url, note, value:[title, url, note].filter(Boolean).join(' - ') };
   }
   const selected = [...(aiBuilder.overlay?.querySelectorAll('[data-question-choice]:checked') || [])].map(input => input.value).filter(value => value !== '__custom');
@@ -1977,8 +1992,9 @@ async function requestGoalInterpretation(withAnswers){
     id:question.id,
     targetField:question.targetField,
     question:question.prompt,
+    value:answerPayloadForQuestion(question, builder.clarifyingAnswers[question.id]),
     answer:answerValueForQuestion(question, builder.clarifyingAnswers[question.id]),
-  })).filter(item => item.answer) : [];
+  })).filter(item => item.answer || (item.value && typeof item.value === 'object' && Object.keys(item.value).length)) : [];
   if(withAnswers && !answers.length){
     aiBuilder.error = 'Answer at least one question before updating your brief.';
     renderAIBuilder();

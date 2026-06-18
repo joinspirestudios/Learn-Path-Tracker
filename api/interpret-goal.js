@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
-  briefFromPrompt, mergeBriefPreservingConfirmed, mergeClarificationAnswers,
+  AI_ANSWER_TARGETS, briefFromPrompt, mergeBriefPreservingConfirmed, mergeClarificationAnswers,
   normalizeBriefAssumptions, normalizeClarifyingQuestions, normalizeConfirmedBrief,
 } from '../src/ai-builder-model.js';
 import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
@@ -52,7 +52,7 @@ const questionSchema = {
   required:['id', 'targetField', 'prompt', 'supportingText', 'type', 'required', 'materialReason', 'options', 'allowCustomAnswer'],
   properties:{
     id:{ type:'string' },
-    targetField:{ type:'string', enum:['currentBaseline', 'desiredOutcome', 'durationDays', 'availableTime', 'constraints', 'scheduleNotes', 'evidencePreferences', 'resources', 'intensity', 'courseResource', 'bookResource', 'programmeResource', 'fitnessContext'] },
+    targetField:{ type:'string', enum:AI_ANSWER_TARGETS },
     prompt:{ type:'string' }, supportingText:{ type:'string' }, type:{ type:'string', enum:QUESTION_TYPES },
     required:{ type:'boolean' }, materialReason:{ type:'string' },
     options:{
@@ -228,13 +228,23 @@ export function normalizeBrief(raw = {}){
   return brief;
 }
 
+function normalizeAnswerPayload(value){
+  if(value == null) return '';
+  if(typeof value !== 'object') return boundedText(value, 'answer', 700, { required:true });
+  let serialized = '';
+  try{ serialized = JSON.stringify(value); }
+  catch(error){ throw apiError('invalid_request', 'Answer must be valid JSON.', 400); }
+  if(serialized.length > 4096) throw apiError('invalid_request', 'Answer is too large.', 400);
+  return JSON.parse(serialized);
+}
+
 function normalizeAnswers(value){
   const items = boundedArray(value, 'answers', 8);
   return Object.fromEntries(items.map((item, index) => {
     const id = boundedText(item?.id || `question-${index + 1}`, 'answer id', 100, { required:true });
     return [id, {
       targetField:boundedText(item?.targetField, 'answer target field', 80),
-      value:boundedText(item?.value ?? item?.answer, 'answer', 700, { required:true }),
+      value:normalizeAnswerPayload(item?.value ?? item?.answer),
     }];
   }));
 }
@@ -265,7 +275,7 @@ function buildPrompt(input){
     'Use the interpret_goal_brief tool and return no prose or markdown.',
     'Ask 2-5 questions only when an answer would materially change duration, difficulty, schedule, progression, commitments, evidence, safety, feasibility, or milestones.',
     'Detect domainProfile conservatively: primary must be one of general, course, book, fitness; preserve multiple detected signals when relevant.',
-    'Use courseResource, bookResource, programmeResource, fitnessContext, or intensity target fields only when that answer materially changes the roadmap.',
+    'Use exact target fields from the schema. Prefer specific fields like course.title, course.currentPosition.index, book.pageCount, fitness.baseline, and fitness.limitations when only one value is missing.',
     'Preserve supplied courses, books, programmes, fixed sequences, page counts, current progress, baselines, frequency, limitations, and explicit constraints.',
     'Do not ask course questions for general learning goals, book questions for casual reading habits, or fitness questions without an activity/progression context.',
     'Use intensity values only as soft, balanced, or intensive. If the user has not chosen one, recommend balanced but let the user confirm it.',

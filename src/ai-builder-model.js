@@ -62,12 +62,57 @@ function cleanArray(value, maxItems = 16, maxText = 500){
     .slice(0, maxItems);
 }
 
-const ANSWER_TARGETS = new Set([
+function safeAnswerTarget(value){
+  const target = cleanText(value, 80);
+  if(!target || /(^|\.)(__proto__|constructor|prototype)(\.|$)/.test(target)) return '';
+  return ANSWER_TARGETS.has(target) ? target : '';
+}
+
+export function isSupportedAnswerTarget(value){
+  return !!safeAnswerTarget(value);
+}
+
+function safeAnswerPayload(value, depth = 0){
+  if(value == null) return '';
+  if(typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'){
+    return typeof value === 'string' ? cleanText(value, 1000) : value;
+  }
+  if(depth > 3) return '';
+  if(Array.isArray(value)){
+    return value.slice(0, 12).map(item => safeAnswerPayload(item, depth + 1));
+  }
+  if(typeof value !== 'object') return '';
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !['__proto__', 'constructor', 'prototype'].includes(key))
+    .slice(0, 24)
+    .map(([key, item]) => [cleanText(key, 80), safeAnswerPayload(item, depth + 1)])
+    .filter(([key]) => key));
+}
+
+export const AI_ANSWER_TARGETS = [
   'currentBaseline', 'desiredOutcome', 'durationDays', 'availableTime',
   'constraints', 'scheduleNotes', 'evidencePreferences', 'resources',
   'intensity', 'courseResource', 'bookResource', 'programmeResource',
   'fitnessContext',
-]);
+  'course.title', 'course.url', 'course.platform', 'course.instructor',
+  'course.currentPosition.label', 'course.currentPosition.index',
+  'course.totalUnits', 'course.typicalLessonMinutes', 'course.hasAssignments',
+  'course.assignmentNotes', 'course.targetCompletionDate', 'course.fixedSequence',
+  'course.notes',
+  'book.title', 'book.author', 'book.edition', 'book.pageCount',
+  'book.currentPage', 'book.targetCompletionDate', 'book.studyIntention',
+  'book.notesOrExercises', 'book.pagesPerSession', 'book.minutesPerSession',
+  'book.format',
+  'programme.title', 'programme.source', 'programme.url',
+  'programme.fixedSequence', 'programme.currentPosition', 'programme.totalUnits',
+  'programme.notes',
+  'fitness.activity', 'fitness.baseline', 'fitness.target',
+  'fitness.frequencyPerWeek', 'fitness.sessionMinutes', 'fitness.equipment',
+  'fitness.limitations', 'fitness.safetyNotes',
+];
+
+const ANSWER_TARGETS = new Set(AI_ANSWER_TARGETS);
+const RESOURCE_TARGETS = new Set(['courseResource', 'bookResource', 'programmeResource']);
 
 const LEGACY_INTENSITY_MAP = {
   light:'soft',
@@ -77,8 +122,8 @@ const LEGACY_INTENSITY_MAP = {
 
 const DOMAIN_HINTS = {
   course:/\b(course|lesson|module|class|certification|curriculum|instructor|udemy|coursera|edx|skillshare|bootcamp)\b/i,
-  book:/\b(book|pages?|chapter|author|edition|read and study|study a)\b/i,
-  fitness:/\b(run|running|5k|10k|15k|marathon|gym|workout|strength|mobility|train|training|athletic|cycling|swim|baseline)\b/i,
+  book:/\b(book|chapter|author|edition|read and study|study a)\b|\b\d{2,5}\s*-\s*page\b|\b\d{2,5}\s+pages?\b.{0,80}\b(book|read|study)\b/i,
+  fitness:/\b(run|running|5k|10k|15k|marathon|gym|workout|strength|mobility|athletic|cycling|swim|triathlon)\b|\btraining\s+for\s+(a\s+)?(race|marathon|5k|10k|event)\b/i,
   programme:/\b(programme|program|coach|coach-created|fixed plan|training plan|challenge)\b/i,
 };
 
@@ -218,8 +263,8 @@ export function normalizeFitnessContext(raw = {}){
     activity:cleanText(raw.activity, 120),
     baseline:cleanText(raw.baseline || raw.currentBaseline, 220),
     target:cleanText(raw.target || raw.desiredOutcome, 220),
-    frequencyPerWeek:cleanNumber(raw.frequencyPerWeek ?? raw.sessionsPerWeek, 0, 14),
-    sessionMinutes:cleanNumber(raw.sessionMinutes ?? raw.minutesPerSession, 0, 300),
+    frequencyPerWeek:cleanNumber(raw.frequencyPerWeek ?? raw.sessionsPerWeek, 0, 10000),
+    sessionMinutes:cleanNumber(raw.sessionMinutes ?? raw.minutesPerSession, 0, 10000),
     equipment:cleanText(raw.equipment, 220),
     limitations:cleanText(raw.limitations || raw.constraints, 400),
     safetyNotes:cleanText(raw.safetyNotes, 400),
@@ -259,7 +304,7 @@ export function normalizeBriefAssumptions(value){
 
 export function normalizeClarifyingQuestion(raw = {}, index = 0){
   const source = typeof raw === 'string' ? { prompt:raw } : (raw || {});
-  const targetField = ANSWER_TARGETS.has(source.targetField) ? source.targetField : '';
+  const targetField = safeAnswerTarget(source.targetField);
   const options = (Array.isArray(source.options) ? source.options : [])
     .map(normalizeQuestionOption)
     .filter(option => option.label)
@@ -407,10 +452,34 @@ export function answerValueForQuestion(questionInput = {}, answer = {}){
   const question = normalizeClarifyingQuestion(questionInput);
   if(answer == null) return '';
   if(typeof answer !== 'object') return cleanText(answer, 700);
+  if(RESOURCE_TARGETS.has(question.targetField) || question.targetField.startsWith('course.') || question.targetField.startsWith('book.') || question.targetField.startsWith('programme.')){
+    const parts = [answer.title, answer.name, answer.url, answer.note, answer.notes, answer.description, answer.value, answer.answer]
+      .map(item => cleanText(item, 220))
+      .filter(Boolean);
+    if(parts.length) return parts.join(' - ').slice(0, 700);
+  }
   const selected = Array.isArray(answer.selected) ? answer.selected : (answer.selected ? [answer.selected] : []);
   const values = selected.map(id => question.options.find(option => option.id === id)?.value || id).filter(Boolean);
   const custom = cleanText(answer.custom ?? answer.value ?? answer.answer, 700);
   return [...values, custom].filter(Boolean).join('; ').slice(0, 700);
+}
+
+export function answerPayloadForQuestion(questionInput = {}, answer = {}){
+  const question = normalizeClarifyingQuestion(questionInput);
+  if(answer == null) return '';
+  if(typeof answer !== 'object') return cleanText(answer, 1000);
+  if(RESOURCE_TARGETS.has(question.targetField) || question.targetField.startsWith('course.') || question.targetField.startsWith('book.') || question.targetField.startsWith('programme.')){
+    const payload = safeAnswerPayload(answer);
+    delete payload.selected;
+    delete payload.custom;
+    delete payload.value;
+    delete payload.answer;
+    return payload;
+  }
+  const selected = Array.isArray(answer.selected) ? answer.selected : (answer.selected ? [answer.selected] : []);
+  const values = selected.map(id => question.options.find(option => option.id === id)?.value || id).filter(Boolean);
+  const custom = cleanText(answer.custom ?? answer.value ?? answer.answer, 1000);
+  return [...values, custom].filter(Boolean).join('; ').slice(0, 1000);
 }
 
 export function cadenceLabel(cadenceInput = {}){
@@ -534,9 +603,40 @@ export function normalizeConfirmedBrief(input = {}){
   };
 }
 
+function payloadText(value, max = 700){
+  if(value == null) return '';
+  if(typeof value === 'object') return cleanText(value.value ?? value.answer ?? value.title ?? value.name ?? value.label ?? value.note ?? value.notes, max);
+  return cleanText(value, max);
+}
+
+function firstResource(resources, key, normalizer){
+  const list = Array.isArray(resources[key]) ? resources[key] : [];
+  if(!list.length) list.push(normalizer({}));
+  resources[key] = list;
+  return list[0];
+}
+
+function applyNested(target, path, value){
+  const keys = path.split('.');
+  let cursor = target;
+  keys.slice(0, -1).forEach(key => {
+    if(!cursor[key] || typeof cursor[key] !== 'object') cursor[key] = {};
+    cursor = cursor[key];
+  });
+  cursor[keys[keys.length - 1]] = value;
+}
+
+function addResourceMention(brief, value){
+  const textValue = payloadText(value, 300);
+  if(textValue) brief.resources = brief.resourcesMentioned = cleanArray([...brief.resources, textValue], 12, 300);
+}
+
 function setAnswerTarget(brief, targetField, value){
-  const cleaned = cleanText(value, 700);
-  if(!cleaned || !ANSWER_TARGETS.has(targetField)) return;
+  const target = safeAnswerTarget(targetField);
+  const cleaned = payloadText(value, 700);
+  if(!target) return;
+  if(!cleaned && (value == null || typeof value !== 'object')) return;
+  targetField = target;
   if(targetField === 'currentBaseline') brief.currentBaseline = brief.currentStage = cleaned;
   if(targetField === 'desiredOutcome') brief.desiredOutcome = brief.desiredEndState = cleaned;
   if(targetField === 'durationDays') brief.durationDays = cleanNumber(cleaned, 1, 365);
@@ -547,23 +647,62 @@ function setAnswerTarget(brief, targetField, value){
   if(targetField === 'resources') brief.resources = brief.resourcesMentioned = cleanArray([...brief.resources, cleaned], 12, 300);
   if(targetField === 'intensity') brief.intensity = normalizeIntensity(cleaned);
   if(targetField === 'courseResource'){
-    brief.structuredResources.courses = dedupeResources([...brief.structuredResources.courses, normalizeCourseResource(cleaned, brief.structuredResources.courses.length)]).slice(0, 6);
-    brief.resources = brief.resourcesMentioned = cleanArray([...brief.resources, cleaned], 12, 300);
+    brief.structuredResources.courses = dedupeResources([...brief.structuredResources.courses, normalizeCourseResource(typeof value === 'object' ? value : cleaned, brief.structuredResources.courses.length)]).slice(0, 6);
+    addResourceMention(brief, value);
     brief.domainProfile = normalizeDomainProfile({ ...brief.domainProfile, detected:[...brief.domainProfile.detected, 'course'] }, brief.goal);
   }
   if(targetField === 'bookResource'){
-    brief.structuredResources.books = dedupeResources([...brief.structuredResources.books, normalizeBookResource(cleaned, brief.structuredResources.books.length)]).slice(0, 6);
-    brief.resources = brief.resourcesMentioned = cleanArray([...brief.resources, cleaned], 12, 300);
+    brief.structuredResources.books = dedupeResources([...brief.structuredResources.books, normalizeBookResource(typeof value === 'object' ? value : cleaned, brief.structuredResources.books.length)]).slice(0, 6);
+    addResourceMention(brief, value);
     brief.domainProfile = normalizeDomainProfile({ ...brief.domainProfile, detected:[...brief.domainProfile.detected, 'book'] }, brief.goal);
   }
   if(targetField === 'programmeResource'){
-    brief.structuredResources.programmes = dedupeResources([...brief.structuredResources.programmes, normalizeProgrammeResource(cleaned, brief.structuredResources.programmes.length)]).slice(0, 6);
-    brief.resources = brief.resourcesMentioned = cleanArray([...brief.resources, cleaned], 12, 300);
+    brief.structuredResources.programmes = dedupeResources([...brief.structuredResources.programmes, normalizeProgrammeResource(typeof value === 'object' ? value : cleaned, brief.structuredResources.programmes.length)]).slice(0, 6);
+    addResourceMention(brief, value);
   }
   if(targetField === 'fitnessContext'){
-    const next = normalizeFitnessContext({ ...(brief.fitnessContext || {}), baseline:cleaned, limitations:cleaned });
+    const next = normalizeFitnessContext(typeof value === 'object' ? { ...(brief.fitnessContext || {}), ...value } : { ...(brief.fitnessContext || {}), baseline:cleaned });
     brief.fitnessContext = next;
-    brief.constraints = cleanArray([...brief.constraints, cleaned], 12, 260);
+    brief.domainProfile = normalizeDomainProfile({ ...brief.domainProfile, detected:[...brief.domainProfile.detected, 'fitness'] }, brief.goal);
+  }
+  if(targetField.startsWith('course.')){
+    const course = firstResource(brief.structuredResources, 'courses', normalizeCourseResource);
+    const key = targetField.replace(/^course\./, '');
+    let nextValue = cleaned;
+    if(['currentPosition.index', 'totalUnits', 'typicalLessonMinutes'].includes(key)) nextValue = cleanNumber(value, key === 'currentPosition.index' ? 0 : 1, 10000);
+    if(['hasAssignments', 'fixedSequence'].includes(key)) nextValue = boolOrNull(value);
+    applyNested(course, key, nextValue);
+    brief.structuredResources.courses = dedupeResources(brief.structuredResources.courses.map(normalizeCourseResource)).slice(0, 6);
+    addResourceMention(brief, course);
+    brief.domainProfile = normalizeDomainProfile({ ...brief.domainProfile, detected:[...brief.domainProfile.detected, 'course'] }, brief.goal);
+  }
+  if(targetField.startsWith('book.')){
+    const book = firstResource(brief.structuredResources, 'books', normalizeBookResource);
+    const key = targetField.replace(/^book\./, '');
+    let nextValue = cleaned;
+    if(['pageCount', 'currentPage', 'pagesPerSession', 'minutesPerSession'].includes(key)) nextValue = cleanNumber(value, key === 'currentPage' ? 0 : 1, 100000);
+    applyNested(book, key, nextValue);
+    brief.structuredResources.books = dedupeResources(brief.structuredResources.books.map(normalizeBookResource)).slice(0, 6);
+    addResourceMention(brief, book);
+    brief.domainProfile = normalizeDomainProfile({ ...brief.domainProfile, detected:[...brief.domainProfile.detected, 'book'] }, brief.goal);
+  }
+  if(targetField.startsWith('programme.')){
+    const programme = firstResource(brief.structuredResources, 'programmes', normalizeProgrammeResource);
+    const key = targetField.replace(/^programme\./, '');
+    let nextValue = cleaned;
+    if(key === 'totalUnits') nextValue = cleanNumber(value, 1, 10000);
+    if(key === 'fixedSequence') nextValue = boolOrNull(value);
+    applyNested(programme, key, nextValue);
+    brief.structuredResources.programmes = dedupeResources(brief.structuredResources.programmes.map(normalizeProgrammeResource)).slice(0, 6);
+    addResourceMention(brief, programme);
+  }
+  if(targetField.startsWith('fitness.')){
+    const key = targetField.replace(/^fitness\./, '');
+    let nextValue = cleaned;
+    if(['frequencyPerWeek', 'sessionMinutes'].includes(key)) nextValue = cleanNumber(value, 0, 10000);
+    const next = normalizeFitnessContext({ ...(brief.fitnessContext || {}), [key]:nextValue });
+    brief.fitnessContext = next;
+    if(key === 'limitations' && cleaned) brief.constraints = cleanArray([...brief.constraints, cleaned], 12, 260);
     brief.domainProfile = normalizeDomainProfile({ ...brief.domainProfile, detected:[...brief.domainProfile.detected, 'fitness'] }, brief.goal);
   }
 }
@@ -576,12 +715,13 @@ export function mergeClarificationAnswers(briefInput = {}, answers = {}){
     : (answers || {});
   questions.forEach(question => {
     const raw = source[question.id];
-    const value = cleanText(typeof raw === 'object' ? raw.value ?? raw.answer : raw, 700);
-    if(!value) return;
-    const targetField = (typeof raw === 'object' && ANSWER_TARGETS.has(raw.targetField))
+    const value = safeAnswerPayload(typeof raw === 'object' ? raw.value ?? raw.answer : raw);
+    const displayValue = payloadText(value, 700);
+    if(!displayValue && (value == null || typeof value !== 'object')) return;
+    const targetField = (typeof raw === 'object' && safeAnswerTarget(raw.targetField))
       ? raw.targetField
       : question.targetField;
-    brief.answerMap[question.id] = { targetField, value };
+    brief.answerMap[question.id] = { targetField, value, displayValue };
     setAnswerTarget(brief, targetField, value);
     if(targetField && !brief.confirmedFields.includes(targetField)) brief.confirmedFields.push(targetField);
   });
@@ -598,6 +738,11 @@ function confirmedValue(brief, field){
   if(field === 'bookResource') return brief.structuredResources?.books;
   if(field === 'programmeResource') return brief.structuredResources?.programmes;
   if(field === 'fitnessContext') return brief.fitnessContext;
+  if(field.startsWith('course.')) return brief.structuredResources?.courses?.[0]?.[field.replace(/^course\./, '')]
+    ?? field.replace(/^course\./, '').split('.').reduce((cursor, key) => cursor?.[key], brief.structuredResources?.courses?.[0]);
+  if(field.startsWith('book.')) return brief.structuredResources?.books?.[0]?.[field.replace(/^book\./, '')];
+  if(field.startsWith('programme.')) return brief.structuredResources?.programmes?.[0]?.[field.replace(/^programme\./, '')];
+  if(field.startsWith('fitness.')) return brief.fitnessContext?.[field.replace(/^fitness\./, '')];
   return brief[field];
 }
 
@@ -619,6 +764,55 @@ export function mergeBriefPreservingConfirmed(baseInput = {}, proposedInput = {}
   proposed.confirmedFields = [...new Set([...base.confirmedFields, ...proposed.confirmedFields])];
   proposed.answerMap = { ...base.answerMap, ...proposed.answerMap };
   return proposed;
+}
+
+export function validatePhase55Brief(briefInput = {}){
+  const brief = normalizeConfirmedBrief(briefInput);
+  const errors = [];
+  (brief.structuredResources?.courses || []).forEach((course, index) => {
+    const label = course.title || `course ${index + 1}`;
+    if(course.currentPosition?.index != null && course.totalUnits != null && course.currentPosition.index > course.totalUnits){
+      errors.push({ field:'course.currentPosition.index', message:`Current progress for ${label} cannot be later than its total units.` });
+    }
+    if(course.typicalLessonMinutes != null && course.typicalLessonMinutes < 1){
+      errors.push({ field:'course.typicalLessonMinutes', message:`Typical lesson minutes for ${label} must be greater than 0.` });
+    }
+    if(course.url && !safeExternalUrl(course.url)){
+      errors.push({ field:'course.url', message:`Use a valid http or https URL for ${label}.` });
+    }
+  });
+  (brief.structuredResources?.books || []).forEach((book, index) => {
+    const label = book.title || `book ${index + 1}`;
+    if(book.currentPage != null && book.pageCount != null && book.currentPage > book.pageCount){
+      errors.push({ field:'book.currentPage', message:`Current page for ${label} cannot be later than its page count.` });
+    }
+    if(book.pageCount != null && book.pageCount < 1){
+      errors.push({ field:'book.pageCount', message:`Page count for ${label} must be greater than 0.` });
+    }
+  });
+  (brief.structuredResources?.programmes || []).forEach((programme, index) => {
+    const label = programme.title || `programme ${index + 1}`;
+    if(programme.totalUnits != null && programme.totalUnits < 1){
+      errors.push({ field:'programme.totalUnits', message:`Total units for ${label} must be greater than 0.` });
+    }
+    if(programme.url && !safeExternalUrl(programme.url)){
+      errors.push({ field:'programme.url', message:`Use a valid http or https URL for ${label}.` });
+    }
+  });
+  const fitness = brief.fitnessContext;
+  if(fitness){
+    if(fitness.frequencyPerWeek != null && (fitness.frequencyPerWeek < 0 || fitness.frequencyPerWeek > 7)){
+      errors.push({ field:'fitness.frequencyPerWeek', message:'Fitness frequency must be between 0 and 7 sessions per week.' });
+    }
+    if(fitness.sessionMinutes != null && (fitness.sessionMinutes < 0 || fitness.sessionMinutes > 300)){
+      errors.push({ field:'fitness.sessionMinutes', message:'Fitness session duration must be between 0 and 300 minutes.' });
+    }
+  }
+  return errors;
+}
+
+export function firstPhase55ValidationMessage(briefInput = {}){
+  return validatePhase55Brief(briefInput)[0]?.message || '';
 }
 
 export function briefFromPrompt(prompt = {}){

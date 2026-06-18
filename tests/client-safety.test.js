@@ -46,6 +46,43 @@ test('platform conversion removes unsafe task, resource, cover, and profile URLs
   assert.equal(local.weeks[0].tasks[0].resourceUrl, null);
 });
 
+test('platform conversion preserves Phase 5.5 metadata across local and cloud shapes', () => {
+  const confirmedBrief = {
+    goal:'Finish a fixed course and run safely',
+    durationDays:45,
+    intensity:'intensive',
+    domainProfile:{ primary:'fitness', detected:['fitness', 'course'], confidence:'high' },
+    structuredResources:{ courses:[{ title:'Running Course', fixedSequence:true, currentPosition:{ label:'Module 2', index:2 }, totalUnits:10 }] },
+    fitnessContext:{ activity:'running', baseline:'1 km', target:'5 km', frequencyPerWeek:3, sessionMinutes:30 },
+    briefConfirmed:true,
+    confirmedAt:'2026-06-18T00:00:00.000Z',
+  };
+  const parts = localToPlatformParts('phase55-path', {
+    title:'Phase 5.5 path',
+    goal:confirmedBrief.goal,
+    durationDays:45,
+    intensity:'intensive',
+    aiBrief:confirmedBrief,
+    domainProfile:confirmedBrief.domainProfile,
+    structuredResources:confirmedBrief.structuredResources,
+    fitnessContext:confirmedBrief.fitnessContext,
+    weeks:[{ title:'Week', tasks:[{ text:'Run session' }], resources:[] }],
+  }, { uid:'owner', email:'owner@example.com' }, 'owner');
+
+  assert.equal(parts.path.intensity, 'intensive');
+  assert.equal(parts.path.domainProfile.primary, 'fitness');
+  assert.equal(parts.path.structuredResources.courses[0].title, 'Running Course');
+  assert.equal(parts.path.fitnessContext.baseline, '1 km');
+  assert.equal(parts.path.aiBrief.intensity, 'intensive');
+
+  const local = platformToLocalPath({ id:'phase55-path', path:parts.path, sections:parts.sections, tasks:parts.tasks });
+  assert.equal(local.intensity, 'intensive');
+  assert.equal(local.domainProfile.primary, 'fitness');
+  assert.equal(local.structuredResources.courses[0].fixedSequence, true);
+  assert.equal(local.fitnessContext.frequencyPerWeek, 3);
+  assert.equal(local.aiBrief.domainProfile.primary, 'fitness');
+});
+
 test('AI-generated unsafe resource URLs are removed or ignored during draft normalization', () => {
   const input = normalizePrompt({ confirmedBrief:{ goal:'Learn safely', durationDays:7 } });
   const draft = normalizeDraft({

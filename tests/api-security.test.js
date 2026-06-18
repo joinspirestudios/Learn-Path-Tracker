@@ -480,6 +480,36 @@ test('exact legacy duplicates are ignored while material conflicts are rejected'
   assert.equal(providerCalls, 1);
 });
 
+test('generation rejects conflicting Phase 5.5 aliases outside confirmedBrief', async () => {
+  let providerCalls = 0;
+  const handler = createGeneratePathHandler({
+    authenticate:async () => ({ uid:'verified-user' }),
+    rateLimit:async () => {},
+    provider:async () => { providerCalls += 1; },
+  });
+  const confirmedBrief = confirmBrief({
+    goal:'Follow a running course',
+    durationDays:30,
+    intensity:'balanced',
+    domainProfile:{ primary:'fitness', detected:['fitness', 'course'], confidence:'high' },
+    structuredResources:{ courses:[{ title:'Running Course', fixedSequence:true }] },
+    fitnessContext:{ activity:'running', baseline:'1 km', target:'5 km', frequencyPerWeek:3, sessionMinutes:30 },
+  });
+  for(const conflict of [
+    { intensity:'intensive' },
+    { domainProfile:{ primary:'course', detected:['course'], confidence:'high' } },
+    { structuredResources:{ courses:[{ title:'Other Course' }] } },
+    { fitnessContext:{ activity:'running', baseline:'10 km' } },
+    { aiBrief:{ ...confirmedBrief, intensity:'soft' } },
+  ]){
+    const res = responseRecorder();
+    await handler(jsonRequest({ confirmedBrief, ...conflict }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.payload.error, 'conflicting_brief_data');
+  }
+  assert.equal(providerCalls, 0);
+});
+
 test('brief created from prompt keeps original user values authoritative', () => {
   const brief = briefFromPrompt({
     goal:'Hold a 15-minute French conversation', currentStage:'A1', durationDays:270,

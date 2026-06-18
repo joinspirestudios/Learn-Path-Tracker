@@ -3,7 +3,10 @@
 // helpers translate that shape to the top-level Firestore path model.
 
 import { normalizeDurationDays } from './journey.js';
-import { normalizeCoreCommitments } from './ai-builder-model.js';
+import {
+  normalizeConfirmedBrief, normalizeCoreCommitments, normalizeDomainProfile,
+  normalizeFitnessContext, normalizeIntensity, normalizeStructuredResources,
+} from './ai-builder-model.js';
 import { safeExternalUrl } from './urls.js';
 
 export const PATH_VISIBILITIES = ['private', 'unlisted', 'public'];
@@ -27,8 +30,22 @@ export function cleanVisibility(v){
   return PATH_VISIBILITIES.includes(v) ? v : 'private';
 }
 
+function phase55Meta(data = {}){
+  const confirmed = data.aiBrief || data.confirmedBrief || null;
+  const aiBrief = confirmed && typeof confirmed === 'object' ? normalizeConfirmedBrief(confirmed) : null;
+  const domainText = [data.goal, data.description, aiBrief?.goal, aiBrief?.summary].filter(Boolean).join(' ');
+  return {
+    intensity:normalizeIntensity(data.intensity || aiBrief?.intensity),
+    aiBrief,
+    domainProfile:normalizeDomainProfile(data.domainProfile || aiBrief?.domainProfile, domainText),
+    structuredResources:normalizeStructuredResources(data.structuredResources || aiBrief?.structuredResources || {}),
+    fitnessContext:normalizeFitnessContext(data.fitnessContext || aiBrief?.fitnessContext || {}),
+  };
+}
+
 export function normalizePathDoc(id, data = {}){
   const visibility = cleanVisibility(data.visibility);
+  const meta = phase55Meta(data);
   return {
     id,
     ownerId: data.ownerId || '',
@@ -46,6 +63,11 @@ export function normalizePathDoc(id, data = {}){
     sectionCount:Number.isFinite(Number(data.sectionCount)) ? Number(data.sectionCount) : null,
     taskCount:Number.isFinite(Number(data.taskCount)) ? Number(data.taskCount) : null,
     coreCommitments:normalizeCoreCommitments(data.coreCommitments, data.nonNegotiables || data.dailyNonNegotiables),
+    intensity:meta.intensity,
+    aiBrief:meta.aiBrief,
+    domainProfile:meta.domainProfile,
+    structuredResources:meta.structuredResources,
+    fitnessContext:meta.fitnessContext,
     visibility,
     previewEnabled: data.previewEnabled !== false,
     previewTitle: data.previewTitle || data.title || 'Path preview',
@@ -106,6 +128,7 @@ export function localPathDefaults(localPath = {}, user){
   const title = localPath.title || 'Untitled path';
   const goal = localPath.goal || localPath.description || '';
   const visibility = cleanVisibility(localPath.visibility);
+  const meta = phase55Meta(localPath);
   return {
     title,
     description: localPath.description || goal,
@@ -123,6 +146,11 @@ export function localPathDefaults(localPath = {}, user){
       ? Number(localPath.taskCount)
       : weeks.reduce((total, week) => total + (week.tasks || []).length, 0),
     coreCommitments:normalizeCoreCommitments(localPath.coreCommitments, localPath.nonNegotiables || localPath.dailyNonNegotiables),
+    intensity:meta.intensity,
+    aiBrief:meta.aiBrief,
+    domainProfile:meta.domainProfile,
+    structuredResources:meta.structuredResources,
+    fitnessContext:meta.fitnessContext,
     visibility,
     previewEnabled: localPath.previewEnabled !== false,
     previewTitle: localPath.previewTitle || title,

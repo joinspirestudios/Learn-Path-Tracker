@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { normalizeConfirmedBrief, unacceptedMaterialAssumptions } from '../src/ai-builder-model.js';
+import {
+  normalizeConfirmedBrief, unacceptedMaterialAssumptions, validatePhase55Brief,
+} from '../src/ai-builder-model.js';
 import { safeExternalUrl } from '../src/urls.js';
 import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
 import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
@@ -241,6 +243,7 @@ function rejectConflictingLegacyFields(body, confirmedBrief){
     goalCategory:confirmedBrief.goalCategory,
     pathType:confirmedBrief.pathType,
     durationDays:confirmedBrief.durationDays,
+    intensity:confirmedBrief.intensity,
     availableTime:confirmedBrief.availableTime,
     constraints:confirmedBrief.constraints,
     coreCommitments:confirmedBrief.coreCommitments,
@@ -271,6 +274,12 @@ function rejectConflictingLegacyFields(body, confirmedBrief){
     const legacyBrief = normalizeConfirmedBrief(body.clarifiedBrief);
     if(JSON.stringify(legacyBrief) !== JSON.stringify(confirmedBrief)){
       throw apiError('conflicting_brief_data', 'Conflicting legacy brief data was supplied.', 400);
+    }
+  }
+  if(body.aiBrief != null){
+    const aiBrief = normalizeConfirmedBrief(body.aiBrief);
+    if(JSON.stringify(aiBrief) !== JSON.stringify(confirmedBrief)){
+      throw apiError('conflicting_brief_data', 'Conflicting AI brief data was supplied.', 400);
     }
   }
   if(body.visibility != null && body.visibility !== ''){
@@ -813,6 +822,10 @@ export function createGeneratePathHandler({
       validateConfirmedBriefInput(body.confirmedBrief);
       const confirmedBrief = normalizeConfirmedBrief(body.confirmedBrief);
       rejectConflictingLegacyFields(body, confirmedBrief);
+      const phase55Error = validatePhase55Brief(confirmedBrief)[0];
+      if(phase55Error){
+        throw apiError('brief_not_confirmed', phase55Error.message, 400, { field:phase55Error.field });
+      }
       if(!confirmedBrief.briefConfirmed || !confirmedBrief.confirmedAt){
         throw apiError('brief_not_confirmed', 'Review and confirm your path brief before generating the roadmap.', 400);
       }
