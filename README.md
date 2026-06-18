@@ -2,7 +2,7 @@
 
 Learn Path Tracker is a Vite + Firebase proof-of-growth app for creating learning paths, habits, challenges, and personal-development roadmaps. It supports local mode, platform paths, creator attribution, enrollments, day logs, streaks, freezes, evidence, templates, and an optional Anthropic-powered AI path builder.
 
-Phase 5.3 adds a guided daily evidence session on top of responsive guided path creation and the protected Phase 5 AI and transcription routes. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, and day completion. Live web research is not part of this phase.
+Phase 5.4.1 adds stable live voice transcription on top of responsive guided path creation, protected Phase 5 AI routes, and the guided daily evidence session. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, and day completion. Live web research is not part of this phase.
 
 ## Install and run
 
@@ -83,7 +83,7 @@ Basic starter is local and does not call a protected AI route or consume Anthrop
 
 ## AI request concurrency
 
-Voice transcription, goal interpretation, and roadmap generation use independent request tokens and abort controllers, but paid operations cannot run concurrently. Starting one disables conflicting paid actions and duplicate submission controls. Closing the builder aborts all active requests, invalidates their tokens, clears loading state, and prevents stale responses from mutating or reopening the modal.
+Voice transcription, goal interpretation, and roadmap generation use independent request tokens and abort controllers, but paid operations cannot run concurrently. Starting one disables conflicting paid actions and duplicate submission controls. Closing the builder aborts all active requests, invalidates their tokens, closes live voice sockets, clears loading state, and prevents stale responses from mutating or reopening the modal.
 
 ## AI timeout and latency behavior
 
@@ -127,19 +127,25 @@ Basic starter remains a local non-AI route. It uses the same guided shell, creat
 
 ## Unified voice input
 
-Eligible path-creation text fields include an inline microphone button. Tap the microphone, speak naturally, tap Stop, and transcription starts automatically. The resulting text is inserted directly into the active field at the saved cursor or selection, then the normal field remains editable. Multiple clips can be added to the same field without replacing existing text unless text was deliberately selected.
+Eligible path-creation text fields include an inline microphone button. Tap the microphone, grant permission, and the browser requests an authenticated short-lived Deepgram token from `POST /api/deepgram-token`. The browser then opens a direct live WebSocket to Deepgram, starts recording only after the socket is connected, and streams microphone chunks while the user speaks.
+
+Interim words appear live in the active field and may be refined as recognition improves. Finalized phrases become stable, Stop sends a finalization request, and the normal field remains editable after the microphone and socket close. Multiple voice sessions can be added to the same field without replacing existing text unless text was deliberately selected.
 
 Voice input is available for useful natural-language fields in goal entry, clarification text answers, resource title and note fields, rhythm adjustments, brief review, and high-level roadmap review fields. It is intentionally excluded from URLs, dates, numbers, selectors, booleans, authentication fields, and repeated generated task rows so the interface stays calm.
 
-Only one microphone session can run at a time. Recording, stopping, and transcribing states are shown inline with a timer, compact waveform, Stop/Cancel controls, retry where possible, and polite status messages. Interpretation, generation, and saving remain deliberate user actions and are blocked while voice recording or transcription is active.
+Only one microphone session can run at a time. Requesting microphone, connecting live transcription, listening, finalizing, fallback recording, and fallback transcription states are shown inline with a timer, compact waveform, Stop/Cancel controls, retry where possible, and polite status messages. Interpretation, generation, and saving remain deliberate user actions and are blocked while voice recording or transcription is active.
+
+If live streaming is unavailable or interrupted, the in-memory recording can continue locally and Stop sends the completed audio once through `POST /api/transcribe-voice`. The fallback transcript replaces the partial live transcript so text is not duplicated.
 
 ### Voice limits and privacy
 
-Maximum recording duration: 120 seconds. Maximum upload payload: 4 MB. Recordings may stop automatically at the safe duration or byte threshold.
+Maximum recording duration: 120 seconds. Maximum fallback audio payload: 4 MB. Recordings may stop automatically at the safe duration or byte threshold.
 
-Raw voice audio is temporary. It is sent only to the authenticated transcription route and its configured transcription provider. It is not stored in the user's path, Firestore, Firebase Storage or local browser persistence. Transcription requires authentication and a network connection; users can always continue by typing.
+During live voice input, audio is sent securely from the browser to the configured transcription provider using a short-lived access token. Raw audio is not stored in the user's path, Firestore, Firebase Storage or permanent browser storage.
 
-Phase 5.4 does not add live streaming transcription, evidence analysis, adaptive planning, animated goal suggestions, domain-specific clarification or path intensity.
+When live streaming is unavailable, the in-memory recording may be sent through the authenticated fallback transcription endpoint. The recording is discarded after transcription or cancellation. Transcription requires authentication and a network connection; users can always continue by typing.
+
+Phase 5.4.1 does not add voice commands, emotion analysis, evidence analysis, Gemini, research, adaptive planning, animated goal suggestions, domain-specific clarification or path intensity.
 
 ## Guided Daily Session
 
@@ -206,6 +212,7 @@ These routes require `Authorization: Bearer <firebase-id-token>`:
 
 - `POST /api/interpret-goal`
 - `POST /api/generate-path`
+- `POST /api/deepgram-token`
 - `POST /api/transcribe-voice`
 
 The frontend obtains the current Firebase user's ID token immediately before each request. A `401` triggers one forced token refresh and one retry only. Client-supplied UIDs are ignored; rate limits use the UID from the verified token.
@@ -229,10 +236,13 @@ Protected success and error responses use `Cache-Control: private, no-store` and
 ```text
 api/interpret-goal.js: 120 seconds
 api/generate-path.js: 240 seconds
+api/deepgram-token.js: 15 seconds
 api/transcribe-voice.js: 90 seconds
 ```
 
-Voice transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 4 MB. Inline browser recording stops at 120 seconds or near the safe byte threshold before upload.
+The live token route verifies Firebase Authentication, applies the voice transcription rate limit, calls Deepgram's temporary-token grant endpoint with the server-side `DEEPGRAM_API_KEY`, and returns only the temporary access token, expiration metadata, and request ID. The permanent Deepgram key is never returned to the browser.
+
+Voice fallback transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 4 MB. Inline browser recording stops at 120 seconds or near the safe byte threshold before upload.
 
 Authentication, declared-size validation, and the per-user voice rate limit run before the audio body is buffered. The stream is still counted while reading and is terminated when it exceeds 4 MB, so a missing or inaccurate `Content-Length` cannot bypass the limit.
 

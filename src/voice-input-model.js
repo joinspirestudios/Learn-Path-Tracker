@@ -1,24 +1,37 @@
 export const MAX_VOICE_UPLOAD_BYTES = 4 * 1024 * 1024;
 export const MAX_VOICE_RECORDING_SECONDS = 120;
 export const VOICE_CHUNK_INTERVAL_MS = 1000;
+export const LIVE_VOICE_TIMESLICE_MS = 250;
+export const LIVE_TOKEN_TIMEOUT_MS = 10_000;
+export const LIVE_SOCKET_CONNECT_TIMEOUT_MS = 10_000;
+export const LIVE_FINALIZE_TIMEOUT_MS = 2_500;
+export const LIVE_KEEPALIVE_INTERVAL_MS = 8_000;
 export const VOICE_AUTO_STOP_BYTES = Math.floor(3.75 * 1024 * 1024);
 
 export const VOICE_PHASES = [
   'idle',
   'requesting_permission',
+  'requesting_token',
+  'connecting',
   'recording',
-  'stopping',
+  'finalizing',
+  'fallback_recording',
+  'fallback_transcribing',
   'transcribing',
   'error',
 ];
 
 const TRANSITIONS = {
-  idle:['requesting_permission', 'error'],
-  requesting_permission:['recording', 'idle', 'error'],
-  recording:['stopping', 'transcribing', 'idle', 'error'],
-  stopping:['transcribing', 'idle', 'error'],
+  idle:['requesting_permission', 'requesting_token', 'connecting', 'error'],
+  requesting_permission:['requesting_token', 'fallback_recording', 'idle', 'error'],
+  requesting_token:['connecting', 'fallback_recording', 'idle', 'error'],
+  connecting:['recording', 'fallback_recording', 'idle', 'error'],
+  recording:['finalizing', 'fallback_recording', 'idle', 'error'],
+  finalizing:['fallback_transcribing', 'idle', 'error'],
+  fallback_recording:['fallback_transcribing', 'idle', 'error'],
+  fallback_transcribing:['idle', 'error'],
   transcribing:['idle', 'error'],
-  error:['idle', 'requesting_permission', 'transcribing'],
+  error:['idle', 'requesting_permission', 'fallback_transcribing', 'transcribing'],
 };
 
 export function makeVoiceInputState(prev = {}){
@@ -29,6 +42,11 @@ export function makeVoiceInputState(prev = {}){
     targetKey:prev.targetKey || '',
     targetLabel:prev.targetLabel || '',
     targetType:prev.targetType || '',
+    builderSessionId:prev.builderSessionId || '',
+    baseText:prev.baseText || '',
+    finalizedSegments:Array.isArray(prev.finalizedSegments) ? prev.finalizedSegments : [],
+    interimTranscript:prev.interimTranscript || '',
+    visibleSessionTranscript:prev.visibleSessionTranscript || '',
     insertionStart:Number.isFinite(Number(prev.insertionStart)) ? Number(prev.insertionStart) : 0,
     insertionEnd:Number.isFinite(Number(prev.insertionEnd)) ? Number(prev.insertionEnd) : 0,
     recorder:null,
@@ -46,7 +64,11 @@ export function makeVoiceInputState(prev = {}){
     errorCode:prev.errorCode || '',
     errorMessage:prev.errorMessage || '',
     retryable:prev.retryable === true,
+    liveStreamingAvailable:prev.liveStreamingAvailable !== false,
+    fallbackRequired:prev.fallbackRequired === true,
+    fallbackReason:prev.fallbackReason || '',
     requestToken:prev.requestToken || null,
+    websocketSessionToken:prev.websocketSessionToken || null,
     statusMessage:prev.statusMessage || '',
   };
 }
@@ -110,12 +132,16 @@ export function insertTranscriptAtSelection({
 export function mapVoiceError(code, fallback = ''){
   if(code === 'not_allowed') return { code, retryable:false, message:'Microphone access was denied. Allow microphone access or continue typing.' };
   if(code === 'not_found') return { code, retryable:false, message:'No microphone was found. Connect a microphone or continue typing.' };
-  if(code === 'not_readable') return { code, retryable:true, message:'The microphone is busy or unavailable. Close other recording apps and try again.' };
+  if(code === 'not_readable') return { code, retryable:true, message:'Your microphone is currently unavailable or being used by another application.' };
   if(code === 'security') return { code, retryable:false, message:'Microphone access requires a secure browser context. Continue typing for now.' };
   if(code === 'unsupported_browser') return { code, retryable:false, message:'Voice input is not supported in this browser. You can still type.' };
   if(code === 'payload_too_large') return { code, retryable:false, message:'This voice note is too large to transcribe. Keep recordings under two minutes and try again.' };
   if(code === 'unauthorized') return { code, retryable:true, message:'Your session expired. Sign in again to transcribe voice input.' };
-  if(code === 'rate_limited') return { code, retryable:true, message:'You have reached the current transcription limit. Try again later.' };
+  if(code === 'rate_limited') return { code, retryable:true, message:'You have reached the current voice limit. Continue by typing or try again later.' };
+  if(code === 'live_token_failed') return { code, retryable:true, message:'Live transcription could not start. You can try again or continue by typing.' };
+  if(code === 'live_connect_failed') return { code, retryable:true, message:'Live transcription could not connect. Your voice can still be recorded and transcribed after you stop.' };
+  if(code === 'live_interrupted') return { code, retryable:true, message:'Live transcription was interrupted. Your recording is still being captured.' };
+  if(code === 'fallback_transcription_failed') return { code, retryable:true, message:'The recording could not be transcribed. Your typed text is still safe.' };
   if(code === 'server_function_failed') return { code, retryable:true, message:'The transcription route could not start. Your recording is still available to retry.' };
   if(['operation_timeout', 'provider_timeout'].includes(code)) return { code, retryable:true, message:'Voice transcription took too long. Retry or continue typing.' };
   if(code === 'provider_unavailable') return { code, retryable:true, message:'Voice transcription is temporarily unavailable. Retry or continue typing.' };
@@ -164,7 +190,16 @@ export function voiceResultCanTarget(state, field){
 }
 
 export function voiceIsActive(state){
-  return ['requesting_permission', 'recording', 'stopping', 'transcribing'].includes(state?.phase);
+  return [
+    'requesting_permission',
+    'requesting_token',
+    'connecting',
+    'recording',
+    'finalizing',
+    'fallback_recording',
+    'fallback_transcribing',
+    'transcribing',
+  ].includes(state?.phase);
 }
 
 export function voiceCanRetry(state){

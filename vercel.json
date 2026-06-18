@@ -9,6 +9,9 @@
     },
     "api/transcribe-voice.js": {
       "maxDuration": 90
+    },
+    "api/deepgram-token.js": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

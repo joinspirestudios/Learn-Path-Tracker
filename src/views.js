@@ -55,14 +55,16 @@ import {
 } from './daily-session-model.js';
 import { dailySessionHTML } from './views/daily-session.js';
 import {
-  insertTranscriptAtSelection, makeVoiceInputState, mapVoiceError,
-  MAX_VOICE_UPLOAD_BYTES, voiceIsActive, voiceResultCanTarget, voiceTargetFromField,
+  makeVoiceInputState, mapVoiceError,
+  voiceIsActive, voiceTargetFromField,
 } from './voice-input-model.js';
 import {
-  cancelVoiceRecorder, cleanupVoiceRecorder, startVoiceRecorder, stopVoiceRecorder,
-  supportedRecordingMimeType, supportsVoiceRecording,
-} from './voice-recorder.js';
-import { enhanceVoiceFields } from './views/voice-input.js';
+  cancelLiveVoiceSession, cleanupLiveVoiceSession, startLiveVoiceSession, stopLiveVoiceSession,
+} from './live-voice-session.js';
+import {
+  enhanceVoiceFields, updateVoiceControlForField, updateVoiceInterim,
+  updateVoiceMetrics, updateVoiceWaveform,
+} from './views/voice-input.js';
 import {
   AI_SAVE_TIMEOUT_MS, ENROLLMENT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS,
   enrollmentStartErrorMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
@@ -910,7 +912,7 @@ function aiInterpretationError(error){
 }
 
 function cleanupInlineVoiceInput(){
-  cleanupVoiceRecorder();
+  cleanupLiveVoiceSession();
   if(aiBuilder?.voice) aiBuilder.voice = makeVoiceInputState();
 }
 
@@ -930,136 +932,201 @@ function applyVoiceError(code, fallback = '', patch = {}){
 async function startInlineVoiceInput(field){
   const builder = aiBuilder;
   if(!builder || !field || !canStartAIRequest(builder) || voiceIsActive(builder.voice)) return;
-  if(!supportsVoiceRecording()){
-    applyVoiceError('unsupported_browser');
-    renderAIBuilder();
-    return;
-  }
   const token = 'voice_' + Date.now().toString(36) + Math.random().toString(36).slice(2);
   const target = voiceTargetFromField(field);
+  const updateVoiceOnly = (patch = {}) => {
+    if(aiBuilder !== builder || builder.voice.requestToken !== token) return;
+    builder.voice = makeVoiceInputState({ ...builder.voice, ...patch });
+    updateVoiceControlForField(field, builder.voice);
+    updateVoiceMetrics(builder.overlay, builder.voice);
+    updateVoiceInterim(builder.overlay, builder.voice);
+  };
   builder.voice = makeVoiceInputState({
     ...target,
+    builderSessionId:builder.sessionId,
+    baseText:field.value || '',
     phase:'requesting_permission',
     requestToken:token,
-    mimeType:supportedRecordingMimeType(),
     statusMessage:'Requesting microphone access',
   });
-  renderAIBuilder();
+  updateVoiceControlForField(field, builder.voice);
   try{
-    const recorder = await startVoiceRecorder({
-      onUpdate:update => {
-        if(aiBuilder !== builder || builder.voice.requestToken !== token) return;
-        builder.voice = makeVoiceInputState({
-          ...builder.voice,
-          ...update,
-          phase:'recording',
-          statusMessage:'Listening',
+    await startLiveVoiceSession({
+      targetElement:field,
+      target,
+      builderSessionId:builder.sessionId,
+      requestToken:token,
+      requestTokenGrant:async ({ sessionId }) => {
+        const res = await authFetch('/api/deepgram-token', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'X-Voice-Session-Id':sessionId },
+          body:JSON.stringify({ sessionId }),
         });
-        renderAIBuilder();
+        const payload = await parseAIResponse(res);
+        if(!res.ok || !payload.ok) throw errorFromAIPayload(payload, 'Live transcription could not start.');
+        return { accessToken:payload.accessToken, expiresIn:payload.expiresIn, requestId:payload.requestId };
       },
-      onStop:result => {
-        if(aiBuilder !== builder || builder.voice.requestToken !== token || result.cancelled) return;
-        builder.voice = makeVoiceInputState({
-          ...builder.voice,
-          blob:result.blob,
-          mimeType:result.mimeType,
-          recordedBytes:result.recordedBytes,
-          durationSeconds:result.durationSeconds,
-          phase:'transcribing',
-          statusMessage:'Recording stopped. Transcribing',
-        });
-        renderAIBuilder();
-        transcribeInlineVoiceInput(token);
+      transcribeFallback:async ({ blob, mimeType, sessionId }) => {
+        const controller = new AbortController();
+        let timedOut = false;
+        const timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, VOICE_TRANSCRIBE_TIMEOUT_MS);
+        let res;
+        try{
+          res = await authFetch('/api/transcribe-voice', {
+            method:'POST',
+            headers:{
+              'Content-Type':mimeType || blob.type || 'audio/webm',
+              'X-File-Name':'voice-recording',
+              'X-Voice-Session-Id':sessionId,
+            },
+            body:blob,
+            signal:controller.signal,
+          });
+        }catch(error){
+          if(timedOut){
+            const timeoutError = new Error('The request took too long and was cancelled.');
+            timeoutError.code = 'operation_timeout';
+            throw timeoutError;
+          }
+          throw error;
+        }finally{
+          clearTimeout(timer);
+        }
+        const payload = await parseAIResponse(res);
+        if(!res.ok || !payload.ok) throw errorFromAIPayload(payload, 'Voice transcription failed.');
+        return payload;
       },
-      onError:error => {
-        if(aiBuilder !== builder || builder.voice.requestToken !== token) return;
-        applyVoiceError(error?.code || error?.name || 'not_readable', error?.message);
-        renderAIBuilder();
+      callbacks:{
+        onPhase:update => updateVoiceOnly(update),
+        onMetrics:update => {
+          if(aiBuilder !== builder || builder.voice.requestToken !== token) return;
+          builder.voice = makeVoiceInputState({ ...builder.voice, ...update });
+          updateVoiceMetrics(builder.overlay, builder.voice);
+        },
+        onVoiceLevel:level => updateVoiceWaveform(builder.overlay, builder.voice.targetId, level),
+        onTranscriptPatch:update => {
+          if(aiBuilder !== builder || builder.voice.requestToken !== token) return;
+          builder.voice = makeVoiceInputState({
+            ...builder.voice,
+            interimTranscript:update.interimTranscript || '',
+            visibleSessionTranscript:update.visibleSessionTranscript || '',
+            phase:builder.voice.phase,
+          });
+          updateVoiceInterim(builder.overlay, builder.voice);
+          if(update.final) syncVoiceFieldToBuilder(field);
+        },
+        onDone:() => {
+          if(aiBuilder !== builder || builder.voice.requestToken !== token) return;
+          syncVoiceFieldToBuilder(field);
+          field.readOnly = false;
+          suppressNextAIBuilderFocus = true;
+          builder.voice = makeVoiceInputState({ statusMessage:'Transcript added' });
+          updateVoiceControlForField(field, builder.voice);
+        },
+        onCancel:() => {
+          if(aiBuilder !== builder) return;
+          syncVoiceFieldToBuilder(field);
+          builder.voice = makeVoiceInputState();
+          updateVoiceControlForField(field, builder.voice);
+        },
+        onError:error => {
+          if(aiBuilder !== builder) return;
+          const mapped = mapVoiceError(error?.code || 'voice_failed', error?.message);
+          builder.voice = makeVoiceInputState({
+            ...builder.voice,
+            phase:'error',
+            errorCode:mapped.code,
+            errorMessage:mapped.message,
+            retryable:mapped.retryable,
+            blob:mapped.retryable ? error?.blob || null : null,
+            statusMessage:'Voice failed',
+          });
+          updateVoiceControlForField(field, builder.voice);
+        },
       },
     });
-    if(aiBuilder !== builder || builder.voice.requestToken !== token){
-      cancelVoiceRecorder();
-      return;
-    }
-    builder.voice = makeVoiceInputState({
-      ...builder.voice,
-      recorder,
-      phase:'recording',
-      startedAt:new Date().toISOString(),
-      mimeType:recorder.mimeType || builder.voice.mimeType,
-      statusMessage:'Listening',
-    });
-    renderAIBuilder();
   }catch(error){
     if(aiBuilder === builder && builder.voice.requestToken === token){
       applyVoiceError(error?.code || error?.name || 'not_readable', error?.message);
-      renderAIBuilder();
+      updateVoiceControlForField(field, builder.voice);
     }
   }
 }
 
 function stopInlineVoiceInput(){
-  if(!voiceIsActive(aiBuilder?.voice) || aiBuilder.voice.phase !== 'recording') return;
-  aiBuilder.voice = makeVoiceInputState({ ...aiBuilder.voice, phase:'stopping', statusMessage:'Recording stopped' });
-  renderAIBuilder();
-  stopVoiceRecorder(false);
+  if(!voiceIsActive(aiBuilder?.voice)) return;
+  stopLiveVoiceSession('manual');
 }
 
 function cancelInlineVoiceInput(){
-  if(aiBuilder?.voice?.phase === 'recording' || aiBuilder?.voice?.phase === 'requesting_permission') cancelVoiceRecorder();
+  if(voiceIsActive(aiBuilder?.voice)) cancelLiveVoiceSession();
   abortAIRequest('voice', aiBuilder);
+  const field = aiBuilder?.voice?.targetId ? $(aiBuilder.voice.targetId) : null;
   if(aiBuilder) aiBuilder.voice = makeVoiceInputState();
-  renderAIBuilder();
+  if(field) updateVoiceControlForField(field, aiBuilder.voice);
 }
 
 async function retryInlineVoiceInput(){
-  const token = aiBuilder?.voice?.requestToken || ('voice_retry_' + Date.now().toString(36));
-  await transcribeInlineVoiceInput(token);
+  const field = aiBuilder?.voice?.targetId ? $(aiBuilder.voice.targetId) : null;
+  const blob = aiBuilder?.voice?.blob;
+  if(!field || !blob) return;
+  await transcribeInlineVoiceFallback(field, blob, aiBuilder.voice.mimeType || blob.type || 'audio/webm');
 }
 
 function clearInlineVoiceInput(){
+  const field = aiBuilder?.voice?.targetId ? $(aiBuilder.voice.targetId) : null;
   if(aiBuilder) aiBuilder.voice = makeVoiceInputState();
-  renderAIBuilder();
+  if(field) updateVoiceControlForField(field, aiBuilder.voice);
 }
 
-async function transcribeInlineVoiceInput(token){
+function handleBuilderVoiceAction(event){
+  const button = event.target?.closest?.('[data-voice-action]');
+  if(!button || !aiBuilder?.overlay?.contains(button)) return;
+  event.preventDefault();
+  const action = button.dataset.voiceAction;
+  if(action === 'start'){
+    const field = button.closest('.voice-field')?.querySelector('input, textarea');
+    if(field) void startInlineVoiceInput(field);
+  }
+  if(action === 'stop') stopInlineVoiceInput();
+  if(action === 'cancel') cancelInlineVoiceInput();
+  if(action === 'retry') void retryInlineVoiceInput();
+  if(action === 'clear') clearInlineVoiceInput();
+}
+
+function syncVoiceFieldToBuilder(field){
+  if(!field) return;
+  field.dispatchEvent(new Event('input', { bubbles:true }));
+}
+
+async function transcribeInlineVoiceFallback(field, blob, mimeType){
   const builder = aiBuilder;
   const voice = builder?.voice;
-  if(!builder || !voice?.blob || !canStartAIRequest({ ...builder, phase:builder.phase })) return;
-  if(Number(voice.blob.size || voice.recordedBytes || 0) > MAX_VOICE_UPLOAD_BYTES){
-    applyVoiceError('payload_too_large', '', { blob:null });
-    renderAIBuilder();
-    return;
-  }
+  if(!builder || !blob || !field) return;
   const request = beginAIClientRequest(builder, 'voice');
-  builder.voice = makeVoiceInputState({ ...voice, phase:'transcribing', requestToken:token, statusMessage:'Transcribing' });
-  renderAIBuilder();
+  builder.voice = makeVoiceInputState({ ...voice, phase:'fallback_transcribing', statusMessage:'Transcribing fallback' });
+  updateVoiceControlForField(field, builder.voice);
   try{
     const res = await authenticatedAIRequest(request, '/api/transcribe-voice', {
       method:'POST',
       headers:{
-        'Content-Type':voice.blob.type || voice.mimeType || 'audio/webm',
+        'Content-Type':mimeType || 'audio/webm',
         'X-File-Name':'voice-recording',
       },
-      body:voice.blob,
+      body:blob,
     }, VOICE_TRANSCRIBE_TIMEOUT_MS);
     const payload = await parseAIResponse(res);
     if(!res.ok || !payload.ok) throw errorFromAIPayload(payload, 'Voice transcription failed.');
-    if(!aiRequestIsCurrent(request) || aiBuilder !== builder || builder.voice.requestToken !== token) return;
-    const field = $(builder.voice.targetId);
-    if(!voiceResultCanTarget(builder.voice, field)) return;
-    const next = insertTranscriptAtSelection({
-      currentValue:field.value,
-      transcript:payload.transcript || '',
-      selectionStart:builder.voice.insertionStart,
-      selectionEnd:builder.voice.insertionEnd,
-    });
-    field.value = next.value;
-    if(field.setSelectionRange) field.setSelectionRange(next.cursor, next.cursor);
-    field.dispatchEvent(new Event('input', { bubbles:true }));
+    if(!aiRequestIsCurrent(request) || aiBuilder !== builder) return;
+    field.value = payload.transcript || field.value;
+    syncVoiceFieldToBuilder(field);
     field.focus({ preventScroll:true });
     suppressNextAIBuilderFocus = true;
     builder.voice = makeVoiceInputState({ statusMessage:'Transcript added' });
+    updateVoiceControlForField(field, builder.voice);
   }catch(error){
     if(aiRequestIsCurrent(request) && aiBuilder === builder){
       const mapped = mapVoiceError(error.code, error.message);
@@ -1069,13 +1136,13 @@ async function transcribeInlineVoiceInput(token){
         errorCode:mapped.code,
         errorMessage:mapped.message,
         retryable:mapped.retryable,
-        blob:mapped.retryable ? builder.voice.blob : null,
+        blob:mapped.retryable ? blob : null,
         statusMessage:'Transcription failed',
       });
+      updateVoiceControlForField(field, builder.voice);
     }
   }finally{
     finishAIClientRequest(request);
-    if(aiBuilder === builder) renderAIBuilder();
   }
 }
 
@@ -1569,6 +1636,10 @@ function cancelActiveAIRequestFromUI(){
 
 function renderAIBuilder(){
   if(!aiBuilder?.overlay) return;
+  if(!aiBuilder.overlay.dataset.voiceDelegated){
+    aiBuilder.overlay.addEventListener('click', handleBuilderVoiceAction);
+    aiBuilder.overlay.dataset.voiceDelegated = 'true';
+  }
   aiBuilder.overlay.innerHTML = aiBuilder.phase === 'preview' && aiBuilder.fullRoadmap && aiBuilder.draft ? aiReviewHTML() : aiPromptHTML();
   const close = aiBuilder.overlay.querySelector('.modal-x');
   if(close) close.onclick = requestCloseAIBuilder;
@@ -1736,13 +1807,7 @@ function renderAIBuilder(){
     el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
   });
   aiBuilder.overlay.querySelectorAll('[data-ai-act]').forEach(btn => btn.onclick = () => runAIAction(btn.dataset.aiAct, Number(btn.dataset.i)));
-  enhanceVoiceFields(aiBuilder.overlay, aiBuilder.voice, {
-    onStart:startInlineVoiceInput,
-    onStop:stopInlineVoiceInput,
-    onCancel:cancelInlineVoiceInput,
-    onRetry:retryInlineVoiceInput,
-    onClear:clearInlineVoiceInput,
-  });
+  enhanceVoiceFields(aiBuilder.overlay, aiBuilder.voice);
   if(voiceIsActive(aiBuilder.voice)){
     aiBuilder.overlay.querySelectorAll('button').forEach(button => {
       if(button.closest('.voice-inline-controls')) return;
@@ -2007,6 +2072,7 @@ async function generateRoadmapFromBrief(){
 
 async function saveGeneratedPath(){
   if(!aiBuilder?.draft || aiBuilder.saving) return;
+  if(voiceIsActive(aiBuilder.voice)) return;
   aiBuilder.saving = true;
   aiBuilder.error = '';
   aiBuilder.message = 'Saving generated path...';

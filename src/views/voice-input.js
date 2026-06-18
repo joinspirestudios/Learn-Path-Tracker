@@ -12,7 +12,13 @@ function waveformHTML(){
   return '<span class="voice-waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>';
 }
 
-export function enhanceVoiceFields(root, voiceState, handlers = {}){
+function byId(root, id){
+  if(!root || !id) return null;
+  if(typeof CSS !== 'undefined' && CSS.escape) return root.querySelector('#' + CSS.escape(id));
+  return root.querySelector('#' + String(id).replace(/["\\#.;,[\]()=>+~*^$|]/g, '\\$&'));
+}
+
+export function enhanceVoiceFields(root, voiceState){
   if(!root) return [];
   const fields = [...root.querySelectorAll('input, textarea')]
     .filter(field => isVoiceEligibleField(field));
@@ -38,18 +44,47 @@ export function enhanceVoiceFields(root, voiceState, handlers = {}){
       wrapper.appendChild(controls);
     }
     controls.innerHTML = voiceControlHTML(field, voiceState);
-    const trigger = controls.querySelector('[data-voice-action="start"]');
-    const stop = controls.querySelector('[data-voice-action="stop"]');
-    const cancel = controls.querySelector('[data-voice-action="cancel"]');
-    const retry = controls.querySelector('[data-voice-action="retry"]');
-    const clear = controls.querySelector('[data-voice-action="clear"]');
-    if(trigger) trigger.onclick = () => handlers.onStart?.(field);
-    if(stop) stop.onclick = () => handlers.onStop?.();
-    if(cancel) cancel.onclick = () => handlers.onCancel?.();
-    if(retry) retry.onclick = () => handlers.onRetry?.();
-    if(clear) clear.onclick = () => handlers.onClear?.();
   });
   return fields;
+}
+
+export function updateVoiceControlForField(field, voiceState = {}){
+  const controls = field?.closest('.voice-field')?.querySelector('.voice-inline-controls');
+  if(!controls) return;
+  controls.innerHTML = voiceControlHTML(field, voiceState);
+}
+
+export function updateVoiceMetrics(root, voiceState = {}){
+  const field = byId(root, voiceState.targetId);
+  const wrapper = field?.closest('.voice-field');
+  if(!wrapper) return;
+  const timer = wrapper.querySelector('.voice-timer');
+  if(timer) timer.textContent = formatVoiceDuration(voiceState.durationSeconds);
+  const remaining = wrapper.querySelector('[data-voice-remaining]');
+  if(remaining){
+    const seconds = Math.max(0, MAX_VOICE_RECORDING_SECONDS - Number(voiceState.durationSeconds || 0));
+    remaining.textContent = seconds <= 15 ? `${seconds}s left` : '';
+  }
+}
+
+export function updateVoiceInterim(root, voiceState = {}){
+  const field = byId(root, voiceState.targetId);
+  const wrapper = field?.closest('.voice-field');
+  if(!wrapper) return;
+  const interim = wrapper.querySelector('[data-voice-interim]');
+  if(interim){
+    interim.textContent = voiceState.interimTranscript ? `Hearing: "${voiceState.interimTranscript}"` : '';
+  }
+}
+
+export function updateVoiceWaveform(root, targetId, level = 0){
+  const field = byId(root, targetId);
+  const wrapper = field?.closest('.voice-field');
+  if(!wrapper) return;
+  wrapper.querySelectorAll('.voice-waveform i').forEach((bar, index) => {
+    const height = 8 + Math.round(Math.max(0, Math.min(1, level)) * (8 + index * 2));
+    bar.style.height = `${height}px`;
+  });
 }
 
 export function voiceControlHTML(field, voiceState = {}){
@@ -58,19 +93,24 @@ export function voiceControlHTML(field, voiceState = {}){
   const label = field.dataset.voiceLabel || 'this field';
   const phase = activeForField ? voiceState.phase : 'idle';
   if(phase === 'requesting_permission'){
-    return '<div class="voice-status" role="status" aria-live="polite">Requesting microphone access...</div>';
+    return '<div class="voice-status" role="status" aria-live="polite">Requesting microphone...</div>';
   }
-  if(phase === 'recording' || phase === 'stopping'){
+  if(phase === 'requesting_token' || phase === 'connecting'){
+    return '<div class="voice-status" role="status" aria-live="polite">Connecting live transcription...</div>';
+  }
+  if(['recording', 'finalizing', 'fallback_recording'].includes(phase)){
     const remaining = Math.max(0, MAX_VOICE_RECORDING_SECONDS - Number(voiceState.durationSeconds || 0));
+    const label = phase === 'finalizing' ? 'Finalizing speech...' : (phase === 'fallback_recording' ? 'Recording for fallback...' : 'Listening...');
     return '<div class="voice-status recording" role="status" aria-live="polite">'
-      + '<span>Listening...</span><b class="voice-timer">' + esc(formatVoiceDuration(voiceState.durationSeconds)) + '</b>'
+      + '<span>' + esc(label) + '</span><b class="voice-timer">' + esc(formatVoiceDuration(voiceState.durationSeconds)) + '</b>'
       + waveformHTML()
-      + (remaining <= 15 ? '<small>' + esc(remaining) + 's left</small>' : '')
-      + '<button class="btn gold voice-stop" type="button" data-voice-action="stop">Stop</button>'
+      + '<small data-voice-remaining>' + (remaining <= 15 ? esc(remaining) + 's left' : '') + '</small>'
+      + '<button class="btn gold voice-stop" type="button" data-voice-action="stop" ' + (phase === 'finalizing' ? 'disabled' : '') + '>Stop</button>'
       + '<button class="btn voice-cancel" type="button" data-voice-action="cancel">Cancel</button>'
+      + '<span class="voice-interim" data-voice-interim aria-live="polite">' + (voiceState.interimTranscript ? 'Hearing: "' + esc(voiceState.interimTranscript) + '"' : '') + '</span>'
       + '</div>';
   }
-  if(phase === 'transcribing'){
+  if(phase === 'fallback_transcribing'){
     return '<div class="voice-status" role="status" aria-live="polite">Turning your voice into text...</div>';
   }
   if(activeForField && phase === 'error'){
