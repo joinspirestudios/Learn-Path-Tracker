@@ -326,7 +326,7 @@ test('oversized voice content is rejected before provider use', async () => {
     provider:async () => { providerCalls += 1; },
   });
   const req = {
-    method:'POST', headers:{ authorization:'Bearer token', 'content-type':'audio/webm', 'content-length':String(25 * 1024 * 1024 + 1) },
+    method:'POST', headers:{ authorization:'Bearer token', 'content-type':'audio/webm', 'content-length':String(MAX_AUDIO_BYTES + 1) },
     body:Buffer.from('small'), once(){}, off(){},
   };
   const res = responseRecorder();

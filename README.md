@@ -119,11 +119,27 @@ Generation diagnostics add safe validation metadata such as stop reason, content
 
 ## Guided creation
 
-The Build with AI entry is a guided web flow rather than a dense all-fields form. The first screen asks only what the user wants to achieve, with optional voice input, examples, Basic starter, and Build with AI. Claude interpretation always happens before AI roadmap generation. When the goal is vague, the app shows one material clarification question at a time with structured choices and custom-answer support. When enough information exists, the flow moves through recommended rhythm, concise path brief, roadmap generation, preview, creation, and a ready screen.
+The Build with AI entry is a guided web flow rather than a dense all-fields form. The first screen asks only what the user wants to achieve, with inline voice input, examples, Basic starter, and Build with AI. Claude interpretation always happens before AI roadmap generation. When the goal is vague, the app shows one material clarification question at a time with structured choices and custom-answer support. When enough information exists, the flow moves through recommended rhythm, concise path brief, roadmap generation, preview, creation, and a ready screen.
 
 Core Commitments and cadence are presented in natural language. Advanced schedule controls remain available behind an adjustment section so users can edit duration, time, commitments, frequency, constraints, resources, evidence preference, and assumptions without returning to the old dense prompt. The saved path model is unchanged: final paths still use the existing sections, tasks, resources, visibility, creator metadata, enrollments, day logs, evidence, streak, and freeze structures.
 
 Basic starter remains a local non-AI route. It uses the same guided shell, creates a simple editable draft from the entered goal, shows the concise preview first, and saves through the normal local or platform path system.
+
+## Unified voice input
+
+Eligible path-creation text fields include an inline microphone button. Tap the microphone, speak naturally, tap Stop, and transcription starts automatically. The resulting text is inserted directly into the active field at the saved cursor or selection, then the normal field remains editable. Multiple clips can be added to the same field without replacing existing text unless text was deliberately selected.
+
+Voice input is available for useful natural-language fields in goal entry, clarification text answers, resource title and note fields, rhythm adjustments, brief review, and high-level roadmap review fields. It is intentionally excluded from URLs, dates, numbers, selectors, booleans, authentication fields, and repeated generated task rows so the interface stays calm.
+
+Only one microphone session can run at a time. Recording, stopping, and transcribing states are shown inline with a timer, compact waveform, Stop/Cancel controls, retry where possible, and polite status messages. Interpretation, generation, and saving remain deliberate user actions and are blocked while voice recording or transcription is active.
+
+### Voice limits and privacy
+
+Maximum recording duration: 120 seconds. Maximum upload payload: 4 MB. Recordings may stop automatically at the safe duration or byte threshold.
+
+Raw voice audio is temporary. It is sent only to the authenticated transcription route and its configured transcription provider. It is not stored in the user's path, Firestore, Firebase Storage or local browser persistence. Transcription requires authentication and a network connection; users can always continue by typing.
+
+Phase 5.4 does not add live streaming transcription, evidence analysis, adaptive planning, animated goal suggestions, domain-specific clarification or path intensity.
 
 ## Guided Daily Session
 
@@ -216,9 +232,9 @@ api/generate-path.js: 240 seconds
 api/transcribe-voice.js: 90 seconds
 ```
 
-Voice transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 25 MB. The app does not claim a duration limit it cannot verify and does not persist raw voice uploads.
+Voice transcription accepts WebM, MP4, MP3, WAV, or OGG audio up to 4 MB. Inline browser recording stops at 120 seconds or near the safe byte threshold before upload.
 
-Authentication, declared-size validation, and the per-user voice rate limit run before the audio body is buffered. The stream is still counted while reading and is terminated when it exceeds 25 MB, so a missing or inaccurate `Content-Length` cannot bypass the limit. Duration is not validated in this version.
+Authentication, declared-size validation, and the per-user voice rate limit run before the audio body is buffered. The stream is still counted while reading and is terminated when it exceeds 4 MB, so a missing or inaccurate `Content-Length` cannot bypass the limit.
 
 ## AI brief integrity
 

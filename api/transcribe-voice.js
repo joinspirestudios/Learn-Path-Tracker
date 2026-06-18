@@ -4,11 +4,12 @@ import { contentType } from './_lib/http.js';
 import { runProviderRequest } from './_lib/provider.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
+import { MAX_VOICE_UPLOAD_BYTES } from '../src/voice-input-model.js';
 
 const ACCEPTED_AUDIO_TYPES = new Set([
   'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg',
 ]);
-export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+export const MAX_AUDIO_BYTES = MAX_VOICE_UPLOAD_BYTES;
 export const TRANSCRIBE_TIMEOUT_MS = 60_000;
 
 export const config = { api:{ bodyParser:false } };
@@ -37,7 +38,7 @@ async function readAudioBody(req){
     size += buffer.length;
     if(size > MAX_AUDIO_BYTES){
       req.destroy?.();
-      throw apiError('payload_too_large', 'This recording is larger than the 25 MB upload limit.', 413);
+      throw apiError('payload_too_large', 'This voice note is too large to transcribe. Keep recordings under two minutes and try again.', 413);
     }
     chunks.push(buffer);
   }
@@ -103,7 +104,7 @@ export function createTranscribeVoiceHandler({
       const mimeType = contentType(req);
       const contentLength = Number(req.headers?.['content-length'] || 0);
       if(Number.isFinite(contentLength) && contentLength > MAX_AUDIO_BYTES){
-        throw apiError('payload_too_large', 'This recording is larger than the 25 MB upload limit.', 413);
+        throw apiError('payload_too_large', 'This voice note is too large to transcribe. Keep recordings under two minutes and try again.', 413);
       }
       await rateLimit(auth.uid, 'transcribe');
       log.event('transcribe_rate_limit_complete', {
@@ -113,7 +114,7 @@ export function createTranscribeVoiceHandler({
       });
       const audio = await readAudioBody(req);
       if(!audio.length) throw apiError('invalid_request', 'Add an audio recording before transcribing.', 400);
-      if(audio.length > MAX_AUDIO_BYTES) throw apiError('payload_too_large', 'This recording is larger than the 25 MB upload limit.', 413);
+      if(audio.length > MAX_AUDIO_BYTES) throw apiError('payload_too_large', 'This voice note is too large to transcribe. Keep recordings under two minutes and try again.', 413);
       if(!ACCEPTED_AUDIO_TYPES.has(mimeType)){
         throw apiError('invalid_request', 'This audio format is not supported. Record WebM, MP4, MP3, WAV, or OGG audio.', 415);
       }
