@@ -2,7 +2,7 @@
 
 Learn Path Tracker is a Vite + Firebase proof-of-growth app for creating learning paths, habits, challenges, and personal-development roadmaps. It supports local mode, platform paths, creator attribution, enrollments, day logs, streaks, freezes, evidence, templates, and an optional Anthropic-powered AI path builder.
 
-Phase 5.2 adds responsive guided path creation on top of the protected Phase 5 AI and transcription routes. The web app now guides users through goal entry, adaptive clarification, recommended rhythm, concise brief review, roadmap preview, and a path-ready state before Day 1 starts. Live web research is not part of this phase.
+Phase 5.3 adds a guided daily evidence session on top of responsive guided path creation and the protected Phase 5 AI and transcription routes. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, and day completion. Live web research is not part of this phase.
 
 ## Install and run
 
@@ -125,13 +125,33 @@ Core Commitments and cadence are presented in natural language. Advanced schedul
 
 Basic starter remains a local non-AI route. It uses the same guided shell, creates a simple editable draft from the entered goal, shows the concise preview first, and saves through the normal local or platform path system.
 
+## Guided Daily Session
+
+Opening an active journey day now starts with Today's Agenda instead of the old long-scroll task and proof form. The agenda shows required task count, optional task count, evidence-required count, estimated effort when task durations exist, a concise task preview, and saved progress when the session is being resumed.
+
+If any task requires proof, the next step is an evidence preparation summary. It lists the tasks that need proof and the supported proof style already stored on the task model. Users can start the session without gathering every proof item first.
+
+The active session shows one task at a time with progress, title, description, criteria, estimate when available, required/optional status, resource link, evidence state, and focused actions. Required tasks without evidence can be marked done or left as `Not done yet`. Required tasks with evidence must use the existing evidence submission system before they become complete. Optional tasks can be marked done, skipped, or left for later.
+
+`Not done yet` keeps a task unresolved and pending; it does not count toward progress and pending required tasks block day completion. `Skip optional task` resolves an optional task as skipped, does not count as completed work, and does not block day completion.
+
+Every meaningful session action saves immediately through the existing local-first day-log path and Firestore sync path: session start, task completion, evidence submission, reflection, optional skip, pending mark, agenda/review navigation, and completion. Refreshing or reopening the day derives the session from canonical day-log fields plus the additive session fields, so legacy logs still open without migration.
+
+### Completion semantics
+
+Required progress is calculated as resolved required tasks divided by total required tasks. Optional tasks are displayed separately and never inflate the required progress percentage. Evidence-required tasks count only when the canonical verified task state exists; evidence records alone do not fake completion.
+
+Day completion still uses the existing journey completion flow for status, streak, missed-day recovery, freeze handling, and next-day availability. The guided session only prepares the day log for that canonical completion write.
+
+Completed days open as a concise summary with required task count, optional completion/skips, evidence count, and existing evidence history. Phase 5.3 does not analyse evidence or adapt future roadmap days. It creates the structured daily-session and evidence foundation for later adaptive-planning phases.
+
 ## Responsive behavior
 
-Phase 5.2 improves the responsive web application. It does not create the native mobile application yet.
+Phase 5.3 improves the responsive web application. It does not create the native mobile application yet.
 
-Desktop and laptop browsers use a centered guided dialog with a first-class active work area and an optional summary panel for the brief so far. Tablet and smaller laptop widths switch to a focused single-column layout with the summary below or collapsed. Mobile browsers use a full-screen creation flow with compact progress, touch-friendly controls, and sticky actions so the primary decision stays reachable.
+Desktop and laptop browsers use a focused work area for guided creation and daily sessions. Tablet and smaller laptop widths switch to a single-column layout with summary information above or below the active task. Mobile browsers use compact progress, touch-friendly controls, and sticky daily-session actions so the primary decision stays reachable.
 
-All viewport presentations use the same canonical builder state, confirmed brief, request controllers, and save path. There is no separate mobile business logic. Future native clients should be able to reuse the product flow, backend contracts, and saved-path data model established here, but Capacitor, React Native, Expo, Android, and iOS packaging remain deferred.
+All viewport presentations use the same canonical builder state, daily-session state, request controllers, day logs, and save path. There is no separate mobile business logic. Future native clients should be able to reuse the product flow, backend contracts, and saved-path data model established here, but Capacitor, React Native, Expo, Android, and iOS packaging remain deferred.
 
 ## Product principles
 

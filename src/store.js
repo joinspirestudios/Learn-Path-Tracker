@@ -58,6 +58,14 @@ export function migrateState(s){
       log.unverifiedTaskIds = Array.isArray(log.unverifiedTaskIds)
         ? log.unverifiedTaskIds
         : log.completedTaskIds.filter(id => !log.verifiedTaskIds.includes(id));
+      log.pendingTaskIds = Array.isArray(log.pendingTaskIds) ? log.pendingTaskIds : [];
+      log.optionalSkippedTaskIds = Array.isArray(log.optionalSkippedTaskIds) ? log.optionalSkippedTaskIds : [];
+      log.taskReflections = log.taskReflections && typeof log.taskReflections === 'object' ? log.taskReflections : {};
+      log.sessionStartedAt = log.sessionStartedAt || null;
+      log.sessionLastActiveAt = log.sessionLastActiveAt || null;
+      log.lastActiveTaskId = log.lastActiveTaskId || null;
+      log.sessionViewState = log.sessionViewState || null;
+      log.sessionCompletedAt = log.sessionCompletedAt || null;
       log.totalTaskCount = Number(log.totalTaskCount || 0);
       en.dayLogs[day] = log;
     });

@@ -50,6 +50,11 @@ import {
   localDateString, normalizeDurationDays,
 } from './journey.js';
 import {
+  canCompleteDailySession, isOptionalTask, nextUnresolvedTaskId, resumeTaskId,
+  sessionTaskStates, taskNeedsEvidence,
+} from './daily-session-model.js';
+import { dailySessionHTML } from './views/daily-session.js';
+import {
   AI_SAVE_TIMEOUT_MS, ENROLLMENT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS,
   enrollmentStartErrorMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
@@ -61,6 +66,9 @@ let evidenceFormTaskId = null;
 let evidenceProofType = 'url';
 let evidenceBusy = false;
 let evidenceError = '';
+let dailySessionSaveState = 'idle';
+let dailySessionError = '';
+let dailySessionActionToken = 0;
 let aiBuilder = null;
 let voiceDurationTimer = null;
 let aiProcessingTimer = null;
@@ -2425,6 +2433,9 @@ function cloneJourneyEnrollment(enrollment){
       completedTaskIds:[...(log?.completedTaskIds || [])],
       verifiedTaskIds:[...(log?.verifiedTaskIds || [])],
       unverifiedTaskIds:[...(log?.unverifiedTaskIds || [])],
+      pendingTaskIds:[...(log?.pendingTaskIds || [])],
+      optionalSkippedTaskIds:[...(log?.optionalSkippedTaskIds || [])],
+      taskReflections:{ ...(log?.taskReflections || {}) },
     };
   });
   return clone;
@@ -2540,6 +2551,146 @@ function evidenceFormHTML(task){
     + '</div>';
 }
 
+function dailySessionNextPhase(dayTasks, nextTaskId, log, evidenceSubmissions){
+  if(nextTaskId) return 'task';
+  return canCompleteDailySession(dayTasks, log, evidenceSubmissions) ? 'completion-check' : 'partial-summary';
+}
+
+async function saveDailySessionLog(enrollment, day, dayTasks, patch){
+  const existing = dayLogFor(enrollment, day);
+  dailySessionSaveState = 'saving';
+  dailySessionError = '';
+  renderPlan();
+  try{
+    const saved = await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+      ...existing,
+      ...patch,
+      dayNumber: day,
+      date: dateForJourneyDay(enrollment.startDate, day),
+      status: patch.status || existing?.status || 'active',
+      totalTaskCount: dayTasks.length,
+      evidenceCount: evidenceCountFor(enrollment.id, day),
+      sessionLastActiveAt: new Date(),
+    }));
+    dailySessionSaveState = store.enrollments[enrollment.id]?.syncPending ? 'local' : 'saved';
+    return saved;
+  }catch(e){
+    dailySessionSaveState = 'error';
+    dailySessionError = /permission|denied/i.test(e?.code || e?.message || '')
+      ? 'This day could not be updated because your access changed. Refresh the path and try again.'
+      : 'This update could not sync yet. Your progress is saved locally and will retry when the connection returns.';
+    throw e;
+  }finally{
+    setTimeout(() => {
+      if(dailySessionSaveState === 'saved') dailySessionSaveState = 'idle';
+      if(store.state.current === enrollment.pathId && store.activeTab === 'plan') renderPlan();
+    }, 350);
+  }
+}
+
+async function setDailySessionView(id, def, phase, taskId = null){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return;
+  const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
+  const dayTasks = getTasksForDay(def, day);
+  const existing = dayLogFor(enrollment, day);
+  const evidence = cachedEvidenceFor(enrollment.id, day);
+  let nextTaskId = taskId || existing?.lastActiveTaskId || resumeTaskId(dayTasks, existing, evidence);
+  if(phase === 'start-session' || phase === 'task'){
+    nextTaskId = resumeTaskId(dayTasks, existing, evidence);
+    phase = nextTaskId ? 'task' : 'completion-check';
+  }
+  if(phase === 'finish-pending'){
+    nextTaskId = resumeTaskId(dayTasks, { ...existing, lastActiveTaskId:null }, evidence);
+    phase = nextTaskId ? 'task' : 'completion-check';
+  }
+  if(phase === 'evidence-preparation' && !dayTasks.some(taskNeedsEvidence)){
+    nextTaskId = resumeTaskId(dayTasks, existing, evidence);
+    phase = nextTaskId ? 'task' : 'completion-check';
+  }
+  evidenceFormTaskId = phase === 'task-evidence' ? nextTaskId : null;
+  await saveDailySessionLog(enrollment, day, dayTasks, {
+    sessionStartedAt: existing?.sessionStartedAt || (phase === 'agenda' ? null : new Date()),
+    sessionViewState: phase,
+    lastActiveTaskId: nextTaskId,
+  });
+}
+
+async function markDailySessionTask(id, def, taskId, mode){
+  const token = ++dailySessionActionToken;
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return;
+  const today = localDateString();
+  const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
+  if(!canCompleteDay(day, enrollment, today)) return;
+  const dayTasks = getTasksForDay(def, day);
+  const item = sessionTaskStates(dayTasks, dayLogFor(enrollment, day), cachedEvidenceFor(enrollment.id, day)).find(candidate => candidate.id === taskId);
+  if(!item) return;
+  const existing = dayLogFor(enrollment, day);
+  const completed = new Set(existing?.completedTaskIds || []);
+  const verified = new Set(existing?.verifiedTaskIds || []);
+  const unverified = new Set(existing?.unverifiedTaskIds || []);
+  const pending = new Set(existing?.pendingTaskIds || []);
+  const skipped = new Set(existing?.optionalSkippedTaskIds || []);
+  if(mode === 'done'){
+    if(item.state.needsEvidence && !verified.has(taskId)) return;
+    completed.add(taskId);
+    if(!item.state.needsEvidence) unverified.add(taskId);
+    pending.delete(taskId);
+    skipped.delete(taskId);
+  } else if(mode === 'not-done'){
+    pending.add(taskId);
+  } else if(mode === 'skip-optional'){
+    if(!isOptionalTask(item.task)) return;
+    skipped.add(taskId);
+    pending.delete(taskId);
+    completed.delete(taskId);
+    verified.delete(taskId);
+    unverified.delete(taskId);
+  }
+  const baseLog = {
+    ...existing,
+    completedTaskIds:Array.from(completed),
+    verifiedTaskIds:Array.from(verified),
+    unverifiedTaskIds:Array.from(unverified),
+    pendingTaskIds:Array.from(pending),
+    optionalSkippedTaskIds:Array.from(skipped),
+  };
+  const evidence = cachedEvidenceFor(enrollment.id, day);
+  const nextTaskId = mode === 'not-done'
+    ? nextUnresolvedTaskId(dayTasks, baseLog, evidence, taskId)
+    : resumeTaskId(dayTasks, { ...baseLog, lastActiveTaskId:null }, evidence);
+  const phase = dailySessionNextPhase(dayTasks, nextTaskId, baseLog, evidence);
+  await saveDailySessionLog(enrollment, day, dayTasks, {
+    ...baseLog,
+    sessionStartedAt: existing?.sessionStartedAt || new Date(),
+    sessionViewState: phase,
+    lastActiveTaskId: nextTaskId,
+  });
+  if(token !== dailySessionActionToken) return;
+  evidenceFormTaskId = null;
+}
+
+async function saveDailyReflection(id, def, taskId){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return;
+  const day = selectedJourneyDay || Number(enrollment.currentDay || 1);
+  if(!canCompleteDay(day, enrollment, localDateString())) return;
+  const text = window.prompt('Add a short reflection for this task') || '';
+  if(!text.trim()) return;
+  const dayTasks = getTasksForDay(def, day);
+  const existing = dayLogFor(enrollment, day);
+  await saveDailySessionLog(enrollment, day, dayTasks, {
+    ...existing,
+    taskReflections:{
+      ...(existing?.taskReflections || {}),
+      [taskId]:text.trim().slice(0, 1200),
+    },
+    lastActiveTaskId:taskId,
+    sessionViewState:'task',
+  });
+}
+
 function roadmapHTML(id, def){
   const enrollment = currentEnrollmentForPath(id);
   const tasksReady = pathTasksReady(def);
@@ -2634,38 +2785,22 @@ function journeyDetailHTML(id, def){
       h += '<button class="btn" id="resetMissedDay" data-day="' + day + '">Reset streak and continue</button></div>';
     }
   } else {
-    if(dayTasks.length){
-      h += '<div class="journey-tasks">';
-      dayTasks.forEach(task => {
-        const title = taskTitleForDay(task, day);
-        if(task.evidenceRequired){
-          const isVerified = verified.has(task.id);
-          h += '<div class="journey-task proof-required ' + (isVerified ? 'done' : '') + '">'
-            + '<span><b>' + esc(title) + '</b>'
-            + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
-            + (task.progressionNotes ? '<small>' + esc(task.progressionNotes) + '</small>' : '')
-            + '<small class="evidence-note">' + (isVerified ? 'Proof submitted' : 'Require proof for this task') + '</small></span>'
-            + (isVerified ? '<span class="proof-pill">Verified</span>' : '<button class="btn add-evidence" data-task="' + esc(task.id) + '">Add proof</button>')
-            + evidenceFormHTML(task)
-            + '</div>';
-        } else {
-          h += '<label class="journey-task ' + (completed.has(task.id) ? 'done' : '') + '"><input type="checkbox" class="ck journey-ck" data-task="' + esc(task.id) + '" ' + (completed.has(task.id) ? 'checked' : '') + '/>'
-            + '<span><b>' + esc(title) + '</b>'
-            + (task.description ? '<small>' + esc(task.description) + '</small>' : '')
-            + (task.progressionNotes ? '<small>' + esc(task.progressionNotes) + '</small>' : '')
-            + (completed.has(task.id) ? '<small class="evidence-note">Completed without proof</small>' : '')
-            + '</span></label>';
-        }
-      });
-      h += '</div>';
-    } else {
-      h += '<div class="muted">No tasks are available for this day. Completion stays disabled until task data is available.</div>';
-    }
-    const ready = dayTasks.length > 0 && completeCount === dayTasks.length;
-    const canComplete = canCompleteDay(day, enrollment, today);
-    h += '<button class="btn gold" id="completeDay" data-day="' + day + '" ' + (ready && canComplete ? '' : 'disabled') + '>Complete day</button>';
-    if(!canComplete && status === 'active') h += '<div class="hint">This day is not eligible for completion today.</div>';
-    if(ready && canComplete) h += '<div class="hint">All required proof has been submitted.</div>';
+    h += dailySessionHTML({
+      pathId:id,
+      dayNumber:day,
+      date,
+      tasks:dayTasks,
+      dayLog:log,
+      evidenceSubmissions:cachedEvidenceFor(enrollment.id, day),
+      proofType:evidenceProofType,
+      evidenceTaskId:evidenceFormTaskId,
+      evidenceError,
+      evidenceBusy,
+      accepts:ACCEPTED_EVIDENCE_TYPES.join(','),
+      saveState:dailySessionSaveState,
+      error:dailySessionError,
+    });
+    if(status === 'active' && !canCompleteDay(day, enrollment, today)) h += '<div class="hint">This day is not eligible for completion today.</div>';
   }
   h += '</div>';
   return h;
@@ -2765,19 +2900,35 @@ async function submitEvidenceForTask(id, def, taskId){
     const completed = new Set(existing?.completedTaskIds || []);
     const verified = new Set(existing?.verifiedTaskIds || []);
     const unverified = new Set(existing?.unverifiedTaskIds || []);
+    const pending = new Set(existing?.pendingTaskIds || []);
+    const skipped = new Set(existing?.optionalSkippedTaskIds || []);
     completed.add(taskId);
     verified.add(taskId);
     unverified.delete(taskId);
-    await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+    pending.delete(taskId);
+    skipped.delete(taskId);
+    const nextBase = {
       ...existing,
-      dayNumber: day,
-      date: dateForJourneyDay(enrollment.startDate, day),
-      status: 'active',
       completedTaskIds: Array.from(completed),
       verifiedTaskIds: Array.from(verified),
       unverifiedTaskIds: Array.from(unverified),
+      pendingTaskIds: Array.from(pending),
+      optionalSkippedTaskIds: Array.from(skipped),
+    };
+    const evidence = cachedEvidenceFor(enrollment.id, day);
+    const nextTaskId = resumeTaskId(dayTasks, { ...nextBase, lastActiveTaskId:null }, evidence);
+    const phase = dailySessionNextPhase(dayTasks, nextTaskId, nextBase, evidence);
+    await dbSaveDayLog(enrollment.id, makeDayLog(day, {
+      ...nextBase,
+      dayNumber: day,
+      date: dateForJourneyDay(enrollment.startDate, day),
+      status: 'active',
       totalTaskCount: dayTasks.length,
       evidenceCount: evidenceCountFor(enrollment.id, day),
+      sessionStartedAt: existing?.sessionStartedAt || new Date(),
+      sessionLastActiveAt: new Date(),
+      lastActiveTaskId: nextTaskId,
+      sessionViewState: phase,
     }));
     evidenceFormTaskId = null;
     evidenceProofType = 'url';
@@ -2805,8 +2956,9 @@ async function completeJourneyDay(id, def, day){
   const existing = dayLogFor(enrollment, day);
   const completedTaskIds = existing?.completedTaskIds || [];
   const verifiedTaskIds = existing?.verifiedTaskIds || [];
-  if(dayTasks.some(task => task.evidenceRequired ? !verifiedTaskIds.includes(task.id) : !completedTaskIds.includes(task.id))){
-    flash('This task needs proof before Day can be completed.');
+  const evidence = cachedEvidenceFor(enrollment.id, day);
+  if(!canCompleteDailySession(dayTasks, existing, evidence)){
+    flash('Required tasks must be documented before this day can be completed.');
     return;
   }
   const wasCompleted = existing?.status === 'completed';
@@ -2819,8 +2971,12 @@ async function completeJourneyDay(id, def, day){
     completedTaskIds,
     verifiedTaskIds,
     unverifiedTaskIds: existing?.unverifiedTaskIds || [],
+    pendingTaskIds: existing?.pendingTaskIds || [],
+    optionalSkippedTaskIds: existing?.optionalSkippedTaskIds || [],
     totalTaskCount: dayTasks.length,
     evidenceCount: evidenceCountFor(enrollment.id, day),
+    sessionViewState: 'complete',
+    sessionCompletedAt: existing?.sessionCompletedAt || new Date(),
   }));
   await dbSaveEnrollment({
     ...store.enrollments[enrollment.id],
@@ -2975,6 +3131,26 @@ function wireJourneyControls(id, def){
   if(start) start.onclick = async () => {
     await startPathJourney(id, def, start);
   };
+  $('content').querySelectorAll('.daily-session-action').forEach(btn => {
+    btn.onclick = async () => {
+      const action = btn.dataset.sessionAction;
+      const taskId = btn.dataset.task || null;
+      try{
+        if(action === 'agenda') await setDailySessionView(id, def, 'agenda');
+        else if(action === 'evidence-preparation') await setDailySessionView(id, def, 'evidence-preparation');
+        else if(action === 'start-session') await setDailySessionView(id, def, 'start-session');
+        else if(action === 'task-evidence') await setDailySessionView(id, def, 'task-evidence', taskId);
+        else if(action === 'review') await setDailySessionView(id, def, 'partial-summary');
+        else if(action === 'finish-pending') await setDailySessionView(id, def, 'finish-pending');
+        else if(action === 'mark-done') await markDailySessionTask(id, def, taskId, 'done');
+        else if(action === 'not-done') await markDailySessionTask(id, def, taskId, 'not-done');
+        else if(action === 'skip-optional') await markDailySessionTask(id, def, taskId, 'skip-optional');
+        else if(action === 'reflection') await saveDailyReflection(id, def, taskId);
+      }catch(e){
+        console.warn('daily session action:', e && e.message ? e.message : e);
+      }
+    };
+  });
   $('content').querySelectorAll('[data-road-day]').forEach(btn => {
     btn.onclick = async () => {
       selectedJourneyDay = Number(btn.dataset.roadDay || 1);
