@@ -11,7 +11,9 @@ import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
 
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'creative_project', 'business', 'academic', 'spiritual/devotional', 'content', 'custom'];
-const INTENSITIES = ['light', 'moderate', 'intense'];
+const INTENSITIES = ['soft', 'balanced', 'intensive'];
+const DOMAINS = ['general', 'course', 'book', 'fitness'];
+const DOMAIN_CONFIDENCE = ['low', 'medium', 'high'];
 const CADENCE_TYPES = ['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval', 'once', 'sequential'];
 const QUESTION_TYPES = ['single_select', 'multi_select', 'short_text', 'long_text', 'number', 'duration', 'date', 'days_of_week', 'time_availability', 'yes_no', 'resource'];
 const TOOL_NAME = 'interpret_goal_brief';
@@ -50,7 +52,7 @@ const questionSchema = {
   required:['id', 'targetField', 'prompt', 'supportingText', 'type', 'required', 'materialReason', 'options', 'allowCustomAnswer'],
   properties:{
     id:{ type:'string' },
-    targetField:{ type:'string', enum:['currentBaseline', 'desiredOutcome', 'durationDays', 'availableTime', 'constraints', 'scheduleNotes', 'evidencePreferences', 'resources'] },
+    targetField:{ type:'string', enum:['currentBaseline', 'desiredOutcome', 'durationDays', 'availableTime', 'constraints', 'scheduleNotes', 'evidencePreferences', 'resources', 'intensity', 'courseResource', 'bookResource', 'programmeResource', 'fitnessContext'] },
     prompt:{ type:'string' }, supportingText:{ type:'string' }, type:{ type:'string', enum:QUESTION_TYPES },
     required:{ type:'boolean' }, materialReason:{ type:'string' },
     options:{
@@ -64,6 +66,79 @@ const questionSchema = {
   },
 };
 
+const domainProfileSchema = {
+  type:'object', additionalProperties:false,
+  required:['primary', 'detected', 'confidence'],
+  properties:{
+    primary:{ type:'string', enum:DOMAINS },
+    detected:{ type:'array', items:{ type:'string', enum:DOMAINS } },
+    confidence:{ type:'string', enum:DOMAIN_CONFIDENCE },
+  },
+};
+
+const courseResourceSchema = {
+  type:'object', additionalProperties:false,
+  required:['id', 'type', 'title', 'instructor', 'platform', 'url', 'currentPosition', 'totalUnits', 'typicalLessonMinutes', 'hasAssignments', 'assignmentNotes', 'targetCompletionDate', 'fixedSequence', 'notes'],
+  properties:{
+    id:{ type:'string' }, type:{ type:'string', enum:['course'] }, title:{ type:'string' }, instructor:{ type:'string' }, platform:{ type:'string' }, url:{ type:'string' },
+    currentPosition:{
+      type:'object', additionalProperties:false, required:['label', 'index'],
+      properties:{ label:{ type:'string' }, index:nullableNumber },
+    },
+    totalUnits:nullableNumber, typicalLessonMinutes:nullableNumber,
+    hasAssignments:{ anyOf:[{ type:'boolean' }, { type:'null' }] },
+    assignmentNotes:{ type:'string' }, targetCompletionDate:{ type:'string' },
+    fixedSequence:{ anyOf:[{ type:'boolean' }, { type:'null' }] },
+    notes:{ type:'string' },
+  },
+};
+
+const bookResourceSchema = {
+  type:'object', additionalProperties:false,
+  required:['id', 'type', 'title', 'author', 'edition', 'pageCount', 'currentPage', 'targetCompletionDate', 'studyIntention', 'notesOrExercises', 'pagesPerSession', 'minutesPerSession', 'format'],
+  properties:{
+    id:{ type:'string' }, type:{ type:'string', enum:['book'] }, title:{ type:'string' }, author:{ type:'string' }, edition:{ type:'string' },
+    pageCount:nullableNumber, currentPage:nullableNumber, targetCompletionDate:{ type:'string' },
+    studyIntention:{ type:'string' }, notesOrExercises:{ type:'string' },
+    pagesPerSession:nullableNumber, minutesPerSession:nullableNumber, format:{ type:'string' },
+  },
+};
+
+const programmeResourceSchema = {
+  type:'object', additionalProperties:false,
+  required:['id', 'type', 'title', 'source', 'url', 'fixedSequence', 'currentPosition', 'totalUnits', 'notes'],
+  properties:{
+    id:{ type:'string' }, type:{ type:'string', enum:['programme'] }, title:{ type:'string' }, source:{ type:'string' }, url:{ type:'string' },
+    fixedSequence:{ anyOf:[{ type:'boolean' }, { type:'null' }] },
+    currentPosition:{ type:'string' }, totalUnits:nullableNumber, notes:{ type:'string' },
+  },
+};
+
+const structuredResourcesSchema = {
+  type:'object', additionalProperties:false,
+  required:['courses', 'books', 'programmes'],
+  properties:{
+    courses:{ type:'array', items:courseResourceSchema },
+    books:{ type:'array', items:bookResourceSchema },
+    programmes:{ type:'array', items:programmeResourceSchema },
+  },
+};
+
+const fitnessContextSchema = {
+  anyOf:[
+    { type:'null' },
+    {
+      type:'object', additionalProperties:false,
+      required:['activity', 'baseline', 'target', 'frequencyPerWeek', 'sessionMinutes', 'equipment', 'limitations', 'safetyNotes'],
+      properties:{
+        activity:{ type:'string' }, baseline:{ type:'string' }, target:{ type:'string' },
+        frequencyPerWeek:nullableNumber, sessionMinutes:nullableNumber,
+        equipment:{ type:'string' }, limitations:{ type:'string' }, safetyNotes:{ type:'string' },
+      },
+    },
+  ],
+};
+
 const GOAL_BRIEF_TOOL = {
   name:TOOL_NAME,
   description:'Interpret a goal into a neutral structured brief and ask only material questions.',
@@ -73,6 +148,7 @@ const GOAL_BRIEF_TOOL = {
       'summary', 'goal', 'goalCategory', 'pathType', 'currentStage', 'desiredEndState',
       'durationDays', 'recommendedDurationReason', 'intensity', 'dailyTimeAvailable',
       'estimatedDailyMinutes', 'estimatedWeeklyHours', 'deadline', 'scheduleNotes',
+      'domainProfile', 'structuredResources', 'fitnessContext',
       'knownTasks', 'coreCommitments', 'milestones', 'constraints', 'resourcesMentioned',
       'evidencePreference', 'suggestedEvidenceTypes', 'progressiveTargets', 'assumptions',
       'materialGaps', 'clarifyingQuestions', 'confidence', 'readyToGenerate',
@@ -80,6 +156,9 @@ const GOAL_BRIEF_TOOL = {
     properties:{
       summary:{ type:'string' }, goal:{ type:'string' }, goalCategory:{ type:'string' },
       pathType:{ type:'string', enum:PATH_TYPES }, currentStage:nullableString, desiredEndState:nullableString,
+      domainProfile:domainProfileSchema,
+      structuredResources:structuredResourcesSchema,
+      fitnessContext:fitnessContextSchema,
       durationDays:{ anyOf:[{ type:'number', minimum:1, maximum:365 }, { type:'null' }] },
       recommendedDurationReason:{ type:'string' },
       intensity:{ anyOf:[{ type:'string', enum:INTENSITIES }, { type:'null' }] },
@@ -185,6 +264,12 @@ function buildPrompt(input){
   return [
     'Use the interpret_goal_brief tool and return no prose or markdown.',
     'Ask 2-5 questions only when an answer would materially change duration, difficulty, schedule, progression, commitments, evidence, safety, feasibility, or milestones.',
+    'Detect domainProfile conservatively: primary must be one of general, course, book, fitness; preserve multiple detected signals when relevant.',
+    'Use courseResource, bookResource, programmeResource, fitnessContext, or intensity target fields only when that answer materially changes the roadmap.',
+    'Preserve supplied courses, books, programmes, fixed sequences, page counts, current progress, baselines, frequency, limitations, and explicit constraints.',
+    'Do not ask course questions for general learning goals, book questions for casual reading habits, or fitness questions without an activity/progression context.',
+    'Use intensity values only as soft, balanced, or intensive. If the user has not chosen one, recommend balanced but let the user confirm it.',
+    'Never replace a confirmed course, book, programme, fixed challenge rule, safety boundary, or explicit availability with your own substitute.',
     'Do not ask questions merely because an optional field is empty. A simple, specific goal may proceed directly to review.',
     'For vague goals, identify materialGaps and provide stable question ids, target fields, supporting text, types, and concise material reasons.',
     'Prefer useful single-select or multi-select choices when the likely answers are bounded. Always preserve a custom answer option when appropriate.',
@@ -192,7 +277,7 @@ function buildPrompt(input){
     'On the final clarification round, turn only remaining non-critical uncertainty into visible structured assumptions with accepted false.',
     'Never mark an AI assumption accepted. The user must accept, edit, or remove it in the review UI.',
     'The previousBrief already contains deterministic user answers and confirmed fields. Preserve them exactly.',
-    'Do not silently infer beginner level, moderate intensity, or any other material value.',
+    'Do not silently infer beginner level or any other material value.',
     'Propose only goal-specific core commitments. Do not add generic habits unrelated to the goal.',
     'Do not claim web research, citations, source verification, or inspection of linked resources.',
     `Input: ${JSON.stringify(input)}`,

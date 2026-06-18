@@ -235,10 +235,10 @@ test('unaccepted material assumptions block generation while accepted assumption
   assert.equal(receivedAssumptions[0].accepted, true);
 });
 
-test('neutral normalization does not insert beginner or moderate defaults', () => {
+test('neutral normalization uses balanced intensity without inserting beginner defaults', () => {
   const brief = normalizeConfirmedBrief({ goal:'Learn guitar', durationDays:30 });
   assert.equal(brief.currentLevel, '');
-  assert.equal(brief.intensity, '');
+  assert.equal(brief.intensity, 'balanced');
 });
 
 test('vague interpretations can ask material questions while detailed goals can proceed', () => {
@@ -487,6 +487,7 @@ test('brief created from prompt keeps original user values authoritative', () =>
   });
   assert.equal(brief.currentBaseline, 'A1');
   assert.equal(brief.durationDays, 270);
+  assert.equal(brief.intensity, 'soft');
   assert.ok(brief.confirmedFields.includes('currentBaseline'));
   assert.ok(brief.confirmedFields.includes('durationDays'));
 });

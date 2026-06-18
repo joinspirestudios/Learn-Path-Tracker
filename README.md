@@ -125,6 +125,16 @@ Core Commitments and cadence are presented in natural language. Advanced schedul
 
 Basic starter remains a local non-AI route. It uses the same guided shell, creates a simple editable draft from the entered goal, shows the concise preview first, and saves through the normal local or platform path system.
 
+### Domain-aware setup
+
+Phase 5.5 helps Learn Path Tracker recognize course, book, fitness and general goal context during setup. The builder shows six lightweight goal suggestions, rotates calm empty-field examples until the user focuses, types, pastes or starts voice input, and asks only missing questions that materially affect duration, schedule, sequence, milestones, safety, evidence or progression.
+
+Confirmed courses, books and existing programmes are preserved as structured resources in the canonical brief and supplied to roadmap generation. Course and programme sequences can be marked fixed, book page scope and current progress can be preserved, and fitness baselines, training frequency, session length and limitations become protected planning context. Claude may organize around these resources, but it must not silently replace them, invent course lessons, fabricate book chapters or weaken fixed challenge rules.
+
+Path intensity uses the user-facing labels `Soft`, `Balanced` and `Intensive`, with canonical values `soft`, `balanced` and `intensive`. Intensity affects time load, task volume, progression, recovery, required versus optional work and evidence expectations. It never overrides safety boundaries, fixed challenge rules, confirmed resources, fixed course or programme sequence, or explicit user availability.
+
+Phase 5.5 does not fetch course or book metadata, perform live web research, verify external resources or add citations. Gemini evidence intelligence, research enrichment and rolling adaptive planning remain deferred.
+
 ## Unified voice input
 
 Eligible path-creation text fields include an inline microphone button. Tap the microphone, grant permission, and the browser requests an authenticated short-lived Deepgram token from `POST /api/deepgram-token`. The browser then opens a direct live WebSocket to Deepgram, starts recording only after the socket is connected, and streams microphone chunks while the user speaks.
@@ -147,7 +157,7 @@ During live voice input, audio is sent securely from the browser to the configur
 
 When live streaming is unavailable, the in-memory recording may be sent through the authenticated fallback transcription endpoint. The recording is discarded after transcription or cancellation. Transcription requires authentication and a network connection; users can always continue by typing.
 
-Phase 5.4.1 does not add voice commands, emotion analysis, evidence analysis, Gemini, research, adaptive planning, animated goal suggestions, domain-specific clarification or path intensity.
+Phase 5.5 does not add voice commands, emotion analysis, evidence analysis, Gemini, research enrichment, citations, adaptive planning, payments or social features.
 
 ## Guided Daily Session
 
@@ -252,11 +262,11 @@ Authentication, declared-size validation, and the per-user voice rate limit run 
 
 Build with AI first creates one canonical brief. Clarification questions have stable IDs and target fields. Answers are merged into those fields in application code before Claude enriches the brief. User-entered and answered fields are recorded in `confirmedFields` and cannot be silently overwritten by the model.
 
-Material uncertainty is represented as visible assumptions. Every material assumption must be accepted, edited, or removed before roadmap generation. Missing level or intensity remains unknown; the server no longer inserts hidden `beginner` or `moderate` defaults. The generation route rejects unconfirmed briefs.
+Material uncertainty is represented as visible assumptions. Every material assumption must be accepted, edited, or removed before roadmap generation. Missing level remains unknown; intensity is normalized to the Phase 5.5 values `soft`, `balanced` or `intensive` and remains user-editable before generation. The generation route rejects unconfirmed briefs.
 
 Roadmap generation accepts one canonical `confirmedBrief` plus `saveOptions.visibility`. Legacy duplicate content fields are ignored only when they exactly match the canonical brief; conflicting duplicates are rejected.
 
-No route performs web research, verifies resource URLs, or creates citations.
+No route performs web research, verifies resource URLs, fetches external metadata, or creates citations.
 
 ## Firebase rules
 

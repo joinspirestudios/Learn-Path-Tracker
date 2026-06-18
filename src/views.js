@@ -34,6 +34,7 @@ import { cachedAuthLabel } from './auth.js';
 import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath, resolveCreatorName } from './platform.js';
 import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
+  AI_INTENSITY_DETAILS, AI_INTENSITY_LEVELS,
   MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
   answerValueForQuestion,
   aiBriefDefaults, aiPromptDefaults, briefFromPrompt, confirmBrief, emptyCoreCommitment,
@@ -41,7 +42,7 @@ import {
   cadenceLabel, commitmentSummary, creationStageForPhase,
   finishAIRequest, hasActiveAIRequest, isMeaningfulAIGoal, normalizeCoreCommitment,
   normalizeCoreCommitments, normalizeBriefAssumptions, normalizeClarifyingQuestions,
-  normalizeConfirmedBrief, recoverAIBuilderState, routeInterpretedBrief,
+  normalizeConfirmedBrief, normalizeIntensity, recoverAIBuilderState, routeInterpretedBrief,
   unacceptedMaterialAssumptions,
 } from './ai-builder-model.js';
 import {
@@ -82,6 +83,7 @@ let dailySessionError = '';
 let dailySessionActionToken = 0;
 let aiBuilder = null;
 let aiProcessingTimer = null;
+let aiExampleTimer = null;
 let suppressNextAIBuilderFocus = false;
 let isCreatingPath = false;
 let openingPathId = null;
@@ -467,6 +469,9 @@ function briefToPromptPatch(brief){
     coreCommitments:b.coreCommitments.length ? b.coreCommitments : aiBuilder.prompt.coreCommitments,
     assumptions:b.assumptions,
     progressiveTargets:b.progressiveTargets,
+    domainProfile:b.domainProfile,
+    structuredResources:b.structuredResources,
+    fitnessContext:b.fitnessContext,
     clarifiedBrief:b,
   };
 }
@@ -554,7 +559,7 @@ function normalizeGeneratedDraft(raw, prompt){
     durationDays,
     durationLabel:String(raw.durationLabel || (durationDays + ' days')).slice(0, 80),
     difficulty:['beginner', 'intermediate', 'advanced'].includes(raw.difficulty) ? raw.difficulty : prompt.currentLevel,
-    intensity:['light', 'moderate', 'intense'].includes(raw.intensity) ? raw.intensity : prompt.intensity,
+    intensity:normalizeIntensity(raw.intensity || prompt.intensity),
     previewTitle:String(raw.previewTitle || raw.title || titleFromGoal(prompt.goal)).slice(0, 100),
     previewDescription:String(raw.previewDescription || raw.description || prompt.goal || '').slice(0, 500),
     visibility:['private', 'unlisted', 'public'].includes(raw.visibility || prompt.visibility) ? (raw.visibility || prompt.visibility) : 'private',
@@ -663,7 +668,7 @@ function localGeneratedDraft(prompt){
     durationDays,
     durationLabel:durationDays + ' days',
     difficulty:prompt.currentLevel,
-    intensity:prompt.intensity,
+    intensity:normalizeIntensity(prompt.intensity),
     previewTitle:title,
     previewDescription:prompt.description || prompt.goal,
     sections,
@@ -719,6 +724,7 @@ function aiDraftToLocalPath(draft){
     category:draft.category,
     durationDays:clampDay(draft.durationDays, 1, 365),
     durationLabel:draft.durationLabel || (draft.durationDays + ' days'),
+    intensity:normalizeIntensity(draft.intensity || draft.confirmedBrief?.intensity),
     creatorName:store.currentUser ? (store.currentUser.displayName || (store.currentUser.email || '').split('@')[0]) : '',
     creatorId:store.currentUser?.uid || '',
     creatorEmail:store.currentUser?.email || '',
@@ -773,6 +779,8 @@ function openAIPathBuilder(){
     savedPathId:null,
     savedPath:null,
     staleFields:[],
+    exampleIndex:0,
+    exampleRotationStopped:false,
     triggerElement,
   };
   overlay.addEventListener('click', e => { if(e.target === overlay) requestCloseAIBuilder(); });
@@ -784,6 +792,7 @@ function closeAIBuilder(){
   const builder = aiBuilder;
   abortAIRequest(null, builder);
   stopAIProcessingTicker();
+  stopAIExampleRotation(false);
   cleanupInlineVoiceInput();
   document.removeEventListener('keydown', handleAIBuilderKeydown);
   if(builder?.overlay) builder.overlay.remove();
@@ -1088,6 +1097,7 @@ function handleBuilderVoiceAction(event){
   event.preventDefault();
   const action = button.dataset.voiceAction;
   if(action === 'start'){
+    stopAIExampleRotation(true);
     const field = button.closest('.voice-field')?.querySelector('input, textarea');
     if(field) void startInlineVoiceInput(field);
   }
@@ -1198,9 +1208,18 @@ function naturalCadenceOptions(selected){
   return AI_CADENCE_TYPES.map(value => '<option value="' + esc(value) + '" ' + (value === selected ? 'selected' : '') + '>' + esc(labels[value]) + '</option>').join('');
 }
 
-const AI_GOAL_EXAMPLES = [
+const AI_GOAL_SUGGESTIONS = [
   'Speak French confidently', 'Run my first 15 km', 'Build a design portfolio',
-  'Develop a consistent prayer habit', 'Learn Blender', 'Publish one video each week',
+  'Develop a prayer habit', 'Complete a challenge', 'Learn Blender',
+];
+
+const AI_ROTATING_GOAL_EXAMPLES = [
+  'I want to speak French confidently in nine months',
+  'I want to run my first 15 km',
+  'I want to finish my design course',
+  'I want to read and study one book this month',
+  'I want to build a portfolio with four case studies',
+  'I want to develop a consistent prayer habit',
 ];
 
 function wizardProgressHTML(){
@@ -1222,6 +1241,7 @@ function guidedSummaryHTML(){
     + '<div class="ai-summary-body ' + (aiBuilder.summaryOpen ? 'open' : '') + '">'
     + '<span class="ai-summary-label">Goal</span><p>' + esc(brief?.goal || aiBuilder.draft?.goal || aiBuilder.prompt.goal) + '</p>'
     + (brief?.durationDays || aiBuilder.draft?.durationDays ? '<span class="ai-summary-label">Duration</span><p>' + esc(brief?.durationDays || aiBuilder.draft.durationDays) + ' days</p>' : '')
+    + (brief?.intensity || aiBuilder.draft?.intensity ? '<span class="ai-summary-label">Intensity</span><p>' + esc((brief?.intensity || aiBuilder.draft.intensity || 'balanced').replace(/^\w/, c => c.toUpperCase())) + '</p>' : '')
     + (commitments.length ? '<span class="ai-summary-label">Core Commitments</span><ul>' + commitments.slice(0, 4).map((item, index) => '<li>' + esc(commitmentSummary(item, index).title) + '</li>').join('') + '</ul>' : '')
     + '</div></aside>';
 }
@@ -1245,10 +1265,15 @@ function guidedShellHTML(content, actions = ''){
 
 function goalStepHTML(){
   const busy = hasActiveAIRequest(aiBuilder.requests) || voiceIsActive(aiBuilder.voice);
+  const hasGoalText = !!(aiBuilder.prompt.goal || '').trim();
+  const placeholder = userPrefersReducedMotion()
+    ? AI_ROTATING_GOAL_EXAMPLES[0]
+    : AI_ROTATING_GOAL_EXAMPLES[Number(aiBuilder.exampleIndex || 0) % AI_ROTATING_GOAL_EXAMPLES.length];
   const content = '<section class="ai-step ai-goal-step"><h2 id="aiStepHeading" tabindex="-1">What do you want to achieve?</h2>'
     + '<p class="ai-step-copy">Start in your own words. The next questions will focus only on details that change the plan.</p>'
-    + '<div class="field ai-goal-field"><label for="aiGoal">Your goal</label><textarea id="aiGoal" name="aiGoal" data-ai-autofocus data-voice-enabled="true" data-voice-label="goal" placeholder="Describe the change, skill, habit or project you want to complete.">' + esc(aiBuilder.prompt.goal) + '</textarea></div>'
-    + '<div class="ai-example-list" aria-label="Example goals">' + AI_GOAL_EXAMPLES.map(example => '<button class="ai-example" type="button" data-goal-example="' + esc(example) + '">' + esc(example) + '</button>').join('') + '</div>'
+    + '<div class="field ai-goal-field"><label for="aiGoal">Your goal</label><textarea id="aiGoal" name="aiGoal" data-voice-enabled="true" data-voice-label="goal" placeholder="' + esc(placeholder) + '">' + esc(aiBuilder.prompt.goal) + '</textarea></div>'
+    + '<div class="ai-example-list" aria-label="Goal suggestions">' + AI_GOAL_SUGGESTIONS.map(example => '<button class="ai-example" type="button" data-goal-suggestion="' + esc(example) + '" aria-label="Use suggestion: ' + esc(example) + '" ' + (hasGoalText ? 'disabled aria-disabled="true"' : 'aria-disabled="false"') + '>' + esc(example) + '</button>').join('') + '</div>'
+    + (hasGoalText ? '<p class="hint">Clear the goal field before choosing a suggestion so your text is not overwritten.</p>' : '')
     + '</section>';
   const actions = '<button class="btn" id="aiBasic" type="button" ' + (busy ? 'disabled' : '') + '>Basic starter</button>'
     + '<button class="btn gold" id="aiBuild" type="button" ' + (busy ? 'disabled' : '') + '>Build with AI</button>';
@@ -1317,12 +1342,20 @@ function rhythmAdvancedHTML(brief){
     + assumptionsHTML(brief.assumptions) + '</div>';
 }
 
+function intensityOptionsHTML(selected){
+  const current = normalizeIntensity(selected);
+  return '<fieldset class="ai-intensity-options" aria-describedby="aiIntensityHelp"><legend>Path intensity</legend>'
+    + AI_INTENSITY_LEVELS.map(value => '<label class="ai-intensity-card"><input type="radio" name="aiIntensityChoice" value="' + value + '" ' + (current === value ? 'checked' : '') + '/><span><b>' + esc(value.charAt(0).toUpperCase() + value.slice(1)) + '</b><small>' + esc(AI_INTENSITY_DETAILS[value]) + '</small></span></label>').join('')
+    + '<p id="aiIntensityHelp" class="hint">Intensity changes load, progression, recovery, optional work and evidence expectations. It never overrides safety, fixed rules, supplied resources or your availability.</p></fieldset>';
+}
+
 function rhythmStepHTML(){
   const brief = normalizeGoalBrief(aiBuilder.brief || briefFromPrompt(aiBuilder.prompt));
   const commitments = brief.coreCommitments || [];
   const content = '<section class="ai-step"><h2 id="aiStepHeading" tabindex="-1">Here is the rhythm that gives you the best chance of succeeding</h2>'
     + '<p class="ai-step-copy">This is a recommendation, not a lock. Adjust it until it feels realistic.</p>'
     + '<div class="ai-rhythm-stats"><div><span>Recommended duration</span><b>' + esc(brief.durationDays || 30) + ' days</b></div><div><span>Weekly commitment</span><b>' + esc(brief.estimatedWeeklyHours == null ? (brief.dailyTimeAvailable || 'Flexible') : (brief.estimatedWeeklyHours + ' hours')) + '</b></div><div><span>Progress evidence</span><b>' + esc(brief.evidencePreference || 'Simple reflection or activity log') + '</b></div></div>'
+    + intensityOptionsHTML(brief.intensity)
     + '<div class="ai-commitment-cards">' + (commitments.length ? commitments.map((item, index) => { const summary = commitmentSummary(item, index); return '<article><b>' + esc(summary.title) + '</b><span>' + esc(summary.rhythm || 'Flexible schedule') + '</span><small>' + (summary.required ? 'Core commitment' : 'Optional') + '</small></article>'; }).join('') : '<div class="ai-note">No Core Commitments were suggested yet. Add them under Adjust schedule.</div>') + '</div>'
     + (brief.assumptions.length ? '<div class="ai-visible-assumptions"><b>Assumptions to review</b><ul>' + brief.assumptions.map(item => '<li>' + esc(item.text) + '</li>').join('') + '</ul></div>' : '')
     + '<button class="btn" id="aiAdvancedToggle" type="button" aria-expanded="' + (aiBuilder.advancedOpen ? 'true' : 'false') + '">' + (aiBuilder.advancedOpen ? 'Hide adjustments' : 'Adjust schedule') + '</button>'
@@ -1336,16 +1369,34 @@ function briefItemHTML(title, value, key){
   return '<article class="ai-brief-item"><div><span>' + esc(title) + '</span><p>' + esc(display || 'Not specified') + '</p></div><button class="linklike" type="button" data-brief-edit="' + esc(key) + '">Edit</button></article>';
 }
 
+function structuredResourceSummary(brief){
+  const resources = brief.structuredResources || { courses:[], books:[], programmes:[] };
+  return [
+    ...(resources.courses || []).map(item => 'Course: ' + (item.title || item.url || item.id)),
+    ...(resources.books || []).map(item => 'Book: ' + (item.title || item.author || item.id)),
+    ...(resources.programmes || []).map(item => 'Programme: ' + (item.title || item.source || item.id)),
+  ].filter(Boolean);
+}
+
+function domainSummary(brief){
+  const profile = brief.domainProfile || { primary:'general', detected:[] };
+  const detected = (profile.detected || []).filter(Boolean);
+  return [profile.primary || 'general', detected.length ? 'also ' + detected.filter(item => item !== profile.primary).join(', ') : ''].filter(Boolean).join(' - ');
+}
+
 function conciseBriefHTML(){
   const brief = normalizeGoalBrief(aiBuilder.brief);
+  const resourceSummary = structuredResourceSummary(brief);
   const content = '<section class="ai-step"><h2 id="aiStepHeading" tabindex="-1">Review your path brief</h2><p class="ai-step-copy">Claude will build from this confirmed brief, not from a vague prompt.</p>'
     + '<div class="ai-brief-list">'
     + briefItemHTML('Goal', brief.goal, 'goal') + briefItemHTML('Desired outcome', brief.desiredEndState, 'outcome')
+    + briefItemHTML('Domain context', domainSummary(brief), 'domain')
     + briefItemHTML('Starting point', brief.currentStage, 'starting') + briefItemHTML('Duration', brief.durationDays ? brief.durationDays + ' days' : '', 'duration')
+    + briefItemHTML('Intensity', brief.intensity ? brief.intensity.charAt(0).toUpperCase() + brief.intensity.slice(1) : 'Balanced', 'intensity')
     + briefItemHTML('Weekly time', brief.estimatedWeeklyHours == null ? brief.dailyTimeAvailable : brief.estimatedWeeklyHours + ' hours', 'time')
     + briefItemHTML('Core Commitments', brief.coreCommitments.map(item => item.title), 'commitments')
     + briefItemHTML('Milestones', brief.milestones, 'milestones') + briefItemHTML('Constraints', brief.constraints, 'constraints')
-    + briefItemHTML('Resources', brief.resourcesMentioned, 'resources') + briefItemHTML('Evidence approach', brief.evidencePreference, 'evidence')
+    + briefItemHTML('Resources', resourceSummary.length ? resourceSummary : brief.resourcesMentioned, 'resources') + briefItemHTML('Evidence approach', brief.evidencePreference, 'evidence')
     + briefItemHTML('Visible assumptions', brief.assumptions.map(item => item.text), 'assumptions') + '</div></section>';
   return guidedShellHTML(content, '<button class="btn" id="aiBriefBack" type="button">Back</button><button class="btn gold" id="aiGenerateRoadmap" type="button">Generate my roadmap</button>');
 }
@@ -1432,7 +1483,7 @@ function goalBriefHTML(){
     + '<div class="field"><label>Goal</label><textarea class="ai-brief-field" data-key="goal">' + esc(b.goal) + '</textarea></div>'
     + '<div class="field"><label>Path type</label><select class="ai-brief-field" data-key="pathType">' + selectOptions(AI_PATH_TYPES.filter(type => type !== 'auto'), b.pathType) + '</select></div>'
     + '<div class="field"><label>Goal category</label><input type="text" class="ai-brief-field" data-key="goalCategory" value="' + esc(b.goalCategory) + '"/></div>'
-    + '<div class="field"><label>Intensity</label><select class="ai-brief-field" data-key="intensity"><option value="">Unknown</option>' + selectOptions(['light', 'moderate', 'intense'], b.intensity) + '</select></div>'
+    + '<div class="field"><label>Intensity</label><select class="ai-brief-field" data-key="intensity">' + selectOptions(AI_INTENSITY_LEVELS, normalizeIntensity(b.intensity)) + '</select></div>'
     + '<div class="field"><label>Recommended duration days</label><input type="number" class="ai-brief-field" data-key="durationDays" value="' + esc(b.durationDays || '') + '" placeholder="AI recommendation"/></div>'
     + '<div class="field"><label>Daily time</label><input type="text" class="ai-brief-field" data-key="dailyTimeAvailable" value="' + esc(b.dailyTimeAvailable) + '" placeholder="30 minutes"/></div>'
     + '<div class="field"><label>Estimated daily minutes</label><input type="number" class="ai-brief-field" data-key="estimatedDailyMinutes" value="' + esc(b.estimatedDailyMinutes == null ? '' : b.estimatedDailyMinutes) + '"/></div>'
@@ -1535,6 +1586,42 @@ function stopAIProcessingTicker(){
   if(aiProcessingTimer){ clearInterval(aiProcessingTimer); aiProcessingTimer = null; }
 }
 
+function userPrefersReducedMotion(){
+  return typeof window !== 'undefined'
+    && window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function stopAIExampleRotation(markInteracted = false){
+  if(aiExampleTimer){ clearInterval(aiExampleTimer); aiExampleTimer = null; }
+  if(markInteracted && aiBuilder) aiBuilder.exampleRotationStopped = true;
+}
+
+function updateGoalSuggestionState(){
+  const goal = $('aiGoal');
+  const hasText = !!(goal?.value || '').trim();
+  aiBuilder?.overlay?.querySelectorAll('[data-goal-suggestion]').forEach(button => {
+    button.disabled = hasText;
+    button.setAttribute('aria-disabled', hasText ? 'true' : 'false');
+  });
+}
+
+function startAIExampleRotation(builder){
+  stopAIExampleRotation(false);
+  if(!builder || builder.phase !== 'goal' || builder.exampleRotationStopped || userPrefersReducedMotion()) return;
+  const goal = $('aiGoal');
+  if(!goal || goal.value.trim()) return;
+  builder.exampleIndex = Number(builder.exampleIndex || 0) % AI_ROTATING_GOAL_EXAMPLES.length;
+  goal.placeholder = AI_ROTATING_GOAL_EXAMPLES[builder.exampleIndex];
+  aiExampleTimer = setInterval(() => {
+    if(aiBuilder !== builder || builder.phase !== 'goal' || builder.exampleRotationStopped) return stopAIExampleRotation(false);
+    const input = $('aiGoal');
+    if(!input || input.value.trim() || document.activeElement === input) return stopAIExampleRotation(true);
+    builder.exampleIndex = ((builder.exampleIndex || 0) + 1) % AI_ROTATING_GOAL_EXAMPLES.length;
+    input.placeholder = AI_ROTATING_GOAL_EXAMPLES[builder.exampleIndex];
+  }, 3500);
+}
+
 function startAIProcessingTicker(builder, count){
   stopAIProcessingTicker();
   builder.processingMessageIndex = 0;
@@ -1553,6 +1640,8 @@ function syncGoalInput(){
 function applyAdvancedInputsToBrief(){
   if(!aiBuilder?.brief) return;
   const brief = aiBuilder.brief;
+  const intensityChoice = aiBuilder.overlay?.querySelector('input[name="aiIntensityChoice"]:checked');
+  if(intensityChoice){ brief.intensity = normalizeIntensity(intensityChoice.value); markBriefFieldConfirmed('intensity'); }
   if($('aiDuration')){ brief.durationDays = $('aiDuration').value ? clampDay($('aiDuration').value, 30, 365) : null; markBriefFieldConfirmed('durationDays'); }
   if($('aiDailyTime')){ brief.dailyTimeAvailable = brief.availableTime = $('aiDailyTime').value.trim(); markBriefFieldConfirmed('availableTime'); }
   if($('aiEvidenceStyle')){ brief.evidencePreference = brief.evidencePreferences = $('aiEvidenceStyle').value.trim(); markBriefFieldConfirmed('evidencePreferences'); }
@@ -1648,21 +1737,37 @@ function renderAIBuilder(){
   const generateRoadmap = $('aiGenerateRoadmap'); if(generateRoadmap) generateRoadmap.onclick = generateRoadmapFromBrief;
   const retryInterpret = $('aiRetryInterpret'); if(retryInterpret) retryInterpret.onclick = () => requestGoalInterpretation(false);
   const goal = $('aiGoal'); if(goal){
-    goal.addEventListener('input', syncGoalInput);
+    goal.addEventListener('focus', () => stopAIExampleRotation(true));
+    goal.addEventListener('paste', () => stopAIExampleRotation(true));
+    goal.addEventListener('input', () => { stopAIExampleRotation(true); syncGoalInput(); updateGoalSuggestionState(); });
     goal.addEventListener('keydown', e => {
       if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleBuildWithAI(); }
     });
   }
-  aiBuilder.overlay.querySelectorAll('[data-goal-example]').forEach(button => button.onclick = () => {
-    aiBuilder.prompt.goal = button.dataset.goalExample || '';
-    const input = $('aiGoal'); if(input){ input.value = aiBuilder.prompt.goal; input.focus(); }
+  aiBuilder.overlay.querySelectorAll('[data-goal-suggestion]').forEach(button => button.onclick = () => {
+    const input = $('aiGoal');
+    if((input?.value || aiBuilder.prompt.goal || '').trim()){
+      updateGoalSuggestionState();
+      input?.focus();
+      return;
+    }
+    stopAIExampleRotation(true);
+    aiBuilder.prompt.goal = button.dataset.goalSuggestion || '';
+    if(input){ input.value = aiBuilder.prompt.goal; input.focus(); syncGoalInput(); updateGoalSuggestionState(); }
   });
+  if(aiBuilder.phase === 'goal') startAIExampleRotation(aiBuilder);
+  else stopAIExampleRotation(false);
   const summaryToggle = $('aiToggleSummary'); if(summaryToggle) summaryToggle.onclick = () => { aiBuilder.summaryOpen = !aiBuilder.summaryOpen; renderAIBuilder(); };
   const questionContinue = $('aiQuestionContinue'); if(questionContinue) questionContinue.onclick = continueClarification;
   const questionBack = $('aiQuestionBack'); if(questionBack) questionBack.onclick = goBackClarification;
   const rhythmBack = $('aiRhythmBack'); if(rhythmBack) rhythmBack.onclick = () => { aiBuilder.phase = aiBuilder.brief?.clarifyingQuestions?.length ? 'clarifying' : 'goal'; renderAIBuilder(); };
   const rhythmAccept = $('aiRhythmAccept'); if(rhythmAccept) rhythmAccept.onclick = () => { applyAdvancedInputsToBrief(); aiBuilder.phase = 'brief'; aiBuilder.error = ''; renderAIBuilder(); };
   const advancedToggle = $('aiAdvancedToggle'); if(advancedToggle) advancedToggle.onclick = () => { applyAdvancedInputsToBrief(); aiBuilder.advancedOpen = !aiBuilder.advancedOpen; renderAIBuilder(); };
+  aiBuilder.overlay.querySelectorAll('input[name="aiIntensityChoice"]').forEach(input => input.onchange = e => {
+    if(!aiBuilder.brief) aiBuilder.brief = aiBriefDefaults();
+    aiBuilder.brief.intensity = normalizeIntensity(e.target.value);
+    markBriefFieldConfirmed('intensity');
+  });
   const briefBack = $('aiBriefBack'); if(briefBack) briefBack.onclick = () => { aiBuilder.phase = 'rhythm'; aiBuilder.advancedOpen = false; renderAIBuilder(); };
   aiBuilder.overlay.querySelectorAll('[data-brief-edit]').forEach(button => button.onclick = () => { aiBuilder.phase = 'rhythm'; aiBuilder.advancedOpen = true; aiBuilder.briefEditSection = button.dataset.briefEdit || ''; renderAIBuilder(); });
   const previewBack = $('aiPreviewBack'); if(previewBack) previewBack.onclick = () => { aiBuilder.phase = 'brief'; aiBuilder.fullRoadmap = false; renderAIBuilder(); };

@@ -471,7 +471,7 @@
 .voice-trigger{width:44px;height:44px;border:1px solid var(--line2);border-radius:999px;background:rgba(201,162,75,.12);color:var(--gold);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
 .voice-trigger svg{width:19px;height:19px;fill:currentColor}
 .voice-trigger:hover,.voice-trigger:focus-visible{border-color:var(--gold);background:rgba(201,162,75,.18);outline:none}
-.voice-trigger:disabled{opacity:.45;cursor:not-allowed}
+.voice-trigger:disabled,.ai-example:disabled{opacity:.45;cursor:not-allowed}
 .voice-status,.voice-error{border:1px solid var(--line2);border-radius:8px;background:linear-gradient(180deg,rgba(22,28,26,.96),var(--ink));box-shadow:0 10px 24px rgba(0,0,0,.24);color:var(--sand);font-size:12px;padding:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .voice-status.recording{border-color:rgba(201,162,75,.45)}
 .voice-timer{font-family:ui-monospace,monospace;color:var(--gold-soft)}
@@ -482,7 +482,7 @@
 .voice-error{right:0;max-width:min(420px,100%);color:#e8b9bf}
 .voice-retry-actions{display:flex;gap:7px;flex-wrap:wrap;width:100%}
 @keyframes voicePulse{0%,100%{transform:scaleY(.55);opacity:.65}50%{transform:scaleY(1);opacity:1}}
-@media (prefers-reduced-motion:reduce){.voice-waveform i{animation:none}}
+@media (prefers-reduced-motion:reduce){.voice-waveform i,.ai-processing-mark span{animation:none}.ai-example,.ai-option-card,.voice-trigger{transition:none}}
 .ai-brief-card{margin-top:14px;border:1px solid var(--line2);border-radius:12px;background:rgba(239,231,216,.025);padding:12px}
 .ai-brief-card .ai-review-head{margin-top:0;border-top:none;padding-top:0}
 .ai-brief-card textarea{min-height:58px}
@@ -498,7 +498,7 @@
 .ai-task-row label{display:flex;gap:6px;align-items:center;color:var(--sand);font-size:12px}
 .ai-task-row input[data-key="resourceUrl"]{grid-column:1/-1}
 .ai-task-row textarea{grid-column:1/-1;min-height:54px;resize:vertical}
-@media(max-width:760px){.ai-grid,.ai-edit-row,.ai-task-row{grid-template-columns:1fr}.ai-actions{justify-content:flex-start}}
+@media(max-width:760px){.ai-grid,.ai-edit-row,.ai-task-row,.ai-intensity-options{grid-template-columns:1fr}.ai-actions{justify-content:flex-start}}
 
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .modal-box.guided-builder{width:min(1080px,96vw);max-height:92vh;overflow:hidden}
@@ -536,6 +536,13 @@
 .ai-custom-answer{margin-top:12px}
 .ai-resource-question{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ai-resource-question .field:last-child{grid-column:1/-1}
+.ai-intensity-options{border:1px solid var(--line2);border-radius:10px;padding:11px 12px;margin:14px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ai-intensity-options legend{color:var(--sand-dim);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;padding:0 4px}
+.ai-intensity-options .hint{grid-column:1/-1;margin:0;color:var(--sand-dim)}
+.ai-intensity-card{border:1px solid var(--line2);border-radius:10px;background:rgba(239,231,216,.025);padding:11px;display:flex;align-items:flex-start;gap:9px;color:var(--sand);cursor:pointer}
+.ai-intensity-card:has(input:checked){border-color:var(--gold);background:rgba(201,162,75,.1)}
+.ai-intensity-card b{display:block;color:var(--cream);font-size:13px;margin-bottom:4px}
+.ai-intensity-card small{display:block;font-size:12px;line-height:1.4}
 .ai-processing{text-align:center;padding:42px 12px}
 .ai-processing-mark{display:inline-flex;gap:8px;margin-bottom:16px}
 .ai-processing-mark span{width:12px;height:12px;border-radius:50%;background:var(--gold);animation:aiPulse 1.2s infinite ease-in-out}
@@ -591,7 +598,7 @@
   .ai-step-copy{font-size:13.5px;margin-bottom:14px}
   .ai-goal-field textarea{min-height:126px;font-size:15px}
   .ai-example-list{gap:7px}.ai-example{min-height:44px;flex:1 1 145px}
-  .ai-option-grid,.ai-resource-question,.ai-brief-list,.ai-preview-grid,.ai-rhythm-stats,.ai-ready-grid{grid-template-columns:1fr}
+  .ai-option-grid,.ai-resource-question,.ai-brief-list,.ai-preview-grid,.ai-rhythm-stats,.ai-ready-grid,.ai-intensity-options{grid-template-columns:1fr}
   .ai-option-card{min-height:56px;padding:12px}
   .ai-wizard-summary{display:none}
   .ai-wizard-actions{position:sticky;bottom:0;z-index:4;padding:10px 14px calc(10px + env(safe-area-inset-bottom));justify-content:stretch}

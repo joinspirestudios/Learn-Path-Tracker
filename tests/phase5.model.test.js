@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
+  AI_INTENSITY_DETAILS, AI_INTENSITY_LEVELS,
   MAX_AI_CLARIFICATION_ROUNDS, aiPromptDefaults, answerValueForQuestion,
   cadenceLabel, canStartAIRequest, commitmentSummary, creationStageForPhase,
   isMeaningfulAIGoal, normalizeClarifyingQuestions, normalizeCoreCommitments,
-  recoverAIBuilderState, routeInterpretedBrief,
+  mergeBriefPreservingConfirmed, normalizeConfirmedBrief, normalizeDomainProfile,
+  normalizeIntensity, normalizeStructuredResources, recoverAIBuilderState, routeInterpretedBrief,
 } from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
 import { platformToLocalPath, resolveCreatorName } from '../src/platform.js';
@@ -18,6 +20,58 @@ test('generic AI builder defaults are neutral', () => {
   assert.equal(defaults.durationDays, null);
   assert.equal(defaults.pathType, 'auto');
   assert.deepEqual(defaults.coreCommitments, []);
+});
+
+test('Phase 5.5 domain model defaults and intensity values are canonical', () => {
+  const brief = normalizeConfirmedBrief({ goal:'Learn Blender' });
+  assert.deepEqual(AI_INTENSITY_LEVELS, ['soft', 'balanced', 'intensive']);
+  assert.equal(brief.intensity, 'balanced');
+  assert.equal(brief.domainProfile.primary, 'general');
+  assert.deepEqual(brief.structuredResources, { courses:[], books:[], programmes:[] });
+  assert.equal(normalizeIntensity('light'), 'soft');
+  assert.equal(normalizeIntensity('moderate'), 'balanced');
+  assert.equal(normalizeIntensity('intense'), 'intensive');
+  assert.match(AI_INTENSITY_DETAILS.soft, /recovery/i);
+});
+
+test('domain detection preserves course, book, fitness, and multi-domain signals conservatively', () => {
+  assert.equal(normalizeDomainProfile({}, 'I want to finish my design course').primary, 'course');
+  assert.equal(normalizeDomainProfile({}, 'I want to study a 420-page book').primary, 'book');
+  assert.equal(normalizeDomainProfile({}, 'I can run 1 km and want to reach 15 km').primary, 'fitness');
+  const multi = normalizeDomainProfile({}, 'Complete a running course and prepare for a 5 km race');
+  assert.deepEqual(multi.detected.sort(), ['course', 'fitness']);
+  assert.equal(normalizeDomainProfile({}, 'I want to learn Blender').primary, 'general');
+});
+
+test('structured resources normalize, dedupe, sanitize URLs, and preserve fixed sequences', () => {
+  const resources = normalizeStructuredResources({
+    courses:[
+      { title:'UI Design Course', url:'https://example.com/course', currentPosition:{ label:'Module 3', index:3 }, totalUnits:12, fixedSequence:true },
+      { title:'UI Design Course', url:'https://example.com/course' },
+      { title:'Unsafe', url:'javascript:alert(1)' },
+    ],
+    books:[{ title:'Design Book', pageCount:420, currentPage:40, studyIntention:'Take notes' }],
+    programmes:[{ title:'Coach plan', fixedSequence:true, notes:'Keep the order.' }],
+  });
+  assert.equal(resources.courses.length, 2);
+  assert.equal(resources.courses[0].currentPosition.index, 3);
+  assert.equal(resources.courses[0].fixedSequence, true);
+  assert.equal(resources.courses[1].url, '');
+  assert.equal(resources.books[0].pageCount, 420);
+  assert.equal(resources.programmes[0].fixedSequence, true);
+});
+
+test('confirmed domain resources cannot be overwritten by a later provider brief', () => {
+  const base = normalizeConfirmedBrief({
+    goal:'Finish a course',
+    structuredResources:{ courses:[{ title:'Original Course', fixedSequence:true }] },
+    confirmedFields:['courseResource'],
+  });
+  const merged = mergeBriefPreservingConfirmed(base, {
+    structuredResources:{ courses:[{ title:'Different Course', fixedSequence:false }] },
+  });
+  assert.equal(merged.structuredResources.courses[0].title, 'Original Course');
+  assert.equal(merged.structuredResources.courses[0].fixedSequence, true);
 });
 
 test('legacy daily strings migrate into structured core commitments', () => {
@@ -50,6 +104,26 @@ test('generation prompt preserves confirmed commitments and expanded cadence', (
   const draft = basicStarterDraft(input);
   assert.equal(draft.coreCommitments[0].title, 'Edit two focused sessions');
   assert.equal(draft.tasks[0].scheduleType, 'times_per_week');
+});
+
+test('generation prompt carries Phase 5.5 domain resources, fitness context, and intensity', () => {
+  const input = normalizePrompt({
+    confirmedBrief:normalizeConfirmedBrief({
+      goal:'Run from 1 km to 15 km while following a course',
+      durationDays:84,
+      intensity:'intensive',
+      domainProfile:{ primary:'fitness', detected:['fitness', 'course'], confidence:'high' },
+      structuredResources:{ courses:[{ title:'Running Course', fixedSequence:true, currentPosition:{ label:'Week 2', index:2 } }] },
+      fitnessContext:{ activity:'running', baseline:'1 km', target:'15 km', frequencyPerWeek:3, sessionMinutes:45, limitations:'No injury reported' },
+    }),
+  });
+  assert.equal(input.intensity, 'intensive');
+  assert.equal(input.domainProfile.primary, 'fitness');
+  assert.equal(input.structuredResources.courses[0].title, 'Running Course');
+  assert.equal(input.fitnessContext.baseline, '1 km');
+  const draft = basicStarterDraft(input);
+  assert.equal(draft.resources[0].title, 'Running Course');
+  assert.equal(draft.intensity, 'intensive');
 });
 
 test('all supported cadence types remain usable while daily and once stay compatible', () => {
@@ -96,7 +170,7 @@ test('normalized generated drafts preserve selected-days task settings', () => {
   const input = normalizePrompt({ confirmedBrief:{ goal:'Practice guitar', durationDays:21 } });
   const draft = normalizeDraft({
     title:'Guitar practice', description:'', goal:'Practice guitar', category:'skill',
-    durationDays:21, durationLabel:'21 days', difficulty:'beginner', intensity:'moderate',
+    durationDays:21, durationLabel:'21 days', difficulty:'beginner', intensity:'balanced',
     previewTitle:'Guitar practice', previewDescription:'', coreCommitments:[],
     sections:[{ title:'Practice', description:'', order:0 }],
     tasks:[{
@@ -153,6 +227,11 @@ test('AI builder renders only Basic starter and Build with AI entry actions', ()
   assert.match(source, />Basic starter</);
   assert.match(source, /id=\"aiBuild\"/);
   assert.match(source, />Build with AI</);
+  assert.match(source, /data-goal-suggestion/);
+  assert.match(source, /AI_ROTATING_GOAL_EXAMPLES/);
+  assert.match(source, /stopAIExampleRotation\(true\)/);
+  assert.match(source, /prefers-reduced-motion: reduce|prefers-reduced-motion:reduce/);
+  assert.match(source, /name=\"aiIntensityChoice\"/);
   const goalStep = source.slice(source.indexOf('function goalStepHTML'), source.indexOf('function processingStepHTML'));
   assert.match(goalStep, /What do you want to achieve/);
   assert.doesNotMatch(goalStep, /aiDuration/);

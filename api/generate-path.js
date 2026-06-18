@@ -9,7 +9,7 @@ import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
-const INTENSITIES = ['light', 'moderate', 'intense'];
+const INTENSITIES = ['soft', 'balanced', 'intensive'];
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'creative_project', 'business', 'academic', 'spiritual/devotional', 'content', 'custom'];
 const CADENCE_TYPES = ['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval', 'once', 'sequential'];
 const RECURRING_CADENCES = ['daily', 'weekdays', 'selected_days', 'times_per_week', 'weekly', 'interval'];
@@ -180,6 +180,7 @@ export function normalizePrompt(body = {}){
     confirmedBrief.coreCommitments,
     confirmedBrief.nonNegotiables
   );
+  const structuredResources = confirmedBrief.structuredResources || { courses:[], books:[], programmes:[] };
   return {
     goal:text(confirmedBrief.goal || confirmedBrief.interpretedGoal).slice(0, 700),
     durationDays:suppliedDuration,
@@ -188,6 +189,9 @@ export function normalizePrompt(body = {}){
     currentLevel:cleanChoice(confirmedBrief.currentLevel, LEVELS, null),
     intensity:cleanChoice(confirmedBrief.intensity, INTENSITIES, null),
     pathType,
+    domainProfile:confirmedBrief.domainProfile || { primary:'general', detected:[], confidence:'low' },
+    structuredResources,
+    fitnessContext:confirmedBrief.fitnessContext || null,
     preferredSchedule:text(confirmedBrief.scheduleNotes).slice(0, 500),
     resourceLinks:confirmedBrief.resources.map(cleanUrl).filter(Boolean).join('\n').slice(0, 1200),
     currentStage:text(confirmedBrief.currentBaseline).slice(0, 700),
@@ -251,6 +255,9 @@ function rejectConflictingLegacyFields(body, confirmedBrief){
     excludedTasks:confirmedBrief.excludedTasks,
     excludeTasks:confirmedBrief.excludedTasks,
     assumptions:confirmedBrief.assumptions,
+    domainProfile:confirmedBrief.domainProfile,
+    structuredResources:confirmedBrief.structuredResources,
+    fitnessContext:confirmedBrief.fitnessContext,
     confirmedFields:confirmedBrief.confirmedFields,
     briefConfirmed:confirmedBrief.briefConfirmed,
   };
@@ -322,6 +329,26 @@ function parseResources(raw){
   }));
 }
 
+function resourcesFromStructured(input){
+  const structured = input.structuredResources || {};
+  const items = [
+    ...(Array.isArray(structured.courses) ? structured.courses : []),
+    ...(Array.isArray(structured.books) ? structured.books : []),
+    ...(Array.isArray(structured.programmes) ? structured.programmes : []),
+  ];
+  return items.map((item, index) => ({
+    title:text(item.title || item.url || `Resource ${index + 1}`).slice(0, 100),
+    url:cleanUrl(item.url) || '',
+    description:text([
+      item.type ? `${item.type} resource` : 'User-provided resource',
+      item.fixedSequence === true ? 'fixed sequence' : '',
+      item.currentPosition?.label || item.currentPosition || '',
+      item.pageCount ? `${item.pageCount} pages` : '',
+      item.notes || item.studyIntention || item.assignmentNotes || '',
+    ].filter(Boolean).join(' - ')).slice(0, 300),
+  })).filter(item => item.title || item.url || item.description).slice(0, 12);
+}
+
 export function basicStarterDraft(input, source = 'fallback'){
   const durationDays = clamp(input.durationDays, 1, 365, 30);
   const title = titleFromGoal(input.goal);
@@ -375,7 +402,7 @@ export function basicStarterDraft(input, source = 'fallback'){
     coreCommitments:commitments,
     sections,
     tasks,
-    resources:parseResources(`${input.resourceLinks || ''} ${input.existingResources || ''}`),
+    resources:[...resourcesFromStructured(input), ...parseResources(`${input.resourceLinks || ''} ${input.existingResources || ''}`)].slice(0, 12),
     notes,
   }, input, source);
 }
@@ -583,7 +610,7 @@ export function normalizeDraft(raw, input, source = 'ai'){
     coreCommitments:commitments,
     sections:sections.map((section, index) => ({ ...section, order:index })),
     tasks,
-    resources:parseResources(`${input.resourceLinks || ''} ${input.existingResources || ''}`),
+    resources:[...resourcesFromStructured(input), ...parseResources(`${input.resourceLinks || ''} ${input.existingResources || ''}`)].slice(0, 12),
     notes:(Array.isArray(raw.notes) ? raw.notes : []).map(note => text(note).slice(0, 300)).filter(Boolean).slice(0, 10),
     source:recovered ? 'anthropic_recovered' : source,
   };
@@ -600,6 +627,12 @@ function buildPrompt(input){
     'Use sections for phases and tasks for supporting milestones, progression work, implementation checks, and review points.',
     'Treat confirmedBrief as the user-confirmed source of truth. Never overwrite its confirmedFields.',
     'Use the supplied confirmed duration. Do not insert a hidden default duration, level, or intensity.',
+    'Use intensity as soft, balanced, or intensive. It may affect time load, task volume, progression, recovery, optional work, and evidence expectations.',
+    'Intensity must never override safety boundaries, fixed challenge rules, confirmed resources, fixed course or programme sequence, explicit availability, or accepted constraints.',
+    'For course goals, organize the confirmed course from current progress. Do not invent lesson names, module titles, or course content.',
+    'For book goals, keep reading or study work within confirmed page scope and current progress. Do not invent chapters or editions.',
+    'For fitness goals, respect baseline, frequency, session length, recovery, limitations, and safety notes. Do not provide diagnosis or guarantees.',
+    'For existing programmes, preserve the programme structure and make supporting tasks secondary.',
     'Only use assumptions whose accepted flag is true. Do not introduce material assumptions that were not reviewed.',
     'Support daily, weekdays, selected_days, times_per_week, weekly, interval, once, and sequential schedules. Preserve legacy daily and once behavior.',
     'Use recurring schedules instead of creating one task per day. Use sequential for ordered learning and once for milestones or deliverables.',
