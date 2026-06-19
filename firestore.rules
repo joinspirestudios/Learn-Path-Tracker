@@ -51,8 +51,7 @@ service cloud.firestore {
     }
 
     function canReadFullPath(pathId) {
-      return pathDoc(pathId).data.visibility == "public"
-        || isOwner(pathId)
+      return isOwner(pathId)
         || isMember(pathId);
     }
 

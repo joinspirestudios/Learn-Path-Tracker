@@ -8,7 +8,7 @@ import { store, STATE_KEY, CAT_PREFIX, LEGACY_KEY, migrateState } from './store.
 import { Store, flash } from './helpers.js';
 import { safeExternalUrl } from './urls.js';
 import {
-  canViewPath, localToPlatformParts, normalizePathDoc, platformToLocalPath,
+  canAccessFullPath, localToPlatformParts, normalizePathDoc, platformToLocalPath,
 } from './platform.js';
 import {
   dateForJourneyDay, journeyDayForDate, localDateString,
@@ -597,6 +597,20 @@ export async function dbReconcileEnrollment(pathId, totalTaskCount = 0){
 }
 
 export async function dbEnsureEnrollment(pathId, options = {}){
+  const localPath = store.state.userPaths?.[pathId] || null;
+  const cloudRecord = store.platformPaths?.[pathId] || null;
+  const platformPath = localPath?.platform || cloudRecord?.path
+    ? (localPath?.platformData || cloudRecord?.path || localPath)
+    : null;
+  const platformMembership = localPath?.membership || cloudRecord?.membership || null;
+  if(platformPath){
+    if(!store.currentUser){
+      throw enrollmentFailure('unauthenticated', 'Sign in before starting this platform path.');
+    }
+    if(!canAccessFullPath(platformPath, platformMembership, store.currentUser)){
+      throw enrollmentFailure('join_required', 'Join this path before starting it.');
+    }
+  }
   if(cloudActive()){
     const userId = store.currentUser?.uid;
     if(!userId){
@@ -805,7 +819,8 @@ async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
   const path = normalizePathDoc(docSnap.id, docSnap.data());
   const membership = includeChildren ? await loadMembership(docSnap.id) : null;
   let children = { sections:[], tasks:[] };
-  if(includeChildren && canViewPath(path, membership, store.currentUser)){
+  const fullAccess = includeChildren && canAccessFullPath(path, membership, store.currentUser);
+  if(fullAccess){
     children = await loadPathChildren(docSnap.id);
   }
   const publicProgress = ['public', 'unlisted'].includes(path.visibility)
@@ -814,7 +829,7 @@ async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
         includeCurrentUserReaction:!!includeChildren,
       })
     : [];
-  return { id:docSnap.id, path, membership, publicProgress, ...children, childrenLoaded: !!includeChildren };
+  return { id:docSnap.id, path, membership, publicProgress, ...children, childrenLoaded: fullAccess };
 }
 
 export async function dbLoadPlatformPath(id){
@@ -827,7 +842,7 @@ export async function dbLoadPlatformPath(id){
       return null;
     }
     const record = await loadPlatformRecordFromDoc(snap, true);
-    if(canViewPath(record.path, record.membership, store.currentUser)) upsertPlatformPath(record);
+    if(canAccessFullPath(record.path, record.membership, store.currentUser)) upsertPlatformPath(record);
     else store.platformPaths[id] = record;
     store.cloudDiagnostics.selectedPathChildrenStatus = 'loaded';
     return record;

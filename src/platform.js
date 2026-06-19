@@ -148,11 +148,14 @@ export function isOwner(path, currentUser){
   return !!(path && currentUser && path.ownerId === currentUser.uid);
 }
 
-export function canViewPath(path, membership, currentUser){
+export function canAccessFullPath(path, membership, currentUser){
   if(!path) return false;
   if(isOwner(path, currentUser)) return true;
-  if(membershipRole(membership, currentUser)) return true;
-  return path.visibility === 'public';
+  return !!membershipRole(membership, currentUser);
+}
+
+export function canViewPath(path, membership, currentUser){
+  return canAccessFullPath(path, membership, currentUser);
 }
 
 export function canPreviewPath(path, currentUser){
@@ -186,7 +189,7 @@ export function canRequestAccess(path, membership, currentUser){
   return !!(
     path &&
     currentUser &&
-    !canViewPath(path, membership, currentUser) &&
+    !canAccessFullPath(path, membership, currentUser) &&
     path.visibility !== 'public' &&
     path.previewEnabled
   );

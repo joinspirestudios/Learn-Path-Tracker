@@ -125,6 +125,14 @@ test('boot and view sources preserve shared routes instead of falling through to
   assert.match(views, /setPendingPathRoute/);
 });
 
+test('full path routes require owner or member access before opening the plan', () => {
+  const views = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const routeBlock = views.slice(views.indexOf('async function openPathRoute'), views.indexOf('function renderMissingPath'));
+  assert.match(routeBlock, /canAccessFullPath\(record\.path, record\.membership, store\.currentUser\)/);
+  assert.match(routeBlock, /renderPathPreview\(record\)/);
+  assert.doesNotMatch(routeBlock, /canViewPath\(record\.path/);
+});
+
 test('Vercel clean path rewrite is narrow and preserves API and Firebase rewrites', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
   const rewrites = config.rewrites || [];

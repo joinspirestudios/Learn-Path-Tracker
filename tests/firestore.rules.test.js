@@ -152,6 +152,44 @@ describe('deterministic enrollment bootstrap', () => {
     assert.equal(snap.data().stats.proofSubmissionCount, 2);
   });
 
+  test('public path metadata is readable but sections and tasks require membership', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const adminDb = context.firestore();
+      await setDoc(doc(adminDb, 'paths', pathId), {
+        id:pathId,
+        ownerId:userA,
+        title:'Public join-gated path',
+        visibility:'public',
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'sections', 'section-1'), {
+        id:'section-1',
+        title:'Section 1',
+        order:1,
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'tasks', 'task-1'), {
+        id:'task-1',
+        sectionId:'section-1',
+        title:'Task 1',
+        order:1,
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'members', userB), {
+        uid:userB,
+        role:'viewer',
+      });
+    });
+
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    const nonMemberDb = testEnv.authenticatedContext('user-c').firestore();
+    const memberDb = testEnv.authenticatedContext(userB).firestore();
+    const ownerDb = testEnv.authenticatedContext(userA).firestore();
+    await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId)));
+    await assertFails(getDoc(doc(signedOut, 'paths', pathId, 'sections', 'section-1')));
+    await assertFails(getDocs(collection(nonMemberDb, 'paths', pathId, 'tasks')));
+    await assertSucceeds(getDoc(doc(memberDb, 'paths', pathId, 'sections', 'section-1')));
+    await assertSucceeds(getDocs(collection(memberDb, 'paths', pathId, 'tasks')));
+    await assertSucceeds(getDoc(doc(ownerDb, 'paths', pathId, 'tasks', 'task-1')));
+  });
+
   test('denies browser writes to server-managed path stats', async () => {
     const ownerDb = testEnv.authenticatedContext(userA).firestore();
     await assertFails(setDoc(doc(ownerDb, 'paths', 'stats-on-create'), {

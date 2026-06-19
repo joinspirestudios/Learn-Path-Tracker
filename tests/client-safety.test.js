@@ -226,6 +226,32 @@ test('public join button disables duplicate clicks while join request is active'
   assert.match(source, /id="joinPathBtn"[^+]*\+ \(joining \? 'disabled'/);
 });
 
+test('public path preview requires join before full path open or enrollment', () => {
+  const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const dbSource = fs.readFileSync(new URL('../src/db.js', import.meta.url), 'utf8');
+  const syncSource = fs.readFileSync(new URL('../src/sync.js', import.meta.url), 'utf8');
+  const catalogBlock = viewSource.slice(viewSource.indexOf('async function openCatalogPath'), viewSource.indexOf('export function renderCatalog'));
+  const openBlock = viewSource.slice(viewSource.indexOf('export async function openSkill'), viewSource.indexOf('export function goCatalog'));
+  const routeBlock = viewSource.slice(viewSource.indexOf('async function openPathRoute'), viewSource.indexOf('function renderMissingPath'));
+  const syncBlock = viewSource.slice(viewSource.indexOf('function syncOpenedPathInBackground'), viewSource.indexOf('export async function openSkill'));
+  const planBlock = viewSource.slice(viewSource.indexOf('export function renderPlan'), viewSource.indexOf('  const editable = canEditUserPath'));
+  const startBlock = viewSource.slice(viewSource.indexOf('async function startPathJourney'), viewSource.indexOf('async function startSavedPathDayOne'));
+  const ensureBlock = dbSource.slice(dbSource.indexOf('export async function dbEnsureEnrollment'), dbSource.indexOf('function upsertPlatformPath'));
+  assert.match(catalogBlock, /openPathRoute\(id, true/);
+  assert.match(viewSource, /View &rarr;/);
+  assert.match(openBlock, /!canOpenFullPath\(id, existingDef\)/);
+  assert.match(openBlock, /renderPathPreview\(previewRecord\)/);
+  assert.match(routeBlock, /canAccessFullPath\(record\.path, record\.membership, store\.currentUser\)/);
+  assert.doesNotMatch(routeBlock, /canViewPath\(record\.path/);
+  assert.match(syncBlock, /def\?\.platform && !canOpenFullPath\(id, def\)/);
+  assert.match(planBlock, /def\.platform && !canOpenFullPath\(id, def\)/);
+  assert.match(startBlock, /Join this path before starting it/);
+  assert.match(ensureBlock, /platformPath/);
+  assert.match(ensureBlock, /join_required/);
+  assert.match(ensureBlock, /canAccessFullPath\(platformPath, platformMembership, store\.currentUser\)/);
+  assert.match(syncSource, /join_required:'Join this path before starting it\.'/);
+});
+
 test('public progress interaction UI escapes comments and uses protected API helpers', () => {
   const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');

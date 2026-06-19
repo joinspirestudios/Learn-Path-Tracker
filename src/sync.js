@@ -54,6 +54,7 @@ export function cloudStatusMessage(status){
     timeout:'Firestore did not respond in time. Your local data remains available. Retry cloud connection.',
     offline:'Firestore is unavailable or offline. Your local data remains available. Retry cloud connection.',
     unauthenticated:'Sign in again before starting this path.',
+    join_required:'Join this path before starting it.',
     invalid_argument:'The enrollment request is invalid. Reload the path and try again.',
     malformed_enrollment:'This enrollment record is incomplete and must be repaired.',
     enrollment_ownership_mismatch:'This enrollment record has an ownership mismatch and must be repaired.',
@@ -79,6 +80,9 @@ export function classifyFirebaseError(error){
   if(code === 'operation_timeout') return { status:'timeout', message:cloudStatusMessage('timeout') };
   if(code === 'unauthenticated' || lower.includes('unauthenticated')){
     return { status:'unauthenticated', message:cloudStatusMessage('unauthenticated') };
+  }
+  if(code === 'join_required'){
+    return { status:'join_required', message:cloudStatusMessage('join_required') };
   }
   if(code === 'enrollment_ownership_mismatch'){
     return { status:'enrollment_ownership_mismatch', message:cloudStatusMessage('enrollment_ownership_mismatch') };

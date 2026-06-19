@@ -14,7 +14,7 @@ import {
 } from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
 import {
-  activeThisWeekIsCurrent, canJoinPath, canPreviewPath, currentUtcWeekKey,
+  activeThisWeekIsCurrent, canAccessFullPath, canJoinPath, canPreviewPath, currentUtcWeekKey,
   displayableActiveThisWeek, normalizePathStats, platformToLocalPath,
   resolveCreatorName, trustBadgesForStats,
 } from '../src/platform.js';
@@ -257,6 +257,10 @@ test('Phase 5.7 platform visibility and stats model supports joinable public pag
   assert.equal(canJoinPath(privatePath, null, viewer), false);
   assert.equal(canJoinPath(publicPath, null, owner), false);
   assert.equal(canJoinPath(publicPath, { uid:'viewer', role:'viewer' }, viewer), false);
+  assert.equal(canAccessFullPath(publicPath, null, null), false);
+  assert.equal(canAccessFullPath(publicPath, null, viewer), false);
+  assert.equal(canAccessFullPath(publicPath, { uid:'viewer', role:'viewer' }, viewer), true);
+  assert.equal(canAccessFullPath(publicPath, null, owner), true);
   assert.deepEqual(normalizePathStats(publicPath.stats), {
     joinedCount:4,
     activeThisWeek:0,

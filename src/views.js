@@ -35,12 +35,12 @@ import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
 import {
-  canJoinPath, canManageMembers, canPreviewPath, canRequestAccess, canViewPath,
+  canAccessFullPath, canJoinPath, canManageMembers, canPreviewPath, canRequestAccess, canViewPath,
   activeThisWeekIsCurrent, displayableActiveThisWeek,
   isOwner, isPathParticipant, normalizePathStats, resolveCreatorName, trustBadgesForStats,
 } from './platform.js';
 import {
-  hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathShareLink,
+  hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathPreviewHash, pathShareLink,
 } from './routes.js';
 import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
@@ -353,6 +353,35 @@ export async function toggle(id, val){
 /* ============================================================ */
 /* ---------- CATALOG (the start screen) ---------------------- */
 /* ============================================================ */
+function platformAccessRecord(id, def = store.state.userPaths?.[id]){
+  const record = store.platformPaths?.[id] || {};
+  const path = def?.platformData || record.path || def || null;
+  return {
+    id,
+    path,
+    membership:def?.membership || record.membership || null,
+    sections:record.sections || [],
+    tasks:record.tasks || [],
+    publicProgress:record.publicProgress || [],
+    childrenLoaded:!!(record.childrenLoaded || def?.childrenLoaded),
+  };
+}
+
+function canOpenFullPath(id, def = store.state.userPaths?.[id]){
+  if(!def?.platform) return true;
+  const record = platformAccessRecord(id, def);
+  return canAccessFullPath(record.path, record.membership, store.currentUser);
+}
+
+async function openCatalogPath(id){
+  const def = store.state.userPaths?.[id];
+  if(def?.platform && !canOpenFullPath(id, def)){
+    await openPathRoute(id, true, {}, { source:'catalog' });
+    return;
+  }
+  await openSkill(id);
+}
+
 export function renderCatalog(){
   let h = '<div class="cat-intro"><div class="section-title">Discover <em>Learning Paths</em></div>'
     + '<div class="muted" style="max-width:640px">Explore public journeys, keep your own private paths close, and turn local drafts into shareable learning paths when you are ready.</div></div>';
@@ -378,6 +407,7 @@ export function renderCatalog(){
     const def = store.state.userPaths[id];
     const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
     const goal = pathGoal(id);
+    const cta = def.platform && !canOpenFullPath(id, def) ? 'View &rarr;' : 'Open &rarr;';
     const badge = def.platform
       ? ('By ' + resolveCreatorName(def, store.currentUser))
       : (cloudActive() ? 'Local draft' : 'Your path');
@@ -387,7 +417,7 @@ export function renderCatalog(){
       + (goal ? ('<div class="sc-tag">' + esc(goal) + '</div>') : '')
       + '<div class="sc-blurb">' + pathCardBlurb(def, t.total) + '</div>'
       + '<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:' + pct + '%"></div></div><span class="sc-pct">' + pct + '%</span></div>'
-      + '<div class="sc-cta">Open →</div></button>';
+      + '<div class="sc-cta">' + cta + '</div></button>';
     if(!def.platform && cloudActive()){
       h += '<button class="mini-import standalone" data-import="' + esc(id) + '">Publish/import "' + esc(pathTitle(id)) + '" to platform</button>';
     }
@@ -416,7 +446,7 @@ export function renderCatalog(){
     c.classList.add('is-opening');
     const cta = c.querySelector('.sc-cta');
     if(cta) cta.textContent = 'Opening...';
-    openSkill(c.dataset.id);
+    openCatalogPath(c.dataset.id);
   });
   $('content').querySelectorAll('[data-import]').forEach(b => b.onclick = e => {
     e.stopPropagation();
@@ -2466,6 +2496,8 @@ function renderOpenedPath(id, options = {}){
 
 function syncOpenedPathInBackground(id){
   if(!isUserPath(id)) return;
+  const def = store.state.userPaths[id];
+  if(def?.platform && !canOpenFullPath(id, def)) return;
   const syncToken = Date.now() + ':' + id;
   store.activeEnrollmentSync = syncToken;
   trackOperation('start enrollment', withTimeout((async () => {
@@ -2495,7 +2527,30 @@ export async function openSkill(id, options = {}){
   store.state.current = id; ensureSkill(id); store.editMode = false;
   selectedJourneyDay = options.day ? (Number(options.day) || null) : null;
   if(isUserPath(id)){
-    const existingDef = store.state.userPaths[id];
+    let existingDef = store.state.userPaths[id];
+    if(existingDef?.platform && !canOpenFullPath(id, existingDef)){
+      let previewRecord = platformAccessRecord(id, existingDef);
+      if(cloudAvailable()){
+        try{
+          const loaded = await trackOperation('path preview access check', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load path preview'));
+          existingDef = store.state.userPaths[id] || existingDef;
+          if(canAccessFullPath(loaded?.path, loaded?.membership, store.currentUser)){
+            previewRecord = loaded;
+          } else {
+            previewRecord = loaded || platformAccessRecord(id, existingDef);
+          }
+        }catch(e){
+          console.warn('path access check:', e && e.message ? e.message : e);
+        }
+      }
+      if(!canOpenFullPath(id, existingDef)){
+        openingPathId = null;
+        setRoute(pathPreviewHash(id));
+        if(canPreviewPath(previewRecord.path, store.currentUser)) renderPathPreview(previewRecord);
+        else renderAccessBlocked(previewRecord);
+        return false;
+      }
+    }
     if(existingDef?.platform && !pathTasksReady(existingDef)){
       renderPathOpening('Opening path...', 'Loading path tasks before enabling the roadmap.');
       setRoute(pathHash(id, options.tab || 'plan', selectedJourneyDay));
@@ -2579,7 +2634,7 @@ async function openPathRoute(id, forcePreview, options = {}, routeMeta = {}){
     renderMissingPath();
     return;
   }
-  if(!forcePreview && canViewPath(record.path, record.membership, store.currentUser)){
+  if(!forcePreview && canAccessFullPath(record.path, record.membership, store.currentUser)){
     clearPendingPathRoute(id);
     await openSkill(id, options);
     return;
@@ -2724,7 +2779,11 @@ function publicDomainSummary(path){
 
 function milestonePreviewHTML(record){
   const sections = [...(record.sections || [])].sort((a, b) => (a.order || 0) - (b.order || 0)).slice(0, 6);
-  if(!sections.length) return '<div class="muted">Milestones will appear here when the creator adds sections.</div>';
+  if(!sections.length){
+    return canAccessFullPath(record.path, record.membership, store.currentUser)
+      ? '<div class="muted">Milestones will appear here when the creator adds sections.</div>'
+      : '<div class="muted">Join this path to unlock the full daily roadmap.</div>';
+  }
   return sections.map(section => '<div class="scheme-row"><b>' + esc(section.title) + '</b><span>' + esc(section.description || 'Milestone in this path') + '</span></div>').join('');
 }
 
@@ -3808,6 +3867,12 @@ async function unpublishCompletedProgress(id, day){
 }
 
 async function startPathJourney(id, def, triggerButton = null){
+  if(def?.platform && !canOpenFullPath(id, def)){
+    flash('Join this path before starting it.');
+    const record = platformAccessRecord(id, def);
+    if(canPreviewPath(record.path, store.currentUser)) renderPathPreview(record);
+    return false;
+  }
   if(!pathCanStart(def)){
     flash('Loading tasks. Try again in a moment.');
     return false;
@@ -3979,6 +4044,12 @@ function wireJourneyControls(id, def){
 export function renderPlan(){
   const id = store.state.current, def = curUser();
   if(!def){ renderCatalog(); return; }
+  if(def.platform && !canOpenFullPath(id, def)){
+    const record = platformAccessRecord(id, def);
+    if(canPreviewPath(record.path, store.currentUser)) renderPathPreview(record);
+    else renderAccessBlocked(record);
+    return;
+  }
   const editable = canEditUserPath(id);
   if(store.editMode && !editable) store.editMode = false;
   const pathStats = normalizePathStats(def.stats, def);
