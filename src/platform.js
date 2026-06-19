@@ -30,6 +30,21 @@ export function cleanVisibility(v){
   return PATH_VISIBILITIES.includes(v) ? v : 'private';
 }
 
+export function normalizePathStats(value = {}, legacy = {}){
+  const source = value && typeof value === 'object' ? value : {};
+  const joined = Number(source.joinedCount ?? legacy.joinedCount ?? 0);
+  const active = Number(source.activeThisWeek ?? legacy.activeThisWeek ?? 0);
+  const completed = Number(source.completedCount ?? legacy.completedCount ?? 0);
+  const proof = Number(source.proofSubmissionCount ?? legacy.proofSubmissionCount ?? 0);
+  return {
+    joinedCount:Number.isFinite(joined) && joined > 0 ? Math.floor(joined) : 0,
+    activeThisWeek:Number.isFinite(active) && active > 0 ? Math.floor(active) : 0,
+    completedCount:Number.isFinite(completed) && completed > 0 ? Math.floor(completed) : 0,
+    proofSubmissionCount:Number.isFinite(proof) && proof > 0 ? Math.floor(proof) : 0,
+    updatedAt:source.updatedAt || legacy.statsUpdatedAt || null,
+  };
+}
+
 function phase55Meta(data = {}){
   const confirmed = data.aiBrief || data.confirmedBrief || null;
   const aiBrief = confirmed && typeof confirmed === 'object' ? normalizeConfirmedBrief(confirmed) : null;
@@ -74,6 +89,7 @@ export function normalizePathDoc(id, data = {}){
     previewDescription: data.previewDescription || data.description || data.goal || '',
     previewIncludesScheme: !!data.previewIncludesScheme,
     discoverable: visibility === 'public' ? data.discoverable !== false : !!data.discoverable,
+    stats:normalizePathStats(data.stats, data),
     migratedFromLocal: !!data.migratedFromLocal,
     clientSaveId: data.clientSaveId || null,
     intentionallyEmpty: data.intentionallyEmpty === true,
@@ -101,7 +117,19 @@ export function canViewPath(path, membership, currentUser){
 export function canPreviewPath(path, currentUser){
   if(!path) return false;
   if(path.visibility === 'public') return true;
+  if(path.visibility === 'unlisted') return true;
   return !!path.previewEnabled || isOwner(path, currentUser);
+}
+
+export function isPathParticipant(path, membership, currentUser){
+  return !!(path && currentUser && !isOwner(path, currentUser) && membershipRole(membership, currentUser));
+}
+
+export function canJoinPath(path, membership, currentUser){
+  if(!path || !currentUser) return false;
+  if(isOwner(path, currentUser)) return false;
+  if(membershipRole(membership, currentUser)) return false;
+  return path.visibility === 'public' || path.visibility === 'unlisted';
 }
 
 export function canEditPath(path, membership, currentUser){
@@ -157,6 +185,7 @@ export function localPathDefaults(localPath = {}, user){
     previewDescription: localPath.previewDescription || goal,
     previewIncludesScheme: !!localPath.previewIncludesScheme,
     discoverable: visibility === 'public' ? localPath.discoverable !== false : !!localPath.discoverable,
+    stats:normalizePathStats(localPath.stats, localPath),
     migratedFromLocal: !!localPath.migratedFromLocal,
     clientSaveId: localPath.clientSaveId || null,
     intentionallyEmpty: localPath.intentionallyEmpty === true,

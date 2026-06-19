@@ -107,6 +107,41 @@ describe('deterministic enrollment bootstrap', () => {
 
     await assertSucceeds(batch.commit());
   });
+
+  test('allows direct-link reads for unlisted path metadata', async () => {
+    const ownerDb = testEnv.authenticatedContext(userA).firestore();
+    await assertSucceeds(setDoc(doc(ownerDb, 'paths', pathId), {
+      id:pathId,
+      ownerId:userA,
+      title:'Unlisted path',
+      visibility:'unlisted',
+      previewEnabled:false,
+    }));
+
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId)));
+  });
+
+  test('denies browser writes to server-managed path stats', async () => {
+    const ownerDb = testEnv.authenticatedContext(userA).firestore();
+    await assertFails(setDoc(doc(ownerDb, 'paths', 'stats-on-create'), {
+      id:'stats-on-create',
+      ownerId:userA,
+      title:'Stats path',
+      visibility:'public',
+      stats:{ joinedCount:1 },
+    }));
+
+    await assertSucceeds(setDoc(doc(ownerDb, 'paths', pathId), {
+      id:pathId,
+      ownerId:userA,
+      title:'Stats path',
+      visibility:'public',
+    }));
+    await assertFails(updateDoc(doc(ownerDb, 'paths', pathId), {
+      stats:{ joinedCount:99 },
+    }));
+  });
 });
 
 describe('enrollment isolation', () => {

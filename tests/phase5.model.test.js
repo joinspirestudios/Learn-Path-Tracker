@@ -13,7 +13,10 @@ import {
   validatePhase55Brief,
 } from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
-import { platformToLocalPath, resolveCreatorName } from '../src/platform.js';
+import {
+  canJoinPath, canPreviewPath, normalizePathStats, platformToLocalPath,
+  resolveCreatorName,
+} from '../src/platform.js';
 import { TEMPLATES } from '../src/templates.js';
 import { basicStarterDraft, createGeneratePathHandler, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
 
@@ -234,6 +237,59 @@ test('lightweight platform summaries retain creator and task counts', () => {
   assert.equal(local.creatorName, 'Noor');
   assert.equal(local.sectionCount, 4);
   assert.equal(local.taskCount, 18);
+});
+
+test('Phase 5.7 platform visibility and stats model supports joinable public pages', () => {
+  const viewer = { uid:'viewer' };
+  const owner = { uid:'owner' };
+  const publicPath = {
+    ownerId:'owner', visibility:'public', previewEnabled:true,
+    stats:{ joinedCount:4, activeThisWeek:'bad', completedCount:-1, proofSubmissionCount:0 },
+  };
+  const unlistedPath = { ownerId:'owner', visibility:'unlisted', previewEnabled:false };
+  const privatePath = { ownerId:'owner', visibility:'private', previewEnabled:false };
+  assert.equal(canPreviewPath(publicPath, null), true);
+  assert.equal(canPreviewPath(unlistedPath, null), true);
+  assert.equal(canPreviewPath(privatePath, viewer), false);
+  assert.equal(canJoinPath(publicPath, null, viewer), true);
+  assert.equal(canJoinPath(unlistedPath, null, viewer), true);
+  assert.equal(canJoinPath(privatePath, null, viewer), false);
+  assert.equal(canJoinPath(publicPath, null, owner), false);
+  assert.equal(canJoinPath(publicPath, { uid:'viewer', role:'viewer' }, viewer), false);
+  assert.deepEqual(normalizePathStats(publicPath.stats), {
+    joinedCount:4,
+    activeThisWeek:0,
+    completedCount:0,
+    proofSubmissionCount:0,
+    updatedAt:null,
+  });
+  assert.equal(normalizePathStats(null, { joinedCount:'9' }).joinedCount, 9);
+  assert.equal(normalizePathStats({ joinedCount:'nope' }).joinedCount, 0);
+});
+
+test('public page rendering source includes join/share states and hides private proof timelines', () => {
+  const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  assert.match(source, /Sign in to join this path/);
+  assert.match(source, /Join this path/);
+  assert.match(source, /Joining\.\.\./);
+  assert.match(source, /Open my path/);
+  assert.match(source, /Start Day 1/);
+  assert.match(source, /Copy share link/);
+  assert.match(source, /Be one of the first to join this path/);
+  assert.match(source, /The source path remains owned by/);
+  assert.match(source, /includes creator constraints/);
+  assert.doesNotMatch(source, /public proof timeline/i);
+});
+
+test('discoverable source excludes unlisted/private paths while public cards can show joined count', () => {
+  const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const showBlock = source.slice(source.indexOf('function shouldShowUserPath'), source.indexOf('function pathCardBlurb'));
+  const cardBlock = source.slice(source.indexOf('function pathCardBlurb'), source.indexOf('async function importLocalPath'));
+  assert.match(showBlock, /def\.visibility === 'public'/);
+  assert.match(showBlock, /def\.discoverable !== false/);
+  assert.doesNotMatch(showBlock, /unlisted/);
+  assert.match(cardBlock, /joined/);
+  assert.match(cardBlock, /normalizePathStats/);
 });
 
 test('normalized generated drafts preserve selected-days task settings', () => {

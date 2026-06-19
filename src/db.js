@@ -761,12 +761,13 @@ export async function dbSavePlatformPath(id){
   const ownerId = local.ownerId || store.currentUser.uid;
   const ownerSaving = ownerId === store.currentUser.uid;
   const { path, sections, tasks } = localToPlatformParts(id, local, store.currentUser, ownerId);
+  const { stats: _serverManagedStats, ...pathForSave } = path;
   try{
     const previous = store.platformPaths[id];
     const isExistingCloudPath = !!(previous && previous.childrenLoaded);
     const batch = fb.writeBatch(fb.db);
     batch.set(pathRef(id), {
-      ...path,
+      ...pathForSave,
       ownerId,
       creatorId:path.creatorId || ownerId,
       creatorName:path.creatorName || (previous && previous.path && previous.path.creatorName) || '',

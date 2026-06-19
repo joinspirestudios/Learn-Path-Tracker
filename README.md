@@ -129,6 +129,16 @@ Basic starter remains a local non-AI route. It uses the same guided shell, creat
 
 The guided AI builder is split into focused frontend modules under `src/views/ai-builder/`. `src/views.js` remains the app coordinator for modal lifecycle, authenticated requests, saving, live voice wiring, and navigation, while AI builder rendering, suggestion state, example rotation, draft normalization, and save-shape conversion live in the `ai-builder` modules. Add future AI builder screens or review controls there instead of growing the main view coordinator.
 
+### Public path pages
+
+Public and unlisted paths have shareable preview pages that explain what the path is, who created it, duration, intensity, evidence expectations and milestones. Owners can copy a `#/path/{pathId}/preview` share link for Public or Unlisted paths; Private paths remain private and are not presented as public share links.
+
+### Joinable paths
+
+When a user joins a path, the source path remains owned by the creator. The joiner receives their own membership, enrollment, day logs and evidence records, and does not receive editor permissions or an editable cloned copy of the source path.
+
+Phase 5.7 introduces real joined-count tracking. Other community proof metrics such as active this week, completion count and proof count are reserved for later phases unless accurately computed. Comments, cheers, reactions, public proof timelines, notifications and creator profiles are deferred to later community phases.
+
 ### Domain-aware setup
 
 Phase 5.5 helps Learn Path Tracker recognize course, book, fitness and general goal context during setup. The builder shows six lightweight goal suggestions, rotates calm empty-field examples until the user focuses, types, pastes or starts voice input, and asks only missing questions that materially affect duration, schedule, sequence, milestones, safety, evidence or progression.

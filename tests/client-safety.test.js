@@ -189,3 +189,26 @@ test('browser-side AI timeout uses operation_timeout and preserves provider_time
   assert.doesNotMatch(requestBlock, /timeoutError\.code = 'provider_timeout'/);
   assert.match(source, /\['operation_timeout', 'provider_timeout'\]\.includes/);
 });
+
+test('client join helper uses authenticated route and safe user-facing errors', () => {
+  const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
+  const joinBlock = apiSource.slice(apiSource.indexOf('export async function joinPath'), apiSource.length);
+  assert.match(joinBlock, /authFetch\('\/api\/join-path'/);
+  assert.match(joinBlock, /method:'POST'/);
+  assert.match(joinBlock, /JSON\.stringify\(\{ pathId \}\)/);
+  assert.match(apiSource, /Sign in to join this path/);
+  assert.match(apiSource, /This path is private/);
+  assert.match(apiSource, /This path could not be found/);
+  assert.match(apiSource, /Too many join attempts/);
+  assert.doesNotMatch(joinBlock, /console\.error/);
+});
+
+test('public join button disables duplicate clicks while join request is active', () => {
+  const source = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const joinBlock = source.slice(source.indexOf('async function joinPublicPath'), source.indexOf('function currentEnrollmentForPath'));
+  assert.match(joinBlock, /if\(!record\?\.id \|\| joiningPathId\) return/);
+  assert.match(joinBlock, /joiningPathId = record\.id/);
+  assert.match(joinBlock, /joiningPathId = null/);
+  assert.match(source, /Joining\.\.\./);
+  assert.match(source, /id="joinPathBtn"[^+]*\+ \(joining \? 'disabled'/);
+});

@@ -12,6 +12,9 @@
     },
     "api/deepgram-token.js": {
       "maxDuration": 15
+    },
+    "api/join-path.js": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

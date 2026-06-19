@@ -25,13 +25,16 @@ import {
   nextRungIdx, currentWeekFromStart, computeStreak,
 } from './plan.js';
 import { openAuthModal } from './auth.js';
-import { authFetch } from './api.js';
+import { authFetch, joinPath } from './api.js';
 import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
 import { AI_GENERATE_TIMEOUT_MS, AI_INTERPRET_TIMEOUT_MS, VOICE_TRANSCRIBE_TIMEOUT_MS } from './ai-timeouts.js';
 import { applyHeader, updateOverall } from './header.js';
 import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloudFailureMessage } from './db.js';
 import { cachedAuthLabel } from './auth.js';
-import { canManageMembers, canPreviewPath, canRequestAccess, canViewPath, resolveCreatorName } from './platform.js';
+import {
+  canJoinPath, canManageMembers, canPreviewPath, canRequestAccess, canViewPath,
+  isOwner, isPathParticipant, normalizePathStats, resolveCreatorName,
+} from './platform.js';
 import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
   AI_INTENSITY_DETAILS, AI_INTENSITY_LEVELS,
@@ -98,6 +101,8 @@ let isCreatingPath = false;
 let openingPathId = null;
 let startingJourneyId = null;
 let aiSaveClientId = null;
+let joiningPathId = null;
+let shareLinkMessage = '';
 
 function abortAIRequest(kind = null, builder = aiBuilder){
   if(!builder?.requests) return;
@@ -162,6 +167,15 @@ function pathHash(id, tab = store.activeTab || 'plan', day = null){
   let hash = '#/path/' + encodeURIComponent(id) + '/' + encodeURIComponent(tab || 'plan');
   if(day != null) hash += '/roadmap/day/' + encodeURIComponent(day);
   return hash;
+}
+
+function pathPreviewHash(id){
+  return '#/path/' + encodeURIComponent(id) + '/preview';
+}
+
+function pathShareLink(id){
+  const base = location.origin + location.pathname;
+  return base + pathPreviewHash(id);
 }
 
 function authRestoring(){
@@ -358,6 +372,8 @@ function pathCardBlurb(def, total){
   if(def.category) bits.push(esc(def.category));
   if(def.durationLabel) bits.push(esc(def.durationLabel));
   if(def.visibility) bits.push(esc(def.visibility));
+  const joined = normalizePathStats(def.stats, def).joinedCount;
+  if(joined) bits.push(joined + ' joined');
   const meta = bits.length ? bits.join(' · ') + '. ' : '';
   const taskCount = total || Number(def.taskCount || 0);
   const sectionCount = (def.weeks || []).length || Number(def.sectionCount || 0);
@@ -2501,7 +2517,7 @@ function renderAccessBlocked(record){
   $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">' + esc(record.path.title) + '</div><div class="muted">This path is private. The creator has not enabled a public preview.</div></div>';
 }
 
-function renderPathPreview(record){
+function renderLegacyPathPreview(record){
   const path = record.path;
   const coverImage = safeExternalUrl(path.coverImage);
   const profileImage = safeExternalUrl(path.profileImage);
@@ -2539,6 +2555,163 @@ function renderPathPreview(record){
     await dbLoadMyAccessRequest(record.id);
     renderPathPreview(record);
   };
+}
+
+function joinedCountCopy(stats){
+  const count = normalizePathStats(stats).joinedCount;
+  if(!count) return 'Be one of the first to join this path.';
+  return count + ' ' + (count === 1 ? 'person has' : 'people have') + ' joined';
+}
+
+function evidenceExpectationCopy(path, record){
+  const commitmentEvidence = (path.coreCommitments || []).map(item => item.evidenceType).filter(Boolean);
+  const taskEvidence = (record.tasks || []).some(task => task.evidenceRequired);
+  if(commitmentEvidence.length) return commitmentEvidence.slice(0, 3).join(', ');
+  if(taskEvidence) return 'Proof is required on selected tasks.';
+  return 'Simple reflections or activity notes where useful.';
+}
+
+function publicDomainSummary(path){
+  const bits = [];
+  if(path.domainProfile?.primary && path.domainProfile.primary !== 'general') bits.push(path.domainProfile.primary + ' focused');
+  if(path.structuredResources?.courses?.length) bits.push(path.structuredResources.courses.length + ' course resource' + (path.structuredResources.courses.length === 1 ? '' : 's'));
+  if(path.structuredResources?.books?.length) bits.push(path.structuredResources.books.length + ' book resource' + (path.structuredResources.books.length === 1 ? '' : 's'));
+  if(path.structuredResources?.programmes?.length) bits.push(path.structuredResources.programmes.length + ' programme resource' + (path.structuredResources.programmes.length === 1 ? '' : 's'));
+  if(path.fitnessContext?.activity || path.fitnessContext?.target) bits.push('fitness progression');
+  if(path.fitnessContext?.limitations || path.fitnessContext?.safetyNotes) bits.push('includes creator constraints');
+  return bits.length ? bits.join(' - ') : 'Structured learning journey';
+}
+
+function milestonePreviewHTML(record){
+  const sections = [...(record.sections || [])].sort((a, b) => (a.order || 0) - (b.order || 0)).slice(0, 6);
+  if(!sections.length) return '<div class="muted">Milestones will appear here when the creator adds sections.</div>';
+  return sections.map(section => '<div class="scheme-row"><b>' + esc(section.title) + '</b><span>' + esc(section.description || 'Milestone in this path') + '</span></div>').join('');
+}
+
+function renderPathPreview(record){
+  const path = record.path;
+  const coverImage = safeExternalUrl(path.coverImage);
+  const profileImage = safeExternalUrl(path.profileImage);
+  const creator = resolveCreatorName(path, store.currentUser);
+  const stats = normalizePathStats(path.stats, path);
+  const req = store.accessRequests[record.id];
+  const owner = isOwner(path, store.currentUser);
+  const joined = isPathParticipant(path, record.membership, store.currentUser);
+  const joinable = canJoinPath(path, record.membership, store.currentUser);
+  const joining = joiningPathId === record.id;
+  const shareable = owner && ['public', 'unlisted'].includes(path.visibility);
+  const shareLink = pathShareLink(record.id);
+  store.state.current = null; store.editMode = false; applyHeader();
+  let h = '<div class="public-path-page">'
+    + '<section class="public-path-hero panel">'
+    + (coverImage ? '<div class="preview-cover" style="background-image:url(\'' + esc(coverImage.replace(/'/g, '%27')) + '\')"></div>' : '')
+    + '<div class="public-path-hero-body">'
+    + '<div class="public-path-kicker"><span>' + esc(path.visibility) + ' path</span><span>Created by ' + esc(creator) + '</span></div>'
+    + '<div class="public-path-title">' + esc(path.previewTitle || path.title) + '</div>'
+    + '<p class="public-path-summary">' + esc(path.previewDescription || path.description || path.goal || 'A proof-backed path for steady progress.') + '</p>'
+    + '<div class="public-path-creator">' + (profileImage ? '<img class="preview-avatar" src="' + esc(profileImage) + '" alt=""/>' : '') + '<span>' + esc(joinedCountCopy(stats)) + '</span></div>'
+    + '<div class="public-path-actions" aria-live="polite">';
+  if(owner){
+    h += '<button class="btn gold" id="openFullPath">Open full path</button><button class="btn" id="managePath">Manage path</button>';
+    h += shareable ? '<button class="btn" id="copyShareLink">Copy share link</button>' : '<button class="btn" disabled>Set Public or Unlisted to share</button>';
+  } else if(joined){
+    h += '<button class="btn gold" id="openFullPath">Open my path</button><button class="btn" id="startJoinedPath">Start Day 1</button>';
+  } else if(!store.currentUser){
+    h += '<button class="btn gold" id="previewSignIn">Sign in to join this path</button>';
+  } else if(joinable){
+    h += '<button class="btn gold" id="joinPathBtn" ' + (joining ? 'disabled' : '') + '>' + (joining ? 'Joining...' : 'Join this path') + '</button>';
+  } else if(req && req.status === 'pending'){
+    h += '<button class="btn" disabled>Access requested</button>';
+  } else if(canRequestAccess(path, record.membership, store.currentUser)){
+    h += '<button class="btn gold" id="requestAccess">Request access</button>';
+  } else {
+    h += '<button class="btn" disabled>This path is private</button>';
+  }
+  h += '</div>'
+    + (shareLinkMessage ? '<div class="share-fallback" role="status"><label>Share link<input readonly value="' + esc(shareLinkMessage === 'copied' ? shareLink : shareLinkMessage) + '"></label></div>' : '')
+    + '</div></section>'
+    + '<section class="public-path-stats" aria-label="Path credibility signals">'
+    + '<article><span>Joined</span><b>' + esc(stats.joinedCount || 0) + '</b><small>' + esc(stats.joinedCount ? 'Real participant count' : 'No participants yet') + '</small></article>'
+    + '<article><span>Duration</span><b>' + esc(path.durationDays ? (path.durationDays + ' days') : (path.durationLabel || 'Flexible')) + '</b><small>Creator-defined roadmap length</small></article>'
+    + '<article><span>Intensity</span><b>' + esc(path.intensity ? (path.intensity.charAt(0).toUpperCase() + path.intensity.slice(1)) : 'Balanced') + '</b><small>Public planning signal</small></article>'
+    + '</section>'
+    + '<section class="public-path-grid">'
+    + '<article class="panel card"><h3>What you will do</h3><p>' + esc(path.goal || path.description || path.previewDescription || 'Follow the creator pathway and build consistent progress.') + '</p></article>'
+    + '<article class="panel card"><h3>Who this fits</h3><p>' + esc(publicDomainSummary(path)) + '</p></article>'
+    + '<article class="panel card"><h3>Proof expected</h3><p>' + esc(evidenceExpectationCopy(path, record)) + '</p></article>'
+    + '<article class="panel card"><h3>Ownership</h3><p>The source path remains owned by ' + esc(creator) + '. Joiners get their own private enrollment and progress.</p></article>'
+    + '</section>'
+    + '<section class="panel card preview-scheme"><h3>Milestones</h3>' + milestonePreviewHTML(record) + '</section>'
+    + '</div>';
+  $('content').innerHTML = h;
+  const open = $('openFullPath'); if(open) open.onclick = () => openSkill(record.id);
+  const start = $('startJoinedPath'); if(start) start.onclick = () => openSkill(record.id, { tab:'roadmap', day:1 });
+  const manage = $('managePath'); if(manage) manage.onclick = async () => { await openSkill(record.id); store.editMode = true; renderPlan(); };
+  const copy = $('copyShareLink'); if(copy) copy.onclick = () => copyShareLink(record.id, record);
+  const join = $('joinPathBtn'); if(join) join.onclick = () => joinPublicPath(record);
+  const si = $('previewSignIn'); if(si) si.onclick = () => openAuthModal('signup');
+  const ra = $('requestAccess'); if(ra) ra.onclick = async () => {
+    await dbRequestAccess(record.id);
+    await dbLoadMyAccessRequest(record.id);
+    renderPathPreview(record);
+  };
+}
+
+async function copyShareLink(id, record = null){
+  const path = record?.path || store.state.userPaths[id] || {};
+  if(!['public', 'unlisted'].includes(path.visibility)){
+    shareLinkMessage = 'Set this path to Public or Unlisted before sharing.';
+    if(record) renderPathPreview(record);
+    return;
+  }
+  const link = pathShareLink(id);
+  try{
+    if(!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(link);
+    shareLinkMessage = 'copied';
+    flash('Share link copied');
+  }catch(error){
+    shareLinkMessage = link;
+  }
+  if(record) renderPathPreview(record);
+}
+
+async function joinPublicPath(record){
+  if(!record?.id || joiningPathId) return;
+  if(!store.currentUser){
+    openAuthModal('signup');
+    return;
+  }
+  joiningPathId = record.id;
+  shareLinkMessage = '';
+  renderPathPreview(record);
+  try{
+    const payload = await joinPath(record.id);
+    const stats = normalizePathStats(record.path.stats, record.path);
+    const nextRecord = {
+      ...record,
+      membership:payload.membership || record.membership || { uid:store.currentUser.uid, role:'viewer', joinStatus:'active', source:'join' },
+      path:{
+        ...record.path,
+        stats:{ ...stats, joinedCount:Number(payload.joinCount || stats.joinedCount), updatedAt:new Date().toISOString() },
+      },
+    };
+    if(payload.enrollment?.id){
+      store.enrollments[payload.enrollment.id] = { ...(store.enrollments[payload.enrollment.id] || {}), ...payload.enrollment };
+      store.state.enrollments = store.state.enrollments || {};
+      store.state.enrollments[payload.enrollment.id] = store.enrollments[payload.enrollment.id];
+    }
+    let refreshed = null;
+    try{ refreshed = await dbLoadPlatformPath(record.id); }
+    catch(error){ refreshed = nextRecord; }
+    joiningPathId = null;
+    flash(payload.alreadyJoined ? 'Path already joined' : 'Path joined');
+    renderPathPreview(refreshed || nextRecord);
+  }catch(error){
+    joiningPathId = null;
+    flash(error.message || 'Could not join this path.');
+    renderPathPreview(record);
+  }
 }
 
 function currentEnrollmentForPath(id){
@@ -3335,6 +3508,8 @@ export function renderPlan(){
   if(!def){ renderCatalog(); return; }
   const editable = canEditUserPath(id);
   if(store.editMode && !editable) store.editMode = false;
+  const pathStats = normalizePathStats(def.stats, def);
+  const ownerShareable = ['public', 'unlisted'].includes(def.visibility);
   const p = P(); const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
   let h = '<div class="plan-head"><div><div class="chip" style="margin-bottom:8px">Your path</div>'
     + '<div class="section-title" style="margin:0">' + esc(pathTitle(id)) + '</div>'
@@ -3363,6 +3538,7 @@ export function renderPlan(){
       + '<div class="toggle-row"><label><input type="checkbox" id="pmDiscoverable" ' + (def.discoverable ? 'checked' : '') + '/> Discoverable</label><label><input type="checkbox" id="pmPreviewEnabled" ' + (def.previewEnabled !== false ? 'checked' : '') + '/> Preview enabled</label><label><input type="checkbox" id="pmPreviewScheme" ' + (def.previewIncludesScheme ? 'checked' : '') + '/> Preview includes scheme</label></div>'
       + '<div class="field" style="margin-top:10px"><label>Preview title</label><input type="text" id="pmPreviewTitle" value="' + esc(def.previewTitle || def.title || '') + '"/></div>'
       + '<div class="field" style="margin-top:10px"><label>Preview description</label><textarea id="pmPreviewDescription" placeholder="What should non-members see?">' + esc(def.previewDescription || def.goal || '') + '</textarea></div>'
+      + '<div class="owner-share-tools"><div><b>' + esc(pathStats.joinedCount || 0) + '</b><span>joined</span></div><button class="btn" id="pmOpenPreview">Open public page</button><button class="btn" id="pmCopyShare" ' + (ownerShareable ? '' : 'disabled') + '>' + (ownerShareable ? 'Copy share link' : 'Set Public or Unlisted to share') + '</button></div>'
       + (canManageMembers(def.platformData || def, def.membership, store.currentUser) ? '<div class="owner-note">Member sharing and role management coming next.</div>' : '')
       + (!def.platform && cloudActive() ? '<button class="btn gold" id="pmImport" style="margin-top:12px">Publish/import this path to platform</button>' : '')
       + '</div>';
@@ -3463,6 +3639,8 @@ export function renderPlan(){
   bindCheck('pmDiscoverable', 'discoverable');
   bindCheck('pmPreviewEnabled', 'previewEnabled');
   bindCheck('pmPreviewScheme', 'previewIncludesScheme');
+  const pop = $('pmOpenPreview'); if(pop) pop.onclick = () => openPathRoute(id, true);
+  const pcs = $('pmCopyShare'); if(pcs) pcs.onclick = () => copyShareLink(id, { id, path:def.platformData || def, membership:def.membership || null, sections:[], tasks:[] });
   const pi = $('pmImport'); if(pi) pi.onclick = () => importLocalPath(id);
   $('content').querySelectorAll('.wb-title-input').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].title = e.target.value; upSaveSoft(); }));
   $('content').querySelectorAll('.task-input').forEach(inp => inp.addEventListener('input', e => { def.weeks[+e.target.dataset.wi].tasks[+e.target.dataset.ti].text = e.target.value; upSaveSoft(); }));

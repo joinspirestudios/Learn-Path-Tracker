@@ -5,6 +5,7 @@ const ROUTE_LIMITS = {
   interpret:{ hourlyEnv:'RATE_LIMIT_INTERPRET_PER_HOUR', burstEnv:'RATE_LIMIT_INTERPRET_BURST_PER_10_MINUTES', hourly:40, burst:8 },
   generate:{ hourlyEnv:'RATE_LIMIT_GENERATE_PER_HOUR', burstEnv:'RATE_LIMIT_GENERATE_BURST_PER_10_MINUTES', hourly:12, burst:3 },
   transcribe:{ hourlyEnv:'RATE_LIMIT_TRANSCRIBE_PER_HOUR', burstEnv:'RATE_LIMIT_TRANSCRIBE_BURST_PER_10_MINUTES', hourly:20, burst:6 },
+  joinPath:{ hourlyEnv:'RATE_LIMIT_JOIN_PATH_PER_HOUR', burstEnv:'RATE_LIMIT_JOIN_PATH_BURST_PER_10_MINUTES', hourly:80, burst:12 },
 };
 
 function configuredLimit(name, fallback){

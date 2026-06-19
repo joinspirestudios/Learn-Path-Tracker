@@ -56,6 +56,17 @@ service cloud.firestore {
         || isMember(pathId);
     }
 
+    function serverManagedPathStats() {
+      return [
+        "stats",
+        "joinedCount",
+        "activeThisWeek",
+        "completedCount",
+        "proofSubmissionCount",
+        "statsUpdatedAt"
+      ];
+    }
+
     function ownsEnrollment(enrollmentId) {
       return signedIn()
         && get(
@@ -106,6 +117,7 @@ service cloud.firestore {
       // Preview-enabled paths expose only their main path document.
       // Owners and approved members can read their assigned paths.
       allow read: if resource.data.visibility == "public"
+        || resource.data.visibility == "unlisted"
         || resource.data.previewEnabled == true
         || (
           signedIn()
@@ -114,13 +126,20 @@ service cloud.firestore {
         || isMember(pathId);
 
       allow create: if signedIn()
-        && request.resource.data.ownerId == request.auth.uid;
+        && request.resource.data.ownerId == request.auth.uid
+        && !request.resource.data.keys().hasAny(serverManagedPathStats());
 
       // Owners can update all path metadata.
       // Editors may update content metadata but cannot alter ownership
       // or creator-controlled visibility settings.
       allow update: if
-        isOwner(pathId)
+        (
+          isOwner(pathId)
+          && !request.resource.data
+            .diff(resource.data)
+            .affectedKeys()
+            .hasAny(serverManagedPathStats())
+        )
         || (
           isEditor(pathId)
           && !request.resource.data
@@ -130,7 +149,13 @@ service cloud.firestore {
               "ownerId",
               "visibility",
               "discoverable",
-              "previewEnabled"
+              "previewEnabled",
+              "stats",
+              "joinedCount",
+              "activeThisWeek",
+              "completedCount",
+              "proofSubmissionCount",
+              "statsUpdatedAt"
             ])
         );
 

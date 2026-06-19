@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import interpretGoalHandler from '../api/interpret-goal.js';
 import generatePathHandler from '../api/generate-path.js';
+import joinPathHandler from '../api/join-path.js';
 import transcribeVoiceHandler from '../api/transcribe-voice.js';
 
 function responseRecorder(){
@@ -31,6 +32,7 @@ test('protected API modules import and reject unauthenticated requests with stru
   const routes = [
     ['interpret-goal', interpretGoalHandler, unauthenticatedRequest()],
     ['generate-path', generatePathHandler, unauthenticatedRequest()],
+    ['join-path', joinPathHandler, unauthenticatedRequest()],
     ['transcribe-voice', transcribeVoiceHandler, unauthenticatedRequest('audio/webm')],
   ];
 
