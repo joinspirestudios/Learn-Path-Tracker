@@ -25,7 +25,10 @@ import {
   nextRungIdx, currentWeekFromStart, computeStreak,
 } from './plan.js';
 import { openAuthModal } from './auth.js';
-import { authFetch, joinPath, publishProgress, unpublishProgress } from './api.js';
+import {
+  authFetch, commentOnProgress, hideProgressComment, joinPath,
+  publishProgress, reactToProgress, unpublishProgress,
+} from './api.js';
 import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
 import { AI_GENERATE_TIMEOUT_MS, AI_INTERPRET_TIMEOUT_MS, VOICE_TRANSCRIBE_TIMEOUT_MS } from './ai-timeouts.js';
 import { applyHeader, updateOverall } from './header.js';
@@ -87,7 +90,7 @@ import {
   updateGoalSuggestionButtons,
 } from './views/ai-builder/index.js';
 import {
-  canPublishCompletedDay, evidenceTypeLabel, normalizePublicProgressEntry, publicProgressEntryId,
+  canPublishCompletedDay, evidenceTypeLabel, normalizePublicComment, normalizePublicProgressEntry, publicProgressEntryId,
 } from './public-progress.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
@@ -111,6 +114,9 @@ let joiningPathId = null;
 let shareLinkMessage = '';
 let publicProgressBusyKey = null;
 let publicProgressError = '';
+let progressInteractionBusyKey = null;
+let progressCommentDrafts = {};
+let progressInteractionErrors = {};
 let pendingRouteRetrying = false;
 
 function abortAIRequest(kind = null, builder = aiBuilder){
@@ -2674,6 +2680,54 @@ function progressEntriesForPath(pathId, record = null){
     .slice(0, 12);
 }
 
+function interactionKey(pathId, entryId, suffix = ''){
+  return pathId + ':' + entryId + (suffix ? ':' + suffix : '');
+}
+
+function publicProgressInteractionsHTML(record, entry){
+  const key = interactionKey(record.id, entry.id);
+  const busy = progressInteractionBusyKey === key;
+  const commentBusy = progressInteractionBusyKey === interactionKey(record.id, entry.id, 'comment');
+  const user = store.currentUser;
+  const currentReaction = entry.currentUserReaction || null;
+  const cheered = currentReaction === 'cheer';
+  const cheerCount = Number(entry.reactionCounts?.cheer || 0);
+  const commentCount = Number(entry.visibleCommentCount || entry.comments.length || 0);
+  const error = progressInteractionErrors[key] || '';
+  const owner = isOwner(record.path, user);
+  let h = '<div class="progress-interactions" data-entry-id="' + esc(entry.id) + '">'
+    + '<div class="progress-interaction-row">'
+    + '<button class="btn progress-cheer" type="button" data-entry-id="' + esc(entry.id) + '" aria-pressed="' + (cheered ? 'true' : 'false') + '" ' + (busy ? 'disabled' : '') + '>'
+    + (cheered ? 'Cheered' : 'Cheer') + '</button>'
+    + '<span aria-label="' + esc(cheerCount + ' cheers') + '">' + esc(cheerCount) + ' cheer' + (cheerCount === 1 ? '' : 's') + '</span>'
+    + '<span aria-label="' + esc(commentCount + ' comments') + '">' + esc(commentCount) + ' comment' + (commentCount === 1 ? '' : 's') + '</span>'
+    + '</div>';
+  if(!user){
+    h += '<button class="btn subtle progress-signin" type="button" data-entry-id="' + esc(entry.id) + '">Sign in to cheer or comment</button>';
+  } else {
+    const draft = progressCommentDrafts[key] || '';
+    h += '<form class="progress-comment-form" data-entry-id="' + esc(entry.id) + '">'
+      + '<label for="comment-' + esc(entry.id) + '">Add a comment</label>'
+      + '<div><input id="comment-' + esc(entry.id) + '" name="body" maxlength="500" value="' + esc(draft) + '" placeholder="Reply with encouragement">'
+      + '<button class="btn" type="submit" ' + (commentBusy ? 'disabled' : '') + '>' + (commentBusy ? 'Posting...' : 'Post') + '</button></div>'
+      + '</form>';
+  }
+  if(error) h += '<p class="form-error" role="alert">' + esc(error) + '</p>';
+  if(entry.comments.length){
+    h += '<div class="progress-comments" aria-label="Visible comments">';
+    entry.comments.forEach(comment => {
+      const canHide = !!(user && (comment.userId === user.uid || owner));
+      h += '<article class="progress-comment">'
+        + '<div><b>' + esc(comment.authorName) + '</b><small>' + esc(dateText(comment.createdAt) || '') + '</small></div>'
+        + '<p>' + esc(comment.body) + '</p>'
+        + (canHide ? '<button class="link-btn progress-comment-hide" type="button" data-entry-id="' + esc(entry.id) + '" data-comment-id="' + esc(comment.id) + '">Hide comment</button>' : '')
+        + '</article>';
+    });
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+
 function publicProgressTimelineHTML(record){
   const entries = progressEntriesForPath(record.id, record);
   let h = '<section class="panel card public-progress-section" aria-label="Recent public progress">'
@@ -2695,11 +2749,112 @@ function publicProgressTimelineHTML(record){
       if(entry.taskSummary.length){
         h += '<div class="progress-tasks">' + entry.taskSummary.map(item => '<em>' + esc(item.title) + '</em>').join('') + '</div>';
       }
-      h += '</article>';
+      h += publicProgressInteractionsHTML(record, entry) + '</article>';
     });
     h += '</div>';
   }
   return h + '</section>';
+}
+
+function updateProgressEntry(pathId, entryId, updater){
+  const apply = entry => entry.id === entryId ? normalizePublicProgressEntry(updater({ ...entry })) : entry;
+  store.publicProgress[pathId] = (store.publicProgress?.[pathId] || []).map(apply);
+  const record = store.platformPaths[pathId];
+  if(record?.publicProgress) record.publicProgress = record.publicProgress.map(apply);
+  return record;
+}
+
+function entryFromRecord(record, entryId){
+  return progressEntriesForPath(record.id, record).find(entry => entry.id === entryId) || null;
+}
+
+async function refreshPublicProgressForRecord(record){
+  const entries = await dbLoadPublicProgress(record.id, { limit:12, includeComments:true, includeCurrentUserReaction:true });
+  record.publicProgress = entries;
+  if(store.platformPaths[record.id]) store.platformPaths[record.id].publicProgress = entries;
+  return entries;
+}
+
+async function reactToPublicEntry(record, entryId){
+  const key = interactionKey(record.id, entryId);
+  if(progressInteractionBusyKey) return;
+  if(!store.currentUser){
+    progressInteractionErrors[key] = 'Sign in to cheer this progress.';
+    openAuthModal('signup');
+    renderPathPreview(record);
+    return;
+  }
+  const entry = entryFromRecord(record, entryId);
+  const nextReaction = entry?.currentUserReaction === 'cheer' ? null : 'cheer';
+  progressInteractionBusyKey = key;
+  progressInteractionErrors[key] = '';
+  renderPathPreview(record);
+  try{
+    const payload = await reactToProgress(record.id, entryId, nextReaction);
+    updateProgressEntry(record.id, entryId, item => ({
+      ...item,
+      currentUserReaction:payload.reaction || null,
+      reactionCounts:payload.reactionCounts,
+      totalReactionCount:payload.totalReactionCount,
+    }));
+  }catch(error){
+    progressInteractionErrors[key] = error.message || 'Could not update this reaction.';
+  }finally{
+    progressInteractionBusyKey = null;
+    renderPathPreview(record);
+  }
+}
+
+async function commentOnPublicEntry(record, entryId, body){
+  const key = interactionKey(record.id, entryId);
+  const busyKey = interactionKey(record.id, entryId, 'comment');
+  if(progressInteractionBusyKey) return;
+  if(!store.currentUser){
+    progressInteractionErrors[key] = 'Sign in to comment.';
+    openAuthModal('signup');
+    renderPathPreview(record);
+    return;
+  }
+  progressInteractionBusyKey = busyKey;
+  progressInteractionErrors[key] = '';
+  progressCommentDrafts[key] = body;
+  renderPathPreview(record);
+  try{
+    const payload = await commentOnProgress(record.id, entryId, body);
+    progressCommentDrafts[key] = '';
+    updateProgressEntry(record.id, entryId, item => ({
+      ...item,
+      visibleCommentCount:payload.visibleCommentCount,
+      comments:[...(item.comments || []), normalizePublicComment(payload.comment)],
+    }));
+  }catch(error){
+    progressInteractionErrors[key] = error.message || 'Could not post this comment.';
+  }finally{
+    progressInteractionBusyKey = null;
+    renderPathPreview(record);
+  }
+}
+
+async function hidePublicProgressComment(record, entryId, commentId){
+  const key = interactionKey(record.id, entryId);
+  const busyKey = interactionKey(record.id, entryId, commentId);
+  if(progressInteractionBusyKey) return;
+  progressInteractionBusyKey = busyKey;
+  progressInteractionErrors[key] = '';
+  renderPathPreview(record);
+  try{
+    const payload = await hideProgressComment(record.id, entryId, commentId);
+    updateProgressEntry(record.id, entryId, item => ({
+      ...item,
+      visibleCommentCount:payload.visibleCommentCount,
+      comments:(item.comments || []).filter(comment => comment.id !== commentId),
+    }));
+  }catch(error){
+    progressInteractionErrors[key] = error.message || 'Could not hide this comment.';
+  }finally{
+    progressInteractionBusyKey = null;
+    renderPathPreview(record);
+  }
 }
 
 function renderPathPreview(record){
@@ -2773,6 +2928,34 @@ function renderPathPreview(record){
     await dbLoadMyAccessRequest(record.id);
     renderPathPreview(record);
   };
+  document.querySelectorAll('.progress-cheer').forEach(btn => {
+    btn.onclick = () => reactToPublicEntry(record, btn.dataset.entryId);
+  });
+  document.querySelectorAll('.progress-signin').forEach(btn => {
+    btn.onclick = () => {
+      const key = interactionKey(record.id, btn.dataset.entryId);
+      progressInteractionErrors[key] = 'Sign in to cheer this progress.';
+      openAuthModal('signup');
+      renderPathPreview(record);
+    };
+  });
+  document.querySelectorAll('.progress-comment-form').forEach(form => {
+    form.onsubmit = event => {
+      event.preventDefault();
+      const entryId = form.dataset.entryId;
+      const body = new FormData(form).get('body') || '';
+      commentOnPublicEntry(record, entryId, String(body));
+    };
+    const input = form.querySelector('input[name="body"]');
+    if(input){
+      input.oninput = () => {
+        progressCommentDrafts[interactionKey(record.id, form.dataset.entryId)] = input.value;
+      };
+    }
+  });
+  document.querySelectorAll('.progress-comment-hide').forEach(btn => {
+    btn.onclick = () => hidePublicProgressComment(record, btn.dataset.entryId, btn.dataset.commentId);
+  });
 }
 
 async function copyShareLink(id, record = null){

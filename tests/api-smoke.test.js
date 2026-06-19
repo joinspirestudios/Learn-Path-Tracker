@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import interpretGoalHandler from '../api/interpret-goal.js';
 import generatePathHandler from '../api/generate-path.js';
 import joinPathHandler from '../api/join-path.js';
+import commentProgressHandler from '../api/comment-progress.js';
+import hideProgressCommentHandler from '../api/hide-progress-comment.js';
 import publishProgressHandler from '../api/publish-progress.js';
+import reactProgressHandler from '../api/react-progress.js';
 import transcribeVoiceHandler from '../api/transcribe-voice.js';
 import unpublishProgressHandler from '../api/unpublish-progress.js';
 
@@ -37,6 +40,9 @@ test('protected API modules import and reject unauthenticated requests with stru
     ['join-path', joinPathHandler, unauthenticatedRequest()],
     ['publish-progress', publishProgressHandler, unauthenticatedRequest()],
     ['unpublish-progress', unpublishProgressHandler, unauthenticatedRequest()],
+    ['react-progress', reactProgressHandler, unauthenticatedRequest()],
+    ['comment-progress', commentProgressHandler, unauthenticatedRequest()],
+    ['hide-progress-comment', hideProgressCommentHandler, unauthenticatedRequest()],
     ['transcribe-voice', transcribeVoiceHandler, unauthenticatedRequest('audio/webm')],
   ];
 

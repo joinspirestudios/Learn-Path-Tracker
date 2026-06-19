@@ -4,6 +4,9 @@ import { safeExternalUrl } from './urls.js';
 
 export const PUBLIC_PROGRESS_SCHEMA_VERSION = 1;
 export const PUBLIC_PROGRESS_CAPTION_MAX = 500;
+export const PUBLIC_COMMENT_SCHEMA_VERSION = 1;
+export const PUBLIC_COMMENT_MAX = 500;
+export const PUBLIC_REACTION_TYPES = ['cheer', 'keep_going', 'inspired'];
 
 function cleanNumber(value, fallback = 0){
   const n = Number(value);
@@ -17,6 +20,29 @@ function cleanText(value, max = 120){
     .slice(0, max);
 }
 
+export function normalizeReactionType(value){
+  const type = String(value == null ? '' : value).trim().toLowerCase();
+  return PUBLIC_REACTION_TYPES.includes(type) ? type : null;
+}
+
+export function emptyReactionCounts(){
+  return Object.fromEntries(PUBLIC_REACTION_TYPES.map(type => [type, 0]));
+}
+
+export function normalizeReactionCounts(value = {}){
+  const source = value && typeof value === 'object' ? value : {};
+  const counts = emptyReactionCounts();
+  PUBLIC_REACTION_TYPES.forEach(type => {
+    const count = Number(source[type] || 0);
+    counts[type] = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  });
+  return counts;
+}
+
+export function totalReactionCount(value = {}){
+  return Object.values(normalizeReactionCounts(value)).reduce((sum, count) => sum + count, 0);
+}
+
 export function publicProgressEntryId(userId, dayNumber){
   const uid = String(userId || 'learner').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'learner';
   const day = Math.max(1, cleanNumber(dayNumber, 1));
@@ -25,6 +51,11 @@ export function publicProgressEntryId(userId, dayNumber){
 
 export function cleanPublicCaption(value){
   return cleanText(value, PUBLIC_PROGRESS_CAPTION_MAX);
+}
+
+export function cleanPublicCommentBody(value){
+  if(typeof value !== 'string') return '';
+  return cleanText(value, PUBLIC_COMMENT_MAX);
 }
 
 export function cleanAuthorName(value){
@@ -56,6 +87,12 @@ function safeDate(value, fallback){
     if(!Number.isNaN(date.getTime())) return date;
   }
   return fallback;
+}
+
+function dateMs(value){
+  const safe = safeDate(value, new Date(0));
+  if(safe && typeof safe.toDate === 'function') return safe.toDate().getTime();
+  return safe instanceof Date ? safe.getTime() : 0;
 }
 
 function safeTaskTitle(task){
@@ -113,9 +150,41 @@ export function createSanitizedPublicProgressEntry({
     evidenceTypes,
     hasEvidence:evidence.length > 0,
     taskSummary:completedTaskSummary(dayTasks, dayLog || {}, evidence),
+    reactionCounts:emptyReactionCounts(),
+    totalReactionCount:0,
+    visibleCommentCount:0,
+    interactionUpdatedAt:null,
     source:'day-log',
     schemaVersion:PUBLIC_PROGRESS_SCHEMA_VERSION,
   };
+}
+
+export function normalizePublicComment(raw = {}){
+  const body = cleanPublicCommentBody(raw.body);
+  return {
+    id:cleanText(raw.id, 160),
+    pathId:cleanText(raw.pathId, 180),
+    entryId:cleanText(raw.entryId, 180),
+    userId:cleanText(raw.userId, 160),
+    authorName:cleanAuthorName(raw.authorName),
+    authorPhotoURL:safeExternalUrl(raw.authorPhotoURL) || '',
+    body,
+    visibility:raw.visibility === 'public' ? 'public' : 'hidden',
+    status:raw.status === 'visible' ? 'visible' : 'hidden',
+    createdAt:raw.createdAt || null,
+    updatedAt:raw.updatedAt || raw.createdAt || null,
+    hiddenAt:raw.hiddenAt || null,
+    hiddenBy:cleanText(raw.hiddenBy, 160),
+    hiddenReason:cleanText(raw.hiddenReason, 80),
+    schemaVersion:cleanNumber(raw.schemaVersion, PUBLIC_COMMENT_SCHEMA_VERSION),
+  };
+}
+
+export function visiblePublicComments(comments = []){
+  return (Array.isArray(comments) ? comments : [])
+    .map(normalizePublicComment)
+    .filter(comment => comment.visibility === 'public' && comment.status === 'visible' && comment.body)
+    .sort((a, b) => dateMs(a.createdAt) - dateMs(b.createdAt));
 }
 
 export function normalizePublicProgressEntry(raw = {}){
@@ -123,6 +192,9 @@ export function normalizePublicProgressEntry(raw = {}){
   const evidenceTypes = Array.isArray(raw.evidenceTypes)
     ? raw.evidenceTypes.map(cleanEvidenceType).filter(Boolean).slice(0, 2)
     : [];
+  const reactionCounts = normalizeReactionCounts(raw.reactionCounts);
+  const comments = visiblePublicComments(raw.comments).slice(0, 5);
+  const visibleCommentCount = cleanNumber(raw.visibleCommentCount, comments.length);
   return {
     id:cleanText(raw.id || publicProgressEntryId(raw.userId, day), 160),
     pathId:cleanText(raw.pathId, 180),
@@ -144,6 +216,12 @@ export function normalizePublicProgressEntry(raw = {}){
     evidenceCount:cleanNumber(raw.evidenceCount),
     evidenceTypes,
     hasEvidence:!!raw.hasEvidence || cleanNumber(raw.evidenceCount) > 0,
+    reactionCounts,
+    totalReactionCount:cleanNumber(raw.totalReactionCount, totalReactionCount(reactionCounts)),
+    visibleCommentCount,
+    interactionUpdatedAt:raw.interactionUpdatedAt || null,
+    comments,
+    currentUserReaction:normalizeReactionType(raw.currentUserReaction),
     taskSummary:Array.isArray(raw.taskSummary)
       ? raw.taskSummary.slice(0, 3).map(item => ({
           title:cleanText(item?.title || 'Task', 90),

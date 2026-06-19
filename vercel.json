@@ -21,6 +21,15 @@
     },
     "api/unpublish-progress.js": {
       "maxDuration": 15
+    },
+    "api/react-progress.js": {
+      "maxDuration": 15
+    },
+    "api/comment-progress.js": {
+      "maxDuration": 15
+    },
+    "api/hide-progress-comment.js": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

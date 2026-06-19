@@ -138,6 +138,46 @@ test('public progress loader keeps the Firestore query constrained to public ent
   assert.deepEqual(capturedQuery, [collectionRef, whereConstraint]);
 });
 
+test('optional public comment loading does not mutate global cloud fields', async () => {
+  fb.collection = (db, ...path) => ({ type:'collection', path });
+  fb.where = (...args) => ({ type:'where', args });
+  fb.query = (...args) => ({ type:'query', args });
+  fb.getDocs = async queryRef => {
+    const path = queryRef.args[0].path;
+    if(path.join('/') === 'paths/path-id/publicProgress'){
+      return {
+        forEach(fn){
+          fn({
+            id:'entry-1',
+            data:() => ({
+              id:'entry-1',
+              pathId:'path-id',
+              userId:'learner',
+              dayNumber:1,
+              visibility:'public',
+              status:'completed',
+            }),
+          });
+        },
+      };
+    }
+    const error = new Error('Missing or insufficient permissions.');
+    error.code = 'permission-denied';
+    throw error;
+  };
+
+  const entries = await dbLoadPublicProgress('path-id', { limit:12, includeComments:true });
+
+  assert.equal(entries.length, 1);
+  assert.deepEqual(entries[0].comments, []);
+  assert.equal(store.cloudStatus, 'connected');
+  assert.equal(store.cloudMessage, '');
+  assert.deepEqual(store.cloudCheck, { status:'connected' });
+  assert.equal(store.cloudDiagnostics.latestErrorStatus, '');
+  assert.equal(store.cloudDiagnostics.latestErrorMessage, '');
+  assert.equal(store.cloudDiagnostics.commentLoadStatus, 'permission_denied');
+});
+
 test('core platform path failures still update global cloud status', async () => {
   store.currentUser = null;
   store.platformPaths = {};

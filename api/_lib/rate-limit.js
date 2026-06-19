@@ -8,6 +8,9 @@ const ROUTE_LIMITS = {
   joinPath:{ hourlyEnv:'RATE_LIMIT_JOIN_PATH_PER_HOUR', burstEnv:'RATE_LIMIT_JOIN_PATH_BURST_PER_10_MINUTES', hourly:80, burst:12 },
   publishProgress:{ hourlyEnv:'RATE_LIMIT_PUBLISH_PROGRESS_PER_HOUR', burstEnv:'RATE_LIMIT_PUBLISH_PROGRESS_BURST_PER_10_MINUTES', hourly:60, burst:10 },
   unpublishProgress:{ hourlyEnv:'RATE_LIMIT_UNPUBLISH_PROGRESS_PER_HOUR', burstEnv:'RATE_LIMIT_UNPUBLISH_PROGRESS_BURST_PER_10_MINUTES', hourly:80, burst:20 },
+  reactProgress:{ hourlyEnv:'RATE_LIMIT_REACT_PROGRESS_PER_HOUR', burstEnv:'RATE_LIMIT_REACT_PROGRESS_BURST_PER_10_MINUTES', hourly:120, burst:30 },
+  commentProgress:{ hourlyEnv:'RATE_LIMIT_COMMENT_PROGRESS_PER_HOUR', burstEnv:'RATE_LIMIT_COMMENT_PROGRESS_BURST_PER_10_MINUTES', hourly:40, burst:8 },
+  hideProgressComment:{ hourlyEnv:'RATE_LIMIT_HIDE_PROGRESS_COMMENT_PER_HOUR', burstEnv:'RATE_LIMIT_HIDE_PROGRESS_COMMENT_BURST_PER_10_MINUTES', hourly:80, burst:20 },
 };
 
 function configuredLimit(name, fallback){

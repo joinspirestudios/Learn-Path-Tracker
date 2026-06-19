@@ -13,7 +13,7 @@ import {
 import {
   dateForJourneyDay, journeyDayForDate, localDateString,
 } from './journey.js';
-import { normalizePublicProgressEntry } from './public-progress.js';
+import { normalizePublicComment, normalizePublicProgressEntry, normalizeReactionType } from './public-progress.js';
 import {
   ENROLLMENT_TIMEOUT_MS, FIRESTORE_PREFLIGHT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
   classifyFirebaseError, cloudStatusMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
@@ -89,6 +89,18 @@ function optionalPublicProgressWarning(error, fallback){
     status: classified.status,
     message: classified.status === 'unknown_error' ? fallback : classified.message,
   };
+}
+
+function recordOptionalCommunityWarning(kind, error, fallback){
+  const warning = optionalPublicProgressWarning(error, fallback);
+  store.cloudDiagnostics = {
+    ...store.cloudDiagnostics,
+    [kind + 'Status']: warning.status,
+    [kind + 'Message']: warning.message,
+    [kind + 'FailedAt']: Date.now(),
+  };
+  console.warn(kind + ':', warning.message);
+  return warning;
 }
 
 export async function dbLoadState(){
@@ -199,6 +211,8 @@ function taskRef(pathId, taskId){ return fb.doc(fb.db, 'paths', pathId, 'tasks',
 function memberRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'members', uid); }
 function accessRequestRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'accessRequests', uid); }
 function publicProgressCol(pathId){ return fb.collection(fb.db, 'paths', pathId, 'publicProgress'); }
+function publicProgressCommentCol(pathId, entryId){ return fb.collection(fb.db, 'paths', pathId, 'publicProgress', entryId, 'comments'); }
+function publicProgressReactionRef(pathId, entryId, uid){ return fb.doc(fb.db, 'paths', pathId, 'publicProgress', entryId, 'reactions', uid); }
 function enrollmentRef(enrollmentId){ return fb.doc(fb.db, 'enrollments', enrollmentId); }
 function dayLogRef(enrollmentId, dayNumber){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'dayLogs', String(dayNumber)); }
 function submissionRef(enrollmentId, submissionId){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'submissions', submissionId); }
@@ -721,7 +735,44 @@ function cachePublicProgress(pathId, entries){
   return normalized;
 }
 
-async function loadPublicProgress(pathId, limit = 10){
+async function loadPublicProgressComments(pathId, entryId, limit = 5){
+  if(!cloudAvailable()) return [];
+  try{
+    const commentsQuery = fb.query(
+      publicProgressCommentCol(pathId, entryId),
+      fb.where('visibility', '==', 'public'),
+      fb.where('status', '==', 'visible')
+    );
+    const snap = await withTimeout(fb.getDocs(commentsQuery), READ_TIMEOUT_MS, 'load public progress comments');
+    const comments = [];
+    snap.forEach(d => comments.push(normalizePublicComment({ id:d.id, ...d.data() })));
+    return comments
+      .filter(comment => comment.visibility === 'public' && comment.status === 'visible')
+      .sort((a, b) => timeValue(a.createdAt) - timeValue(b.createdAt))
+      .slice(0, limit);
+  }catch(e){
+    recordOptionalCommunityWarning('commentLoad', e, 'Could not load comments. Public progress remains available.');
+    return [];
+  }
+}
+
+async function loadCurrentUserReaction(pathId, entryId){
+  if(!cloudAvailable() || !store.currentUser) return null;
+  try{
+    const snap = await withTimeout(
+      fb.getDoc(publicProgressReactionRef(pathId, entryId, store.currentUser.uid)),
+      READ_TIMEOUT_MS,
+      'load current reaction'
+    );
+    if(!snap.exists()) return null;
+    return normalizeReactionType(snap.data().type);
+  }catch(e){
+    recordOptionalCommunityWarning('reactionLoad', e, 'Could not load your reaction state. Public progress remains available.');
+    return null;
+  }
+}
+
+async function loadPublicProgress(pathId, limit = 10, options = {}){
   if(!cloudAvailable()) return store.publicProgress?.[pathId] || [];
   try{
     const publicEntriesQuery = fb.query(
@@ -731,22 +782,23 @@ async function loadPublicProgress(pathId, limit = 10){
     const snap = await withTimeout(fb.getDocs(publicEntriesQuery), READ_TIMEOUT_MS, 'load public progress');
     const entries = [];
     snap.forEach(d => entries.push({ id:d.id, ...d.data() }));
-    return cachePublicProgress(pathId, entries).slice(0, limit);
+    const normalized = cachePublicProgress(pathId, entries).slice(0, limit);
+    if(options.includeComments || options.includeCurrentUserReaction){
+      await Promise.all(normalized.map(async entry => {
+        if(options.includeComments) entry.comments = await loadPublicProgressComments(pathId, entry.id, 5);
+        if(options.includeCurrentUserReaction) entry.currentUserReaction = await loadCurrentUserReaction(pathId, entry.id);
+      }));
+      cachePublicProgress(pathId, normalized);
+    }
+    return normalized;
   }catch(e){
-    const warning = optionalPublicProgressWarning(e, 'Could not load public progress. Cached entries remain available.');
-    store.cloudDiagnostics = {
-      ...store.cloudDiagnostics,
-      publicProgressStatus: warning.status,
-      publicProgressMessage: warning.message,
-      publicProgressFailedAt: Date.now(),
-    };
-    console.warn('load public progress:', warning.message);
+    recordOptionalCommunityWarning('publicProgress', e, 'Could not load public progress. Cached entries remain available.');
     return (store.publicProgress?.[pathId] || []).slice(0, limit);
   }
 }
 
 export async function dbLoadPublicProgress(pathId, options = {}){
-  return loadPublicProgress(pathId, options.limit || 10);
+  return loadPublicProgress(pathId, options.limit || 10, options);
 }
 
 async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
@@ -757,7 +809,10 @@ async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
     children = await loadPathChildren(docSnap.id);
   }
   const publicProgress = ['public', 'unlisted'].includes(path.visibility)
-    ? await loadPublicProgress(docSnap.id, includeChildren ? 12 : 6)
+    ? await loadPublicProgress(docSnap.id, includeChildren ? 12 : 6, {
+        includeComments:!!includeChildren,
+        includeCurrentUserReaction:!!includeChildren,
+      })
     : [];
   return { id:docSnap.id, path, membership, publicProgress, ...children, childrenLoaded: !!includeChildren };
 }

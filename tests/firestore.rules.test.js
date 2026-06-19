@@ -163,17 +163,63 @@ describe('deterministic enrollment bootstrap', () => {
         status:'completed',
         visibility:'public',
       });
+      await setDoc(doc(adminDb, 'paths', pathId, 'publicProgress', 'entry-1', 'comments', 'comment-1'), {
+        id:'comment-1',
+        pathId,
+        entryId:'entry-1',
+        userId:userB,
+        body:'Visible encouragement',
+        visibility:'public',
+        status:'visible',
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'publicProgress', 'entry-1', 'comments', 'comment-hidden'), {
+        id:'comment-hidden',
+        pathId,
+        entryId:'entry-1',
+        userId:userB,
+        body:'Hidden',
+        visibility:'hidden',
+        status:'hidden',
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'publicProgress', 'entry-1', 'reactions', userB), {
+        userId:userB,
+        type:'cheer',
+      });
     });
 
     const signedOut = testEnv.unauthenticatedContext().firestore();
+    const userDb = testEnv.authenticatedContext(userB).firestore();
     await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId, 'publicProgress', 'entry-1')));
     await assertSucceeds(getDocs(query(
       collection(signedOut, 'paths', pathId, 'publicProgress'),
       where('visibility', '==', 'public')
     )));
     await assertFails(getDocs(collection(signedOut, 'paths', pathId, 'publicProgress')));
+    await assertSucceeds(getDocs(query(
+      collection(signedOut, 'paths', pathId, 'publicProgress', 'entry-1', 'comments'),
+      where('visibility', '==', 'public'),
+      where('status', '==', 'visible')
+    )));
+    await assertFails(getDoc(doc(signedOut, 'paths', pathId, 'publicProgress', 'entry-1', 'comments', 'comment-hidden')));
+    await assertFails(setDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-1', 'comments', 'comment-2'), {
+      id:'comment-2',
+      pathId,
+      entryId:'entry-1',
+      userId:userB,
+      body:'Browser write',
+      visibility:'public',
+      status:'visible',
+    }));
+    await assertFails(updateDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-1', 'comments', 'comment-1'), {
+      body:'Browser update',
+    }));
+    await assertFails(getDocs(collection(signedOut, 'paths', pathId, 'publicProgress', 'entry-1', 'reactions')));
+    await assertSucceeds(getDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-1', 'reactions', userB)));
+    await assertFails(setDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-1', 'reactions', userB), {
+      userId:userB,
+      type:'cheer',
+    }));
 
-    const userDb = testEnv.authenticatedContext(userB).firestore();
     await assertFails(setDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-2'), {
       id:'entry-2',
       pathId,

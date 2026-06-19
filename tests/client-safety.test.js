@@ -225,3 +225,18 @@ test('public join button disables duplicate clicks while join request is active'
   assert.match(source, /Joining\.\.\./);
   assert.match(source, /id="joinPathBtn"[^+]*\+ \(joining \? 'disabled'/);
 });
+
+test('public progress interaction UI escapes comments and uses protected API helpers', () => {
+  const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
+  const interactionBlock = viewSource.slice(viewSource.indexOf('function publicProgressInteractionsHTML'), viewSource.indexOf('function publicProgressTimelineHTML'));
+  assert.match(interactionBlock, /esc\(comment\.body\)/);
+  assert.match(interactionBlock, /aria-pressed/);
+  assert.match(interactionBlock, /Sign in to cheer or comment/);
+  assert.match(viewSource, /reactToProgress\(record\.id, entryId/);
+  assert.match(viewSource, /commentOnProgress\(record\.id, entryId, body\)/);
+  assert.match(viewSource, /hideProgressComment\(record\.id, entryId, commentId\)/);
+  assert.match(apiSource, /interactionRequest\('\/api\/react-progress'/);
+  assert.match(apiSource, /interactionRequest\('\/api\/comment-progress'/);
+  assert.match(apiSource, /interactionRequest\('\/api\/hide-progress-comment'/);
+});

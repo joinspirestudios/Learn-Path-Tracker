@@ -48,6 +48,17 @@ function progressMessage(status, payload = {}, action = 'publish'){
   return payload?.message || `Could not ${action} progress.`;
 }
 
+function interactionMessage(status, payload = {}, action = 'update this interaction'){
+  const code = payload?.code || payload?.error || '';
+  if(status === 401 || code === 'unauthorized') return action === 'comment' ? 'Sign in to comment.' : 'Sign in to cheer this progress.';
+  if(status === 403 || ['path_not_public', 'forbidden'].includes(code)) return 'This progress entry is not available for that action.';
+  if(status === 404 || ['path_not_found', 'progress_not_found', 'comment_not_found'].includes(code)) return 'This progress entry could not be found.';
+  if(status === 400 || ['invalid_request', 'invalid_reaction', 'invalid_comment'].includes(code)) return payload?.message || 'Check the details and try again.';
+  if(status === 429 || code === 'rate_limited') return 'Too many attempts. Try again later.';
+  if(status >= 500) return 'Could not update this progress interaction right now. Try again.';
+  return payload?.message || 'Could not update this progress interaction.';
+}
+
 export async function joinPath(pathId){
   const response = await authFetch('/api/join-path', {
     method:'POST',
@@ -96,4 +107,35 @@ export async function publishProgress(pathId, dayNumber, payload = {}){
 
 export async function unpublishProgress(pathId, dayNumber){
   return progressRequest('/api/unpublish-progress', { pathId, dayNumber }, 'unpublish');
+}
+
+async function interactionRequest(url, body, action){
+  const response = await authFetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify(body),
+  });
+  let payload = null;
+  try{ payload = await response.json(); }
+  catch(error){ payload = {}; }
+  if(!response.ok || !payload?.ok){
+    const error = new Error(interactionMessage(response.status, payload, action));
+    error.code = payload?.code || payload?.error || `${action}_failed`;
+    error.status = response.status;
+    error.retryAfterSeconds = payload?.retryAfterSeconds || null;
+    throw error;
+  }
+  return payload;
+}
+
+export async function reactToProgress(pathId, entryId, reaction){
+  return interactionRequest('/api/react-progress', { pathId, entryId, reaction }, 'react');
+}
+
+export async function commentOnProgress(pathId, entryId, body){
+  return interactionRequest('/api/comment-progress', { pathId, entryId, body }, 'comment');
+}
+
+export async function hideProgressComment(pathId, entryId, commentId){
+  return interactionRequest('/api/hide-progress-comment', { pathId, entryId, commentId }, 'hide');
 }

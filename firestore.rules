@@ -261,6 +261,33 @@ service cloud.firestore {
         ] && resource.data.visibility == "public";
 
         allow write: if false;
+
+        match /comments/{commentId} {
+          allow read: if pathDoc(pathId).data.visibility in [
+            "public",
+            "unlisted"
+          ] && get(
+            /databases/$(database)/documents/paths/$(pathId)/publicProgress/$(entryId)
+          ).data.visibility == "public"
+            && resource.data.visibility == "public"
+            && resource.data.status == "visible";
+
+          allow write: if false;
+        }
+
+        match /reactions/{uid} {
+          allow get: if signedIn()
+            && uid == request.auth.uid
+            && pathDoc(pathId).data.visibility in [
+              "public",
+              "unlisted"
+            ] && get(
+              /databases/$(database)/documents/paths/$(pathId)/publicProgress/$(entryId)
+            ).data.visibility == "public";
+
+          allow list: if false;
+          allow write: if false;
+        }
       }
     }
 

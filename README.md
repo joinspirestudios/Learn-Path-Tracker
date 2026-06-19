@@ -143,11 +143,27 @@ Public progress timeline reads are constrained to documents where `visibility ==
 
 Browser clients cannot write public progress documents directly. `POST /api/publish-progress` and `POST /api/unpublish-progress` verify Firebase Authentication server-side, confirm the enrollment belongs to the caller, require the day log to be completed, sanitize the public entry, and update `stats.publicProgressCount`. Unpublishing deletes only the public mirror and leaves private day logs and evidence history intact.
 
+### Cheers and comments
+
+Phase 5.9 adds lightweight reactions and comments to sanitized public progress entries. Interactions attach only to `paths/{pathId}/publicProgress/{entryId}`. They do not attach to private day logs, private evidence submissions, private reflections, enrollments, unpublished completed days or the path itself as a general wall.
+
+Reaction and comment writes use protected API routes:
+
+- `POST /api/react-progress`
+- `POST /api/comment-progress`
+- `POST /api/hide-progress-comment`
+
+The browser can read visible public comments and safe aggregate counts, but it cannot directly create comments, create reactions or update interaction counters. Reaction counts and visible comment counts are server-managed. Repeated reactions are idempotent, removals do not decrement below zero, and comments are stored as bounded plain text.
+
+Users can remove their own comments. Path owners can hide comments on their paths. This is a moderation foundation only: full moderation queues, reporting dashboards and notifications remain deferred.
+
+Private day logs, private evidence, private reflections and raw proof URLs remain private. Public progress entries continue to expose only sanitized proof summaries such as counts and evidence type labels.
+
 ### Joinable paths
 
 When a user joins a path, the source path remains owned by the creator. The joiner receives their own membership, enrollment, day logs and evidence records, and does not receive editor permissions or an editable cloned copy of the source path.
 
-Phase 5.7 introduces real joined-count tracking. Phase 5.8 adds accurate public progress counts from the server-managed timeline mirror. Other community proof metrics such as active this week, completion count and proof count are reserved for later phases unless accurately computed. Comments, cheers, reactions, notifications and creator profiles are deferred to later community phases.
+Phase 5.7 introduces real joined-count tracking. Phase 5.8 adds accurate public progress counts from the server-managed timeline mirror. Phase 5.9 adds lightweight cheers and comments on public progress entries. Other community proof metrics such as active this week, completion count and proof count are reserved for later phases unless accurately computed. Notifications, followers, global feeds, trending, public media proof, Gemini evidence intelligence, research and adaptive planning are not part of Phase 5.9.
 
 ### Domain-aware setup
 
@@ -358,9 +374,12 @@ api/
     rate-limit.js
     require-auth.js
   generate-path.js
+  comment-progress.js
+  hide-progress-comment.js
   interpret-goal.js
   join-path.js
   publish-progress.js
+  react-progress.js
   transcribe-voice.js
   unpublish-progress.js
 src/
@@ -382,7 +401,9 @@ tests/
   join-path-api.test.js
   latency-logging.test.js
   phase5.model.test.js
+  progress-interactions-api.test.js
   public-progress-api.test.js
+  public-progress-db.test.js
   public-progress-model.test.js
   timeout-alignment.test.js
 ```
@@ -391,4 +412,4 @@ tests/
 
 ## Deferred work
 
-This phase does not add research APIs, comments, notifications, payments, or a social feed. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.
+This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

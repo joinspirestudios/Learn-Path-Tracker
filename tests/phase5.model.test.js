@@ -281,7 +281,9 @@ test('public page rendering source includes join/share states and sanitized prog
   assert.match(source, /includes creator constraints/);
   assert.match(source, /Recent public progress/);
   assert.match(source, /Sanitized learner updates/);
-  assert.doesNotMatch(source, /Add comment|Send cheer|React to progress/i);
+  assert.match(source, /Cheer/);
+  assert.match(source, /Add a comment/);
+  assert.doesNotMatch(source, /Send cheer|React to progress/i);
 });
 
 test('discoverable source excludes unlisted/private paths while public cards can show joined count', () => {
