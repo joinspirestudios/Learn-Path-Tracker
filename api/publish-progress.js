@@ -6,6 +6,15 @@ import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
 import { enrollmentIdFor } from './join-path.js';
 import {
+  applyActiveThisWeek,
+  currentUtcWeekKey,
+  makeParticipantStats,
+  normalizeServerPathStats,
+  participantWrite,
+  publicProofCount,
+  statsWrite,
+} from './_lib/path-trust-metrics.js';
+import {
   cleanPublicCaption,
   createSanitizedPublicProgressEntry,
   isPublishablePath,
@@ -24,11 +33,6 @@ function cleanDayNumber(value){
     throw apiError('invalid_request', 'dayNumber is invalid.', 400);
   }
   return day;
-}
-
-function numericStat(value){
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 async function readCollectionDocs(collectionRef){
@@ -75,12 +79,14 @@ export function createPublishProgressHandler({
 
       const firestore = db || getAdminFirestore();
       const pathRef = firestore.collection('paths').doc(pathId);
+      const participantRef = pathRef.collection('participantStats').doc(auth.uid);
       const enrollmentId = enrollmentIdFor(pathId, auth.uid);
       const enrollmentRef = firestore.collection('enrollments').doc(enrollmentId);
       const dayLogRef = enrollmentRef.collection('dayLogs').doc(String(dayNumber));
       const entryId = publicProgressEntryId(auth.uid, dayNumber);
       const entryRef = pathRef.collection('publicProgress').doc(entryId);
       const stamp = now();
+      const weekKey = currentUtcWeekKey(stamp);
 
       const tasks = await readCollectionDocs(pathRef.collection('tasks'));
       const submissions = (await readCollectionDocs(enrollmentRef.collection('submissions')))
@@ -109,10 +115,8 @@ export function createPublishProgressHandler({
         }
 
         const entrySnap = await transaction.get(entryRef);
-        const alreadyPublished = entrySnap.exists && (entrySnap.data() || {}).visibility === 'public';
-        const stats = path.stats && typeof path.stats === 'object' ? path.stats : {};
-        const currentCount = numericStat(stats.publicProgressCount ?? path.publicProgressCount);
-        const nextCount = currentCount + (alreadyPublished ? 0 : 1);
+        const previousEntry = entrySnap.exists ? (entrySnap.data() || {}) : {};
+        const alreadyPublished = entrySnap.exists && previousEntry.visibility === 'public';
         const entry = createSanitizedPublicProgressEntry({
           pathId,
           user:publicUser(auth),
@@ -123,20 +127,34 @@ export function createPublishProgressHandler({
           caption,
           now:stamp,
         });
+        const previousProofCount = alreadyPublished ? publicProofCount(previousEntry) : 0;
+        const nextProofCount = publicProofCount(entry);
+        const proofDelta = nextProofCount - previousProofCount;
+        const participantSnap = await transaction.get(participantRef);
+        let participant = makeParticipantStats(pathId, auth.uid, stamp, participantSnap.exists ? (participantSnap.data() || {}) : {});
+        let stats = normalizeServerPathStats(path);
+        if(!alreadyPublished) stats.publicProgressCount += 1;
+        stats.proofSubmissionCount = Math.max(0, stats.proofSubmissionCount + proofDelta);
+        const active = applyActiveThisWeek(stats, participant, weekKey);
+        stats = active.stats;
+        participant = {
+          ...active.participant,
+          lastActiveAt:stamp,
+          publicProgressCount:Math.max(0, Number(active.participant.publicProgressCount || 0) + (alreadyPublished ? 0 : 1)),
+          proofSubmissionCount:Math.max(0, Number(active.participant.proofSubmissionCount || 0) + proofDelta),
+        };
         transaction.set(entryRef, entry, { merge:false });
-        transaction.set(pathRef, {
-          stats:{
-            publicProgressCount:nextCount,
-            updatedAt:stamp,
-          },
-        }, { merge:true });
+        transaction.set(pathRef, { stats:statsWrite(stats, stamp) }, { merge:true });
+        transaction.set(participantRef, participantWrite(participant, stamp), { merge:true });
         return {
           pathId,
           entryId,
           dayNumber,
           published:true,
           alreadyPublished,
-          publicProgressCount:nextCount,
+          publicProgressCount:stats.publicProgressCount,
+          proofSubmissionCount:stats.proofSubmissionCount,
+          stats:statsWrite(stats, stamp),
           entry,
         };
       });

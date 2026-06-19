@@ -11,6 +11,7 @@ const ROUTE_LIMITS = {
   reactProgress:{ hourlyEnv:'RATE_LIMIT_REACT_PROGRESS_PER_HOUR', burstEnv:'RATE_LIMIT_REACT_PROGRESS_BURST_PER_10_MINUTES', hourly:120, burst:30 },
   commentProgress:{ hourlyEnv:'RATE_LIMIT_COMMENT_PROGRESS_PER_HOUR', burstEnv:'RATE_LIMIT_COMMENT_PROGRESS_BURST_PER_10_MINUTES', hourly:40, burst:8 },
   hideProgressComment:{ hourlyEnv:'RATE_LIMIT_HIDE_PROGRESS_COMMENT_PER_HOUR', burstEnv:'RATE_LIMIT_HIDE_PROGRESS_COMMENT_BURST_PER_10_MINUTES', hourly:80, burst:20 },
+  syncPathMetrics:{ hourlyEnv:'RATE_LIMIT_SYNC_PATH_METRICS_PER_HOUR', burstEnv:'RATE_LIMIT_SYNC_PATH_METRICS_BURST_PER_10_MINUTES', hourly:120, burst:30 },
 };
 
 function configuredLimit(name, fallback){

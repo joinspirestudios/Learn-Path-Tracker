@@ -124,6 +124,34 @@ describe('deterministic enrollment bootstrap', () => {
     await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId)));
   });
 
+  test('public path aggregate stats remain readable through the path document', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const adminDb = context.firestore();
+      await setDoc(doc(adminDb, 'paths', pathId), {
+        id:pathId,
+        ownerId:userA,
+        title:'Public stats path',
+        visibility:'public',
+        stats:{
+          joinedCount:2,
+          activeThisWeek:1,
+          activeWeekKey:'2026-W25',
+          day1StartedCount:2,
+          day7ReachedCount:1,
+          halfwayReachedCount:1,
+          completedCount:1,
+          publicProgressCount:3,
+          proofSubmissionCount:2,
+        },
+      });
+    });
+
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    const snap = await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId)));
+    assert.equal(snap.data().stats.joinedCount, 2);
+    assert.equal(snap.data().stats.proofSubmissionCount, 2);
+  });
+
   test('denies browser writes to server-managed path stats', async () => {
     const ownerDb = testEnv.authenticatedContext(userA).firestore();
     await assertFails(setDoc(doc(ownerDb, 'paths', 'stats-on-create'), {
@@ -142,6 +170,46 @@ describe('deterministic enrollment bootstrap', () => {
     }));
     await assertFails(updateDoc(doc(ownerDb, 'paths', pathId), {
       stats:{ joinedCount:99, publicProgressCount:99 },
+    }));
+    await assertFails(updateDoc(doc(ownerDb, 'paths', pathId), {
+      activeThisWeek:99,
+      activeWeekKey:'2026-W25',
+      day1StartedCount:99,
+      day7ReachedCount:99,
+      halfwayReachedCount:99,
+      completedCount:99,
+      proofSubmissionCount:99,
+      publicProgressCount:99,
+      statsUpdatedAt:new Date(),
+    }));
+  });
+
+  test('participantStats are server-only and not publicly readable', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const adminDb = context.firestore();
+      await setDoc(doc(adminDb, 'paths', pathId), {
+        id:pathId,
+        ownerId:userA,
+        title:'Participant stats path',
+        visibility:'public',
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'participantStats', userB), {
+        uid:userB,
+        pathId,
+        highestDayReached:7,
+      });
+    });
+
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    const userDb = testEnv.authenticatedContext(userB).firestore();
+    const ownerDb = testEnv.authenticatedContext(userA).firestore();
+    await assertFails(getDoc(doc(signedOut, 'paths', pathId, 'participantStats', userB)));
+    await assertFails(getDoc(doc(userDb, 'paths', pathId, 'participantStats', userB)));
+    await assertFails(getDoc(doc(ownerDb, 'paths', pathId, 'participantStats', userB)));
+    await assertFails(setDoc(doc(userDb, 'paths', pathId, 'participantStats', userB), {
+      uid:userB,
+      pathId,
+      highestDayReached:8,
     }));
   });
 

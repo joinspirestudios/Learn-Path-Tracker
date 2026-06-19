@@ -1,10 +1,17 @@
-import { FieldValue } from 'firebase-admin/firestore';
 import { createRouteLogger } from './_lib/diagnostics.js';
 import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
 import { boundedText, requireJsonBody } from './_lib/http.js';
 import { getAdminFirestore } from './_lib/firebase-admin.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
+import {
+  applyActiveThisWeek,
+  currentUtcWeekKey,
+  makeParticipantStats,
+  normalizeServerPathStats,
+  participantWrite,
+  statsWrite,
+} from './_lib/path-trust-metrics.js';
 
 const VALID_VISIBILITIES = new Set(['private', 'unlisted', 'public']);
 const VALID_MEMBER_ROLES = new Set(['owner', 'editor', 'commenter', 'viewer']);
@@ -19,21 +26,6 @@ function cleanPathId(value){
 
 export function enrollmentIdFor(pathId, uid){
   return String(uid || 'local') + '_' + String(pathId || '').replace(/[\/\\]/g, '_');
-}
-
-function numericStat(value){
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-}
-
-function normalizedStats(path = {}){
-  const stats = path.stats && typeof path.stats === 'object' ? path.stats : {};
-  return {
-    joinedCount:numericStat(stats.joinedCount ?? path.joinedCount),
-    activeThisWeek:numericStat(stats.activeThisWeek ?? path.activeThisWeek),
-    completedCount:numericStat(stats.completedCount ?? path.completedCount),
-    proofSubmissionCount:numericStat(stats.proofSubmissionCount ?? path.proofSubmissionCount),
-  };
 }
 
 function cleanRole(role){
@@ -91,7 +83,6 @@ export function createJoinPathHandler({
   authenticate = requireAuth,
   rateLimit = enforceRateLimit,
   db = null,
-  increment = FieldValue.increment,
   now = () => new Date(),
   logger = console,
 } = {}){
@@ -116,15 +107,18 @@ export function createJoinPathHandler({
       const firestore = db || getAdminFirestore();
       const pathRef = firestore.collection('paths').doc(pathId);
       const memberRef = pathRef.collection('members').doc(auth.uid);
+      const participantRef = pathRef.collection('participantStats').doc(auth.uid);
       const enrollmentId = enrollmentIdFor(pathId, auth.uid);
       const enrollmentRef = firestore.collection('enrollments').doc(enrollmentId);
       const stamp = now();
+      const weekKey = currentUtcWeekKey(stamp);
 
       const result = await firestore.runTransaction(async transaction => {
         const pathSnap = await transaction.get(pathRef);
         if(!pathSnap.exists) throw apiError('path_not_found', 'This path could not be found.', 404);
         const path = pathSnap.data() || {};
         const memberSnap = await transaction.get(memberRef);
+        const participantSnap = await transaction.get(participantRef);
         const enrollmentSnap = await transaction.get(enrollmentRef);
         const owner = isOwner(path, auth.uid);
         if(!canJoinVisibility(path, auth.uid, memberSnap)){
@@ -132,35 +126,22 @@ export function createJoinPathHandler({
         }
 
         const existingMembership = memberSnap.exists ? (memberSnap.data() || {}) : null;
+        const existingParticipant = participantSnap.exists ? (participantSnap.data() || {}) : null;
         const existingEnrollment = enrollmentSnap.exists ? (enrollmentSnap.data() || {}) : null;
         const alreadyJoined = owner || !!existingMembership;
         const firstParticipantJoin = !owner && !existingMembership;
-        const stats = normalizedStats(path);
-        const joinCount = stats.joinedCount + (firstParticipantJoin ? 1 : 0);
+        let stats = normalizeServerPathStats(path);
+        let participant = makeParticipantStats(pathId, auth.uid, stamp, existingParticipant || {});
+        if(firstParticipantJoin) stats.joinedCount += 1;
+        const active = owner ? { stats, participant, incremented:false } : applyActiveThisWeek(stats, participant, weekKey);
+        stats = active.stats;
+        participant = { ...active.participant, lastActiveAt:stamp };
+        const joinCount = stats.joinedCount;
 
         if(!owner){
           transaction.set(memberRef, makeMembership(auth.uid, stamp, existingMembership), { merge:true });
-          if(firstParticipantJoin){
-            transaction.set(pathRef, {
-              stats:{
-                joinedCount:increment(1),
-                activeThisWeek:stats.activeThisWeek,
-                completedCount:stats.completedCount,
-                proofSubmissionCount:stats.proofSubmissionCount,
-                updatedAt:stamp,
-              },
-            }, { merge:true });
-          }else if(!path.stats || typeof path.stats !== 'object'){
-            transaction.set(pathRef, {
-              stats:{
-                joinedCount:stats.joinedCount,
-                activeThisWeek:stats.activeThisWeek,
-                completedCount:stats.completedCount,
-                proofSubmissionCount:stats.proofSubmissionCount,
-                updatedAt:stamp,
-              },
-            }, { merge:true });
-          }
+          transaction.set(pathRef, { stats:statsWrite(stats, stamp) }, { merge:true });
+          transaction.set(participantRef, participantWrite(participant, stamp), { merge:true });
           if(!existingEnrollment){
             transaction.set(enrollmentRef, makeEnrollment(pathId, auth.uid, stamp), { merge:true });
           }
@@ -173,6 +154,8 @@ export function createJoinPathHandler({
           alreadyJoined,
           owner,
           joinCount,
+          stats:statsWrite(stats, stamp),
+          participantStats:owner ? null : participantWrite(participant, stamp),
           membership:owner ? { uid:auth.uid, role:'owner' } : makeMembership(auth.uid, stamp, existingMembership),
           enrollment:existingEnrollment ? makeEnrollment(pathId, auth.uid, stamp, existingEnrollment) : makeEnrollment(pathId, auth.uid, stamp),
         };

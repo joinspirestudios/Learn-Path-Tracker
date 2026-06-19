@@ -150,6 +150,7 @@ test('publish progress route creates sanitized public entry and increments count
   await handler(jsonRequest({ pathId:'public-path', dayNumber:1, publicCaption:'Shared update' }), first);
   assert.equal(first.statusCode, 200);
   assert.equal(first.payload.publicProgressCount, 1);
+  assert.equal(first.payload.proofSubmissionCount, 1);
   assert.equal(first.payload.alreadyPublished, false);
 
   const entryPath = `paths/public-path/publicProgress/${publicProgressEntryId('learner', 1)}`;
@@ -158,14 +159,50 @@ test('publish progress route creates sanitized public entry and increments count
   assert.equal(entry.evidenceCount, 1);
   assert.deepEqual(entry.evidenceTypes, ['url']);
   assert.equal(db.get('paths/public-path').stats.publicProgressCount, 1);
+  assert.equal(db.get('paths/public-path').stats.proofSubmissionCount, 1);
+  assert.equal(db.get('paths/public-path/participantStats/learner').publicProgressCount, 1);
+  assert.equal(db.get('paths/public-path/participantStats/learner').proofSubmissionCount, 1);
   assert.doesNotMatch(JSON.stringify(entry), /private\.example\.com|private note/);
 
   const second = responseRecorder();
   await handler(jsonRequest({ pathId:'public-path', dayNumber:1, publicCaption:'Edited public caption' }), second);
   assert.equal(second.statusCode, 200);
   assert.equal(second.payload.publicProgressCount, 1);
+  assert.equal(second.payload.proofSubmissionCount, 1);
   assert.equal(second.payload.alreadyPublished, true);
   assert.equal(db.get(entryPath).publicCaption, 'Edited public caption');
+});
+
+test('republishing adjusts proofSubmissionCount by sanitized evidence delta', async () => {
+  const { seed } = seedCompletedPath();
+  const entryId = publicProgressEntryId('learner', 1);
+  const db = new MockDb({
+    ...seed,
+    'paths/public-path':{ id:'public-path', ownerId:'owner', visibility:'public', stats:{ publicProgressCount:1, proofSubmissionCount:2 } },
+    [`paths/public-path/publicProgress/${entryId}`]:{
+      id:entryId,
+      pathId:'public-path',
+      userId:'learner',
+      dayNumber:1,
+      status:'completed',
+      visibility:'public',
+      evidenceCount:2,
+    },
+    [`enrollments/${enrollmentIdFor('public-path', 'learner')}/submissions/s2`]:{
+      id:'s2',
+      dayNumber:2,
+      taskId:'t1',
+      evidenceType:'url',
+      evidenceUrl:'https://private.example.com/other',
+    },
+  });
+
+  const res = responseRecorder();
+  await publishHandler(db)(jsonRequest({ pathId:'public-path', dayNumber:1 }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.publicProgressCount, 1);
+  assert.equal(res.payload.proofSubmissionCount, 1);
+  assert.equal(db.get('paths/public-path').stats.proofSubmissionCount, 1);
 });
 
 test('publish progress rejects private paths and incomplete days', async () => {
@@ -194,7 +231,8 @@ test('unpublish progress deletes only the public mirror and decrements count ide
   const entryId = publicProgressEntryId('learner', 1);
   const db = new MockDb({
     ...seed,
-    'paths/public-path':{ id:'public-path', ownerId:'owner', visibility:'public', stats:{ publicProgressCount:1 } },
+    'paths/public-path':{ id:'public-path', ownerId:'owner', visibility:'public', stats:{ publicProgressCount:1, proofSubmissionCount:1 } },
+    'paths/public-path/participantStats/learner':{ uid:'learner', pathId:'public-path', publicProgressCount:1, proofSubmissionCount:1 },
     [`paths/public-path/publicProgress/${entryId}`]:{
       id:entryId,
       pathId:'public-path',
@@ -211,8 +249,11 @@ test('unpublish progress deletes only the public mirror and decrements count ide
   await handler(jsonRequest({ pathId:'public-path', dayNumber:1 }), first);
   assert.equal(first.statusCode, 200);
   assert.equal(first.payload.publicProgressCount, 0);
+  assert.equal(first.payload.proofSubmissionCount, 0);
   assert.equal(first.payload.alreadyUnpublished, false);
   assert.equal(db.get(`paths/public-path/publicProgress/${entryId}`), undefined);
+  assert.equal(db.get('paths/public-path').stats.proofSubmissionCount, 0);
+  assert.equal(db.get('paths/public-path/participantStats/learner').proofSubmissionCount, 0);
   assert.equal(db.get(`enrollments/${enrollmentId}/dayLogs/1`).status, 'completed');
   assert.ok(db.get(`enrollments/${enrollmentId}/submissions/s1`));
 
@@ -220,5 +261,6 @@ test('unpublish progress deletes only the public mirror and decrements count ide
   await handler(jsonRequest({ pathId:'public-path', dayNumber:1 }), second);
   assert.equal(second.statusCode, 200);
   assert.equal(second.payload.publicProgressCount, 0);
+  assert.equal(second.payload.proofSubmissionCount, 0);
   assert.equal(second.payload.alreadyUnpublished, true);
 });

@@ -14,8 +14,9 @@ import {
 } from '../src/ai-builder-model.js';
 import { getTasksForDay } from '../src/journey.js';
 import {
-  canJoinPath, canPreviewPath, normalizePathStats, platformToLocalPath,
-  resolveCreatorName,
+  activeThisWeekIsCurrent, canJoinPath, canPreviewPath, currentUtcWeekKey,
+  displayableActiveThisWeek, normalizePathStats, platformToLocalPath,
+  resolveCreatorName, trustBadgesForStats,
 } from '../src/platform.js';
 import { TEMPLATES } from '../src/templates.js';
 import { basicStarterDraft, createGeneratePathHandler, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
@@ -259,13 +260,49 @@ test('Phase 5.7 platform visibility and stats model supports joinable public pag
   assert.deepEqual(normalizePathStats(publicPath.stats), {
     joinedCount:4,
     activeThisWeek:0,
+    activeWeekKey:'',
+    day1StartedCount:0,
+    day7ReachedCount:0,
+    halfwayReachedCount:0,
     completedCount:0,
     proofSubmissionCount:0,
     publicProgressCount:0,
     updatedAt:null,
+    schemaVersion:1,
   });
   assert.equal(normalizePathStats(null, { joinedCount:'9' }).joinedCount, 9);
   assert.equal(normalizePathStats({ joinedCount:'nope' }).joinedCount, 0);
+});
+
+test('Phase 5.10 trust stats normalize safely and active-week display is honest', () => {
+  const currentDate = new Date('2026-06-19T12:00:00.000Z');
+  const weekKey = currentUtcWeekKey(currentDate);
+  assert.equal(weekKey, '2026-W25');
+  const stats = normalizePathStats({
+    joinedCount:'2',
+    activeThisWeek:5,
+    activeWeekKey:weekKey,
+    day1StartedCount:'3',
+    day7ReachedCount:-1,
+    halfwayReachedCount:'bad',
+    completedCount:1,
+    publicProgressCount:4,
+    proofSubmissionCount:2,
+  });
+  assert.equal(stats.joinedCount, 2);
+  assert.equal(stats.day1StartedCount, 3);
+  assert.equal(stats.day7ReachedCount, 0);
+  assert.equal(stats.halfwayReachedCount, 0);
+  assert.equal(displayableActiveThisWeek(stats, currentDate), 5);
+  assert.equal(activeThisWeekIsCurrent(stats, currentDate), true);
+  assert.equal(displayableActiveThisWeek({ ...stats, activeWeekKey:'2026-W24' }, currentDate), null);
+  assert.deepEqual(trustBadgesForStats(stats, currentDate), [
+    'Proof-backed',
+    'Active this week',
+    'Learners completed this',
+    'Community path',
+  ]);
+  assert.deepEqual(trustBadgesForStats({ publicProgressCount:0, proofSubmissionCount:0, completedCount:0, joinedCount:1 }, currentDate), []);
 });
 
 test('public page rendering source includes join/share states and sanitized progress timelines', () => {
@@ -283,6 +320,9 @@ test('public page rendering source includes join/share states and sanitized prog
   assert.match(source, /Sanitized learner updates/);
   assert.match(source, /Cheer/);
   assert.match(source, /Add a comment/);
+  assert.match(source, /Active this week/);
+  assert.match(source, /Proof submitted/);
+  assert.match(source, /trustBadgesForStats/);
   assert.doesNotMatch(source, /Send cheer|React to progress/i);
 });
 
@@ -294,6 +334,9 @@ test('discoverable source excludes unlisted/private paths while public cards can
   assert.match(showBlock, /def\.discoverable !== false/);
   assert.doesNotMatch(showBlock, /unlisted/);
   assert.match(cardBlock, /joined/);
+  assert.match(cardBlock, /active this week/);
+  assert.match(cardBlock, /public updates/);
+  assert.match(cardBlock, /completed/);
   assert.match(cardBlock, /normalizePathStats/);
 });
 

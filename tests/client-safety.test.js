@@ -240,3 +240,17 @@ test('public progress interaction UI escapes comments and uses protected API hel
   assert.match(apiSource, /interactionRequest\('\/api\/comment-progress'/);
   assert.match(apiSource, /interactionRequest\('\/api\/hide-progress-comment'/);
 });
+
+test('client metrics sync uses protected API and isolates optional failures', () => {
+  const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
+  assert.match(apiSource, /authFetch\('\/api\/sync-path-metrics'/);
+  assert.match(apiSource, /method:'POST'/);
+  assert.match(viewSource, /syncPathMetricsQuiet/);
+  const quietBlock = viewSource.slice(viewSource.indexOf('async function syncPathMetricsQuiet'), viewSource.indexOf('async function publishCompletedProgress'));
+  assert.match(quietBlock, /metricsSyncStatus/);
+  assert.doesNotMatch(quietBlock, /syncErrorMessage/);
+  assert.doesNotMatch(quietBlock, /store\.cloudStatus\s*=/);
+  assert.match(viewSource, /syncPathMetricsQuiet\(id, 'day_started', 1\)/);
+  assert.match(viewSource, /syncPathMetricsQuiet\(id, 'day_completed', day\)/);
+});

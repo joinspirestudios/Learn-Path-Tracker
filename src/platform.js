@@ -30,21 +30,60 @@ export function cleanVisibility(v){
   return PATH_VISIBILITIES.includes(v) ? v : 'private';
 }
 
+export const TRUST_STATS_SCHEMA_VERSION = 1;
+
+export function currentUtcWeekKey(date = new Date()){
+  const d = date instanceof Date ? new Date(date.getTime()) : new Date(date);
+  if(Number.isNaN(d.getTime())) return '';
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+  return utc.getUTCFullYear() + '-W' + String(week).padStart(2, '0');
+}
+
+function cleanStat(value){
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
 export function normalizePathStats(value = {}, legacy = {}){
   const source = value && typeof value === 'object' ? value : {};
-  const joined = Number(source.joinedCount ?? legacy.joinedCount ?? 0);
-  const active = Number(source.activeThisWeek ?? legacy.activeThisWeek ?? 0);
-  const completed = Number(source.completedCount ?? legacy.completedCount ?? 0);
-  const proof = Number(source.proofSubmissionCount ?? legacy.proofSubmissionCount ?? 0);
-  const publicProgress = Number(source.publicProgressCount ?? legacy.publicProgressCount ?? 0);
   return {
-    joinedCount:Number.isFinite(joined) && joined > 0 ? Math.floor(joined) : 0,
-    activeThisWeek:Number.isFinite(active) && active > 0 ? Math.floor(active) : 0,
-    completedCount:Number.isFinite(completed) && completed > 0 ? Math.floor(completed) : 0,
-    proofSubmissionCount:Number.isFinite(proof) && proof > 0 ? Math.floor(proof) : 0,
-    publicProgressCount:Number.isFinite(publicProgress) && publicProgress > 0 ? Math.floor(publicProgress) : 0,
+    joinedCount:cleanStat(source.joinedCount ?? legacy.joinedCount),
+    activeThisWeek:cleanStat(source.activeThisWeek ?? legacy.activeThisWeek),
+    activeWeekKey:String(source.activeWeekKey ?? legacy.activeWeekKey ?? ''),
+    day1StartedCount:cleanStat(source.day1StartedCount ?? legacy.day1StartedCount),
+    day7ReachedCount:cleanStat(source.day7ReachedCount ?? legacy.day7ReachedCount),
+    halfwayReachedCount:cleanStat(source.halfwayReachedCount ?? legacy.halfwayReachedCount),
+    completedCount:cleanStat(source.completedCount ?? legacy.completedCount),
+    proofSubmissionCount:cleanStat(source.proofSubmissionCount ?? legacy.proofSubmissionCount),
+    publicProgressCount:cleanStat(source.publicProgressCount ?? legacy.publicProgressCount),
     updatedAt:source.updatedAt || legacy.statsUpdatedAt || null,
+    schemaVersion:cleanStat(source.schemaVersion ?? legacy.statsSchemaVersion) || TRUST_STATS_SCHEMA_VERSION,
   };
+}
+
+export function activeThisWeekIsCurrent(stats = {}, date = new Date()){
+  const normalized = normalizePathStats(stats);
+  return !!(normalized.activeWeekKey && normalized.activeWeekKey === currentUtcWeekKey(date));
+}
+
+export function displayableActiveThisWeek(stats = {}, date = new Date()){
+  const normalized = normalizePathStats(stats);
+  return activeThisWeekIsCurrent(normalized, date) ? normalized.activeThisWeek : null;
+}
+
+export function trustBadgesForStats(stats = {}, date = new Date()){
+  const normalized = normalizePathStats(stats);
+  const active = displayableActiveThisWeek(normalized, date);
+  const badges = [];
+  if(normalized.publicProgressCount > 0 || normalized.proofSubmissionCount > 0) badges.push('Proof-backed');
+  if(active > 0) badges.push('Active this week');
+  if(normalized.completedCount > 0) badges.push('Learners completed this');
+  if(normalized.joinedCount >= 2) badges.push('Community path');
+  return badges;
 }
 
 function phase55Meta(data = {}){

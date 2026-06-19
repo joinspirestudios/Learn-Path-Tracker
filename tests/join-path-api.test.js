@@ -145,9 +145,15 @@ test('public path join creates viewer membership, enrollment, and increments cou
   assert.equal(enrollment.streak, 0);
   assert.equal(enrollment.freezeCount, 1);
   assert.equal(enrollment.startDate, null);
+  const participant = db.get('paths/public-path/participantStats/joiner');
+  assert.equal(participant.uid, 'joiner');
+  assert.equal(participant.pathId, 'public-path');
+  assert.equal(participant.activeWeekKey, '2026-W25');
+  assert.equal(db.get('paths/public-path').stats.activeThisWeek, 1);
 
   const second = responseRecorder();
   db.docs.set(`enrollments/${enrollmentIdFor('public-path', 'joiner')}`, { ...enrollment, currentDay:5, streak:4 });
+  db.docs.set('paths/public-path/participantStats/joiner', { ...participant, highestDayReached:7 });
   await handler(jsonRequest({ pathId:'public-path' }), second);
   assert.equal(second.statusCode, 200);
   assert.equal(second.payload.alreadyJoined, true);
@@ -155,6 +161,7 @@ test('public path join creates viewer membership, enrollment, and increments cou
   assert.equal(db.get('paths/public-path').stats.joinedCount, 3);
   assert.equal(db.get(`enrollments/${enrollmentIdFor('public-path', 'joiner')}`).currentDay, 5);
   assert.equal(db.get(`enrollments/${enrollmentIdFor('public-path', 'joiner')}`).streak, 4);
+  assert.equal(db.get('paths/public-path/participantStats/joiner').highestDayReached, 7);
   assert.equal(db.get('paths/public-path').ownerId, 'owner');
   assert.equal(db.get('paths/public-path').title, 'Public');
 });
@@ -168,6 +175,7 @@ test('unlisted paths can be joined by direct path id', async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(db.get('paths/unlisted-path/members/joiner').role, 'viewer');
   assert.equal(db.get('paths/unlisted-path').stats.joinedCount, 1);
+  assert.equal(db.get('paths/unlisted-path/participantStats/joiner').uid, 'joiner');
 });
 
 test('existing membership is preserved and never upgraded to editor by join', async () => {

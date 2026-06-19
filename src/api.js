@@ -59,6 +59,18 @@ function interactionMessage(status, payload = {}, action = 'update this interact
   return payload?.message || 'Could not update this progress interaction.';
 }
 
+function metricsMessage(status, payload = {}){
+  const code = payload?.code || payload?.error || '';
+  if(status === 401 || code === 'unauthorized') return 'Sign in again to sync path metrics.';
+  if(status === 403 || code === 'forbidden') return 'Path metrics could not be updated for this account.';
+  if(status === 404 || ['path_not_found', 'enrollment_not_found', 'day_log_not_found'].includes(code)) return 'Path metrics source data is not ready yet.';
+  if(status === 409 || code === 'milestone_not_verified') return 'Path metrics will update after this milestone is verified.';
+  if(status === 400 || ['invalid_request', 'invalid_event'].includes(code)) return payload?.message || 'Path metrics request was invalid.';
+  if(status === 429 || code === 'rate_limited') return 'Path metrics are syncing too often. They will catch up later.';
+  if(status >= 500) return 'Path metrics could not sync right now.';
+  return payload?.message || 'Path metrics could not sync.';
+}
+
 export async function joinPath(pathId){
   const response = await authFetch('/api/join-path', {
     method:'POST',
@@ -138,4 +150,25 @@ export async function commentOnProgress(pathId, entryId, body){
 
 export async function hideProgressComment(pathId, entryId, commentId){
   return interactionRequest('/api/hide-progress-comment', { pathId, entryId, commentId }, 'hide');
+}
+
+export async function syncPathMetrics(pathId, event, dayNumber = null){
+  const body = { pathId, event };
+  if(dayNumber != null) body.dayNumber = dayNumber;
+  const response = await authFetch('/api/sync-path-metrics', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify(body),
+  });
+  let payload = null;
+  try{ payload = await response.json(); }
+  catch(error){ payload = {}; }
+  if(!response.ok || !payload?.ok){
+    const error = new Error(metricsMessage(response.status, payload));
+    error.code = payload?.code || payload?.error || 'metrics_sync_failed';
+    error.status = response.status;
+    error.retryAfterSeconds = payload?.retryAfterSeconds || null;
+    throw error;
+  }
+  return payload;
 }

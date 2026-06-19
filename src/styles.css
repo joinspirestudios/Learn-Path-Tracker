@@ -593,6 +593,8 @@
 .public-path-stats span,.owner-share-tools span{display:block;color:var(--sand-dim);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
 .public-path-stats b,.owner-share-tools b{display:block;color:var(--cream);font-size:24px;margin:4px 0}
 .public-path-stats small{color:var(--sand);font-size:12px;line-height:1.4}
+.trust-badges{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}
+.trust-badges span{border:1px solid rgba(212,175,55,.34);border-radius:999px;color:var(--gold);background:rgba(212,175,55,.08);padding:5px 9px;font-size:11px;font-weight:800}
 .public-path-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .public-path-grid h3,.preview-scheme h3{margin:0 0 8px;color:var(--cream)}
 .public-path-grid p{margin:0;color:var(--sand);line-height:1.5}
@@ -601,6 +603,8 @@
 .share-fallback input{min-width:min(620px,100%);font-size:13px}
 .owner-share-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
 .owner-share-tools div{margin-right:auto}
+.owner-share-tools.stats-managed div{margin-right:0;min-width:96px}
+.owner-share-tools.stats-managed small{width:100%;color:var(--sand-dim);font-size:12px}
 .public-progress-section{display:grid;gap:13px}
 .public-progress-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .public-progress-head h3{margin:0 0 4px;color:var(--cream)}

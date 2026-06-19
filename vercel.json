@@ -30,6 +30,9 @@
     },
     "api/hide-progress-comment.js": {
       "maxDuration": 15
+    },
+    "api/sync-path-metrics.js": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

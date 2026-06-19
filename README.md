@@ -141,7 +141,17 @@ Public timeline entries are sanitized mirrors. They include public author displa
 
 Public progress timeline reads are constrained to documents where `visibility == "public"` so Firestore Rules can authorize collection queries safely.
 
-Browser clients cannot write public progress documents directly. `POST /api/publish-progress` and `POST /api/unpublish-progress` verify Firebase Authentication server-side, confirm the enrollment belongs to the caller, require the day log to be completed, sanitize the public entry, and update `stats.publicProgressCount`. Unpublishing deletes only the public mirror and leaves private day logs and evidence history intact.
+Browser clients cannot write public progress documents directly. `POST /api/publish-progress` and `POST /api/unpublish-progress` verify Firebase Authentication server-side, confirm the enrollment belongs to the caller, require the day log to be completed, sanitize the public entry, and update `stats.publicProgressCount` plus `stats.proofSubmissionCount` from the sanitized public entry evidence count. Unpublishing deletes only the public mirror and leaves private day logs and evidence history intact.
+
+### Path trust metrics
+
+Phase 5.10 adds server-managed path trust metrics: joined count, current-week activity when accurately computed, Day 1 starts, Day 7 reached, halfway reached, completed count, public progress count and public proof submission count.
+
+Trust metrics live on the path document as aggregate `stats`. Per-user milestone state lives in server-only `paths/{pathId}/participantStats/{uid}` documents so each learner is counted once per milestone. The protected `POST /api/sync-path-metrics` route verifies Firebase Authentication, the caller-owned enrollment and the relevant day log before updating milestone counts. The join, publish and unpublish routes also maintain the relevant stats in Firestore transactions.
+
+These metrics are aggregate counts only. Public viewers cannot inspect participantStats, members lists, private enrollments, day logs, submissions, evidence URLs, evidence file names, notes, reflections or private progress records. The app displays only real server-managed metrics. Uncomputed or stale metrics are hidden or shown as neutral zero states; stale `activeThisWeek` values are not shown as current activity.
+
+Trending, ranking, creator analytics dashboards, notifications, followers, public media proof feeds, Gemini evidence intelligence, research enrichment and adaptive planning remain deferred.
 
 ### Cheers and comments
 
@@ -163,7 +173,7 @@ Private day logs, private evidence, private reflections and raw proof URLs remai
 
 When a user joins a path, the source path remains owned by the creator. The joiner receives their own membership, enrollment, day logs and evidence records, and does not receive editor permissions or an editable cloned copy of the source path.
 
-Phase 5.7 introduces real joined-count tracking. Phase 5.8 adds accurate public progress counts from the server-managed timeline mirror. Phase 5.9 adds lightweight cheers and comments on public progress entries. Other community proof metrics such as active this week, completion count and proof count are reserved for later phases unless accurately computed. Notifications, followers, global feeds, trending, public media proof, Gemini evidence intelligence, research and adaptive planning are not part of Phase 5.9.
+Phase 5.7 introduces real joined-count tracking. Phase 5.8 adds accurate public progress counts from the server-managed timeline mirror. Phase 5.9 adds lightweight cheers and comments on public progress entries. Phase 5.10 adds server-managed aggregate trust metrics for public and unlisted paths without exposing private learner data. Notifications, followers, global feeds, trending, ranking, public media proof, Gemini evidence intelligence, research and adaptive planning are not part of Phase 5.10.
 
 ### Domain-aware setup
 
@@ -278,6 +288,7 @@ These routes require `Authorization: Bearer <firebase-id-token>`:
 - `POST /api/join-path`
 - `POST /api/publish-progress`
 - `POST /api/unpublish-progress`
+- `POST /api/sync-path-metrics`
 
 The frontend obtains the current Firebase user's ID token immediately before each request. A `401` triggers one forced token refresh and one retry only. Client-supplied UIDs are ignored; rate limits use the UID from the verified token.
 
@@ -305,6 +316,7 @@ api/transcribe-voice.js: 90 seconds
 api/join-path.js: 15 seconds
 api/publish-progress.js: 15 seconds
 api/unpublish-progress.js: 15 seconds
+api/sync-path-metrics.js: 15 seconds
 ```
 
 The live token route verifies Firebase Authentication, applies the voice transcription rate limit, calls Deepgram's temporary-token grant endpoint with the server-side `DEEPGRAM_API_KEY`, and returns only the temporary JWT, expiration metadata, and request ID. The permanent Deepgram key is never returned to the browser.
@@ -370,6 +382,8 @@ api/
     errors.js
     firebase-admin.js
     http.js
+    path-trust-metrics.js
+    progress-interactions.js
     provider.js
     rate-limit.js
     require-auth.js
@@ -380,6 +394,7 @@ api/
   join-path.js
   publish-progress.js
   react-progress.js
+  sync-path-metrics.js
   transcribe-voice.js
   unpublish-progress.js
 src/
@@ -401,6 +416,7 @@ tests/
   join-path-api.test.js
   latency-logging.test.js
   phase5.model.test.js
+  path-trust-metrics-api.test.js
   progress-interactions-api.test.js
   public-progress-api.test.js
   public-progress-db.test.js

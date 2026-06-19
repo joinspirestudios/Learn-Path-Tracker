@@ -27,7 +27,7 @@ import {
 import { openAuthModal } from './auth.js';
 import {
   authFetch, commentOnProgress, hideProgressComment, joinPath,
-  publishProgress, reactToProgress, unpublishProgress,
+  publishProgress, reactToProgress, syncPathMetrics, unpublishProgress,
 } from './api.js';
 import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
 import { AI_GENERATE_TIMEOUT_MS, AI_INTERPRET_TIMEOUT_MS, VOICE_TRANSCRIBE_TIMEOUT_MS } from './ai-timeouts.js';
@@ -36,7 +36,8 @@ import { configPresent, cloudActive, cloudAvailable, cloudConnectionError, cloud
 import { cachedAuthLabel } from './auth.js';
 import {
   canJoinPath, canManageMembers, canPreviewPath, canRequestAccess, canViewPath,
-  isOwner, isPathParticipant, normalizePathStats, resolveCreatorName,
+  activeThisWeekIsCurrent, displayableActiveThisWeek,
+  isOwner, isPathParticipant, normalizePathStats, resolveCreatorName, trustBadgesForStats,
 } from './platform.js';
 import {
   hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathShareLink,
@@ -439,8 +440,12 @@ function pathCardBlurb(def, total){
   if(def.category) bits.push(esc(def.category));
   if(def.durationLabel) bits.push(esc(def.durationLabel));
   if(def.visibility) bits.push(esc(def.visibility));
-  const joined = normalizePathStats(def.stats, def).joinedCount;
-  if(joined) bits.push(joined + ' joined');
+  const stats = normalizePathStats(def.stats, def);
+  const active = displayableActiveThisWeek(stats);
+  if(stats.joinedCount) bits.push(stats.joinedCount + ' joined');
+  if(active) bits.push(active + ' active this week');
+  if(stats.publicProgressCount) bits.push(stats.publicProgressCount + ' public updates');
+  if(stats.completedCount) bits.push(stats.completedCount + ' completed');
   const meta = bits.length ? bits.join(' · ') + '. ' : '';
   const taskCount = total || Number(def.taskCount || 0);
   const sectionCount = (def.weeks || []).length || Number(def.sectionCount || 0);
@@ -2647,6 +2652,57 @@ function joinedCountCopy(stats){
   return count + ' ' + (count === 1 ? 'person has' : 'people have') + ' joined';
 }
 
+function statCardHTML(label, value, copy){
+  return '<article><span>' + esc(label) + '</span><b>' + esc(value) + '</b><small>' + esc(copy) + '</small></article>';
+}
+
+function trustBadgesHTML(stats){
+  const badges = trustBadgesForStats(stats);
+  if(!badges.length) return '';
+  return '<div class="trust-badges" aria-label="Path trust badges">'
+    + badges.map(badge => '<span>' + esc(badge) + '</span>').join('')
+    + '</div>';
+}
+
+function publicPathTrustStatsHTML(stats, path){
+  const active = displayableActiveThisWeek(stats);
+  const staleActive = !activeThisWeekIsCurrent(stats) && stats.activeThisWeek > 0;
+  const cards = [
+    statCardHTML('Joined', stats.joinedCount || 0, stats.joinedCount ? 'Real participant count' : 'Be one of the first to join.'),
+  ];
+  if(active != null){
+    cards.push(statCardHTML('Active this week', active, active ? 'Signed-in learners active this UTC week' : 'No activity recorded this week yet.'));
+  } else if(staleActive){
+    cards.push(statCardHTML('Active this week', 0, 'No activity recorded this week yet.'));
+  }
+  cards.push(statCardHTML('Completed', stats.completedCount || 0, stats.completedCount ? 'Learners completed this path' : 'No completions yet.'));
+  cards.push(statCardHTML('Public progress', stats.publicProgressCount || 0, stats.publicProgressCount ? 'Sanitized completed-day updates' : 'No public proof yet.'));
+  cards.push(statCardHTML('Day 1 started', stats.day1StartedCount || 0, stats.day1StartedCount ? 'Learners who started Day 1' : 'No Day 1 starts yet.'));
+  cards.push(statCardHTML('Reached Day 7', stats.day7ReachedCount || 0, stats.day7ReachedCount ? 'Learners who reached Day 7' : 'No Day 7 milestones yet.'));
+  cards.push(statCardHTML('Reached halfway', stats.halfwayReachedCount || 0, stats.halfwayReachedCount ? 'Learners who reached halfway' : 'No halfway milestones yet.'));
+  cards.push(statCardHTML('Proof submitted', stats.proofSubmissionCount || 0, stats.proofSubmissionCount ? 'Public proof items shared' : 'No public proof yet.'));
+  if(path.durationDays || path.durationLabel){
+    cards.push(statCardHTML('Duration', path.durationDays ? (path.durationDays + ' days') : path.durationLabel, 'Creator-defined roadmap length'));
+  }
+  return '<section class="public-path-stats" aria-label="Path credibility signals">' + cards.join('') + '</section>';
+}
+
+function ownerStatsHTML(stats){
+  const active = displayableActiveThisWeek(stats);
+  const items = [
+    ['joined', stats.joinedCount || 0],
+    ['public progress', stats.publicProgressCount || 0],
+    ['proof submitted', stats.proofSubmissionCount || 0],
+    ['completed', stats.completedCount || 0],
+  ];
+  if(stats.day7ReachedCount) items.push(['reached Day 7', stats.day7ReachedCount]);
+  if(stats.halfwayReachedCount) items.push(['halfway', stats.halfwayReachedCount]);
+  if(active) items.push(['active this week', active]);
+  return '<div class="owner-share-tools stats-managed">'
+    + items.map(([label, value]) => '<div><b>' + esc(value) + '</b><span>' + esc(label) + '</span></div>').join('')
+    + '<small>Stats are server-managed.</small></div>';
+}
+
 function evidenceExpectationCopy(path, record){
   const commitmentEvidence = (path.coreCommitments || []).map(item => item.evidenceType).filter(Boolean);
   const taskEvidence = (record.tasks || []).some(task => task.evidenceRequired);
@@ -2878,6 +2934,7 @@ function renderPathPreview(record){
     + (coverImage ? '<div class="preview-cover" style="background-image:url(\'' + esc(coverImage.replace(/'/g, '%27')) + '\')"></div>' : '')
     + '<div class="public-path-hero-body">'
     + '<div class="public-path-kicker"><span>' + esc(path.visibility) + ' path</span><span>Created by ' + esc(creator) + '</span></div>'
+    + trustBadgesHTML(stats)
     + '<div class="public-path-title">' + esc(path.previewTitle || path.title) + '</div>'
     + '<p class="public-path-summary">' + esc(path.previewDescription || path.description || path.goal || 'A proof-backed path for steady progress.') + '</p>'
     + '<div class="public-path-creator">' + (profileImage ? '<img class="preview-avatar" src="' + esc(profileImage) + '" alt=""/>' : '') + '<span>' + esc(joinedCountCopy(stats)) + '</span></div>'
@@ -2901,12 +2958,7 @@ function renderPathPreview(record){
   h += '</div>'
     + (shareLinkMessage ? '<div class="share-fallback" role="status"><label>Share link<input readonly value="' + esc(shareLinkMessage === 'copied' ? shareLink : shareLinkMessage) + '"></label></div>' : '')
     + '</div></section>'
-    + '<section class="public-path-stats" aria-label="Path credibility signals">'
-    + '<article><span>Joined</span><b>' + esc(stats.joinedCount || 0) + '</b><small>' + esc(stats.joinedCount ? 'Real participant count' : 'No participants yet') + '</small></article>'
-    + '<article><span>Duration</span><b>' + esc(path.durationDays ? (path.durationDays + ' days') : (path.durationLabel || 'Flexible')) + '</b><small>Creator-defined roadmap length</small></article>'
-    + '<article><span>Intensity</span><b>' + esc(path.intensity ? (path.intensity.charAt(0).toUpperCase() + path.intensity.slice(1)) : 'Balanced') + '</b><small>Public planning signal</small></article>'
-    + '<article><span>Progress</span><b>' + esc(stats.publicProgressCount || 0) + '</b><small>' + esc(stats.publicProgressCount ? 'Public completed-day updates' : 'No public entries yet') + '</small></article>'
-    + '</section>'
+    + publicPathTrustStatsHTML(stats, path)
     + '<section class="public-path-grid">'
     + '<article class="panel card"><h3>What you will do</h3><p>' + esc(path.goal || path.description || path.previewDescription || 'Follow the creator pathway and build consistent progress.') + '</p></article>'
     + '<article class="panel card"><h3>Who this fits</h3><p>' + esc(publicDomainSummary(path)) + '</p></article>'
@@ -2994,7 +3046,7 @@ async function joinPublicPath(record){
       membership:payload.membership || record.membership || { uid:store.currentUser.uid, role:'viewer', joinStatus:'active', source:'join' },
       path:{
         ...record.path,
-        stats:{ ...stats, joinedCount:Number(payload.joinCount || stats.joinedCount), updatedAt:new Date().toISOString() },
+        stats:payload.stats ? normalizePathStats(payload.stats, record.path) : { ...stats, joinedCount:Number(payload.joinCount || stats.joinedCount), updatedAt:new Date().toISOString() },
       },
     };
     if(payload.enrollment?.id){
@@ -3616,6 +3668,7 @@ async function completeJourneyDay(id, def, day){
     streak: wasCompleted ? Number(enrollment.streak || 0) : Number(enrollment.streak || 0) + 1,
     currentDay: Math.max(Number(enrollment.currentDay || 1), day + 1),
   });
+  await syncPathMetricsQuiet(id, 'day_completed', day);
   selectedJourneyDay = day;
   flash('Day complete. Come back tomorrow to continue.');
   renderPlan();
@@ -3673,15 +3726,16 @@ async function resetMissedDay(id, def, day){
   renderPlan();
 }
 
-function updatePublicProgressCount(id, count){
-  const safeCount = Math.max(0, Number(count || 0));
+function applyPathStats(id, statsPatch){
+  if(!statsPatch || typeof statsPatch !== 'object') return;
   const def = store.state.userPaths[id];
+  const mergeStats = (current, owner = {}) => normalizePathStats({ ...normalizePathStats(current, owner), ...statsPatch }, owner);
   if(def){
-    def.stats = { ...normalizePathStats(def.stats, def), publicProgressCount:safeCount, updatedAt:new Date().toISOString() };
+    def.stats = mergeStats(def.stats, def);
     if(def.platformData){
       def.platformData = {
         ...def.platformData,
-        stats:{ ...normalizePathStats(def.platformData.stats, def.platformData), publicProgressCount:safeCount, updatedAt:new Date().toISOString() },
+        stats:mergeStats(def.platformData.stats, def.platformData),
       };
     }
   }
@@ -3689,8 +3743,30 @@ function updatePublicProgressCount(id, count){
   if(record?.path){
     record.path = {
       ...record.path,
-      stats:{ ...normalizePathStats(record.path.stats, record.path), publicProgressCount:safeCount, updatedAt:new Date().toISOString() },
+      stats:mergeStats(record.path.stats, record.path),
     };
+  }
+}
+
+function updatePublicProgressCount(id, count, stats = null){
+  applyPathStats(id, stats || { publicProgressCount:Math.max(0, Number(count || 0)), updatedAt:new Date().toISOString() });
+}
+
+async function syncPathMetricsQuiet(id, event, dayNumber = null){
+  if(!id || !store.currentUser || !cloudActive()) return null;
+  try{
+    const payload = await syncPathMetrics(id, event, dayNumber);
+    if(payload.stats) applyPathStats(id, payload.stats);
+    store.cloudDiagnostics.metricsSyncStatus = 'connected';
+    store.cloudDiagnostics.metricsSyncMessage = '';
+    store.cloudDiagnostics.metricsSyncFailedAt = null;
+    return payload;
+  }catch(error){
+    store.cloudDiagnostics.metricsSyncStatus = error.code || 'metrics_sync_failed';
+    store.cloudDiagnostics.metricsSyncMessage = error.message || 'Path metrics could not sync.';
+    store.cloudDiagnostics.metricsSyncFailedAt = Date.now();
+    console.warn('metrics sync:', store.cloudDiagnostics.metricsSyncMessage);
+    return null;
   }
 }
 
@@ -3702,7 +3778,7 @@ async function publishCompletedProgress(id, day){
   renderPlan();
   try{
     const payload = await publishProgress(id, day, { publicCaption:caption });
-    updatePublicProgressCount(id, payload.publicProgressCount);
+    updatePublicProgressCount(id, payload.publicProgressCount, payload.stats || null);
     await dbLoadPublicProgress(id, { limit:12 });
     flash(payload.alreadyPublished ? 'Progress already published' : 'Progress published');
   }catch(error){
@@ -3720,7 +3796,7 @@ async function unpublishCompletedProgress(id, day){
   renderPlan();
   try{
     const payload = await unpublishProgress(id, day);
-    updatePublicProgressCount(id, payload.publicProgressCount);
+    updatePublicProgressCount(id, payload.publicProgressCount, payload.stats || null);
     await dbLoadPublicProgress(id, { limit:12 });
     flash(payload.alreadyUnpublished ? 'Progress was already unpublished' : 'Progress unpublished');
   }catch(error){
@@ -3778,6 +3854,7 @@ async function startPathJourney(id, def, triggerButton = null){
     );
     setJourneyPending(enrollmentId, false);
     store.syncStatus = '';
+    await syncPathMetricsQuiet(id, 'day_started', 1);
     await dbSaveState();
     return true;
   }catch(e){
@@ -3934,7 +4011,8 @@ export function renderPlan(){
       + '<div class="toggle-row"><label><input type="checkbox" id="pmDiscoverable" ' + (def.discoverable ? 'checked' : '') + '/> Discoverable</label><label><input type="checkbox" id="pmPreviewEnabled" ' + (def.previewEnabled !== false ? 'checked' : '') + '/> Preview enabled</label><label><input type="checkbox" id="pmPreviewScheme" ' + (def.previewIncludesScheme ? 'checked' : '') + '/> Preview includes scheme</label></div>'
       + '<div class="field" style="margin-top:10px"><label>Preview title</label><input type="text" id="pmPreviewTitle" value="' + esc(def.previewTitle || def.title || '') + '"/></div>'
       + '<div class="field" style="margin-top:10px"><label>Preview description</label><textarea id="pmPreviewDescription" placeholder="What should non-members see?">' + esc(def.previewDescription || def.goal || '') + '</textarea></div>'
-      + '<div class="owner-share-tools"><div><b>' + esc(pathStats.joinedCount || 0) + '</b><span>joined</span></div><button class="btn" id="pmOpenPreview">Open public page</button><button class="btn" id="pmCopyShare" ' + (ownerShareable ? '' : 'disabled') + '>' + (ownerShareable ? 'Copy share link' : 'Set Public or Unlisted to share') + '</button></div>'
+      + ownerStatsHTML(pathStats)
+      + '<div class="owner-share-tools"><button class="btn" id="pmOpenPreview">Open public page</button><button class="btn" id="pmCopyShare" ' + (ownerShareable ? '' : 'disabled') + '>' + (ownerShareable ? 'Copy share link' : 'Set Public or Unlisted to share') + '</button></div>'
       + (canManageMembers(def.platformData || def, def.membership, store.currentUser) ? '<div class="owner-note">Member sharing and role management coming next.</div>' : '')
       + (!def.platform && cloudActive() ? '<button class="btn gold" id="pmImport" style="margin-top:12px">Publish/import this path to platform</button>' : '')
       + '</div>';
