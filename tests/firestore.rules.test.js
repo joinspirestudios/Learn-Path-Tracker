@@ -129,7 +129,7 @@ describe('deterministic enrollment bootstrap', () => {
       ownerId:userA,
       title:'Stats path',
       visibility:'public',
-      stats:{ joinedCount:1 },
+      stats:{ joinedCount:1, publicProgressCount:1 },
     }));
 
     await assertSucceeds(setDoc(doc(ownerDb, 'paths', pathId), {
@@ -139,7 +139,41 @@ describe('deterministic enrollment bootstrap', () => {
       visibility:'public',
     }));
     await assertFails(updateDoc(doc(ownerDb, 'paths', pathId), {
-      stats:{ joinedCount:99 },
+      stats:{ joinedCount:99, publicProgressCount:99 },
+    }));
+  });
+
+  test('allows public progress reads but denies browser writes', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const adminDb = context.firestore();
+      await setDoc(doc(adminDb, 'paths', pathId), {
+        id:pathId,
+        ownerId:userA,
+        title:'Timeline path',
+        visibility:'unlisted',
+        stats:{ publicProgressCount:1 },
+      });
+      await setDoc(doc(adminDb, 'paths', pathId, 'publicProgress', 'entry-1'), {
+        id:'entry-1',
+        pathId,
+        userId:userB,
+        dayNumber:1,
+        status:'completed',
+        visibility:'public',
+      });
+    });
+
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId, 'publicProgress', 'entry-1')));
+
+    const userDb = testEnv.authenticatedContext(userB).firestore();
+    await assertFails(setDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-2'), {
+      id:'entry-2',
+      pathId,
+      userId:userB,
+      dayNumber:2,
+      status:'completed',
+      visibility:'public',
     }));
   });
 });

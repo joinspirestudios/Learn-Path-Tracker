@@ -15,6 +15,12 @@
     },
     "api/join-path.js": {
       "maxDuration": 15
+    },
+    "api/publish-progress.js": {
+      "maxDuration": 15
+    },
+    "api/unpublish-progress.js": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

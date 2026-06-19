@@ -15,7 +15,7 @@ import {
   dbEnsureEnrollment, dbReconcileEnrollment, dbSaveEnrollment, dbSaveDayLog,
   dbStartEnrollment, enrollmentIdFor, makeDayLog, makeEnrollment,
   createEvidenceSubmission, listEvidenceSubmissions, uploadEvidenceFile,
-  ACCEPTED_EVIDENCE_TYPES,
+  dbLoadPublicProgress, ACCEPTED_EVIDENCE_TYPES,
 } from './db.js';
 import {
   ensureSkill, curState, curDef, P, quarters, days, ladders,
@@ -25,7 +25,7 @@ import {
   nextRungIdx, currentWeekFromStart, computeStreak,
 } from './plan.js';
 import { openAuthModal } from './auth.js';
-import { authFetch, joinPath } from './api.js';
+import { authFetch, joinPath, publishProgress, unpublishProgress } from './api.js';
 import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
 import { AI_GENERATE_TIMEOUT_MS, AI_INTERPRET_TIMEOUT_MS, VOICE_TRANSCRIBE_TIMEOUT_MS } from './ai-timeouts.js';
 import { applyHeader, updateOverall } from './header.js';
@@ -86,6 +86,9 @@ import {
   stopExampleRotation,
   updateGoalSuggestionButtons,
 } from './views/ai-builder/index.js';
+import {
+  canPublishCompletedDay, evidenceTypeLabel, normalizePublicProgressEntry, publicProgressEntryId,
+} from './public-progress.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -106,6 +109,8 @@ let startingJourneyId = null;
 let aiSaveClientId = null;
 let joiningPathId = null;
 let shareLinkMessage = '';
+let publicProgressBusyKey = null;
+let publicProgressError = '';
 let pendingRouteRetrying = false;
 
 function abortAIRequest(kind = null, builder = aiBuilder){
@@ -2661,6 +2666,42 @@ function milestonePreviewHTML(record){
   return sections.map(section => '<div class="scheme-row"><b>' + esc(section.title) + '</b><span>' + esc(section.description || 'Milestone in this path') + '</span></div>').join('');
 }
 
+function progressEntriesForPath(pathId, record = null){
+  const entries = record?.publicProgress?.length ? record.publicProgress : (store.publicProgress?.[pathId] || []);
+  return entries
+    .map(normalizePublicProgressEntry)
+    .filter(entry => entry.visibility === 'public')
+    .slice(0, 12);
+}
+
+function publicProgressTimelineHTML(record){
+  const entries = progressEntriesForPath(record.id, record);
+  let h = '<section class="panel card public-progress-section" aria-label="Recent public progress">'
+    + '<div class="public-progress-head"><div><h3>Recent public progress</h3><p>Sanitized learner updates from completed days.</p></div>'
+    + '<span>' + esc(entries.length) + '</span></div>';
+  if(!entries.length){
+    h += '<div class="muted">No public progress has been shared yet.</div>';
+  } else {
+    h += '<div class="public-progress-list">';
+    entries.forEach(entry => {
+      const evidence = entry.hasEvidence
+        ? (entry.evidenceCount + ' proof item' + (entry.evidenceCount === 1 ? '' : 's') + (entry.evidenceTypes.length ? ' - ' + entry.evidenceTypes.map(evidenceTypeLabel).join(', ') : ''))
+        : 'No public proof details';
+      h += '<article class="public-progress-entry">'
+        + '<div class="progress-author">' + (entry.authorPhotoURL ? '<img src="' + esc(entry.authorPhotoURL) + '" alt=""/>' : '<span></span>')
+        + '<div><b>' + esc(entry.authorName) + '</b><small>Day ' + esc(entry.dayNumber) + ' completed' + (dateText(entry.publishedAt) ? ' - ' + esc(dateText(entry.publishedAt)) : '') + '</small></div></div>'
+        + (entry.publicCaption ? '<p class="progress-caption">' + esc(entry.publicCaption) + '</p>' : '')
+        + '<div class="progress-metrics"><span>' + esc(entry.requiredCompletedCount) + '/' + esc(entry.requiredTotalCount) + ' required</span><span>' + esc(entry.optionalCompletedCount) + '/' + esc(entry.optionalTotalCount) + ' optional</span><span>' + esc(evidence) + '</span></div>';
+      if(entry.taskSummary.length){
+        h += '<div class="progress-tasks">' + entry.taskSummary.map(item => '<em>' + esc(item.title) + '</em>').join('') + '</div>';
+      }
+      h += '</article>';
+    });
+    h += '</div>';
+  }
+  return h + '</section>';
+}
+
 function renderPathPreview(record){
   const path = record.path;
   const coverImage = safeExternalUrl(path.coverImage);
@@ -2709,6 +2750,7 @@ function renderPathPreview(record){
     + '<article><span>Joined</span><b>' + esc(stats.joinedCount || 0) + '</b><small>' + esc(stats.joinedCount ? 'Real participant count' : 'No participants yet') + '</small></article>'
     + '<article><span>Duration</span><b>' + esc(path.durationDays ? (path.durationDays + ' days') : (path.durationLabel || 'Flexible')) + '</b><small>Creator-defined roadmap length</small></article>'
     + '<article><span>Intensity</span><b>' + esc(path.intensity ? (path.intensity.charAt(0).toUpperCase() + path.intensity.slice(1)) : 'Balanced') + '</b><small>Public planning signal</small></article>'
+    + '<article><span>Progress</span><b>' + esc(stats.publicProgressCount || 0) + '</b><small>' + esc(stats.publicProgressCount ? 'Public completed-day updates' : 'No public entries yet') + '</small></article>'
     + '</section>'
     + '<section class="public-path-grid">'
     + '<article class="panel card"><h3>What you will do</h3><p>' + esc(path.goal || path.description || path.previewDescription || 'Follow the creator pathway and build consistent progress.') + '</p></article>'
@@ -2716,6 +2758,7 @@ function renderPathPreview(record){
     + '<article class="panel card"><h3>Proof expected</h3><p>' + esc(evidenceExpectationCopy(path, record)) + '</p></article>'
     + '<article class="panel card"><h3>Ownership</h3><p>The source path remains owned by ' + esc(creator) + '. Joiners get their own private enrollment and progress.</p></article>'
     + '</section>'
+    + publicProgressTimelineHTML(record)
     + '<section class="panel card preview-scheme"><h3>Milestones</h3>' + milestonePreviewHTML(record) + '</section>'
     + '</div>';
   $('content').innerHTML = h;
@@ -2905,6 +2948,35 @@ function evidenceListHTML(enrollmentId, dayNumber){
       + (href ? externalLinkHTML(href, label) : '<em>' + esc(label) + '</em>')
       + '</div>';
   }).join('') + '</div>';
+}
+
+function publishedProgressEntry(id, day){
+  const userId = store.currentUser?.uid;
+  if(!userId) return null;
+  const expectedId = publicProgressEntryId(userId, day);
+  return (store.publicProgress?.[id] || []).map(normalizePublicProgressEntry)
+    .find(entry => entry.id === expectedId || (entry.userId === userId && Number(entry.dayNumber) === Number(day))) || null;
+}
+
+function publicProgressControlsHTML(id, def, enrollment, day, log){
+  const path = def.platformData || def;
+  if(!def.platform || !['public', 'unlisted'].includes(path.visibility)) return '';
+  if(!canPublishCompletedDay({ path, enrollment, dayLog:log, currentUser:store.currentUser })) return '';
+  const key = id + ':' + day;
+  const busy = publicProgressBusyKey === key;
+  const entry = publishedProgressEntry(id, day);
+  let h = '<div class="public-progress-controls" aria-live="polite">';
+  if(!cloudActive()){
+    h += '<div><b>Public progress</b><p>Publishing requires cloud sync.</p></div>';
+  } else if(entry){
+    h += '<div><b>Published on public timeline</b><p>This shared update shows sanitized day progress only.</p></div>'
+      + '<button class="btn" id="unpublishProgress" data-day="' + esc(day) + '" ' + (busy ? 'disabled' : '') + '>' + (busy ? 'Unpublishing...' : 'Unpublish') + '</button>';
+  } else {
+    h += '<label><b>Share this completed day</b><span>Optional public caption</span><textarea id="publicProgressCaption" maxlength="500" placeholder="What did you finish or learn?"></textarea></label>'
+      + '<button class="btn gold" id="publishProgress" data-day="' + esc(day) + '" ' + (busy ? 'disabled' : '') + '>' + (busy ? 'Publishing...' : 'Publish this day') + '</button>';
+  }
+  if(publicProgressError) h += '<p class="form-error">' + esc(publicProgressError) + '</p>';
+  return h + '</div>';
 }
 
 function evidenceFormHTML(task){
@@ -3145,6 +3217,9 @@ function journeyDetailHTML(id, def){
       + (log.summary ? '<p class="summary">' + esc(log.summary) + '</p>' : '')
       + '<div class="hint">Evidence count: ' + evidenceCount + '</div>'
       + evidenceListHTML(enrollment.id, day);
+    if(status === 'completed'){
+      h += publicProgressControlsHTML(id, def, enrollment, day, log);
+    }
     if(status === 'missed'){
       h += '<div class="missed-copy"><b>You missed this day.</b><p>'
         + (Number(enrollment.freezeCount || 0) > 0
@@ -3415,6 +3490,64 @@ async function resetMissedDay(id, def, day){
   renderPlan();
 }
 
+function updatePublicProgressCount(id, count){
+  const safeCount = Math.max(0, Number(count || 0));
+  const def = store.state.userPaths[id];
+  if(def){
+    def.stats = { ...normalizePathStats(def.stats, def), publicProgressCount:safeCount, updatedAt:new Date().toISOString() };
+    if(def.platformData){
+      def.platformData = {
+        ...def.platformData,
+        stats:{ ...normalizePathStats(def.platformData.stats, def.platformData), publicProgressCount:safeCount, updatedAt:new Date().toISOString() },
+      };
+    }
+  }
+  const record = store.platformPaths[id];
+  if(record?.path){
+    record.path = {
+      ...record.path,
+      stats:{ ...normalizePathStats(record.path.stats, record.path), publicProgressCount:safeCount, updatedAt:new Date().toISOString() },
+    };
+  }
+}
+
+async function publishCompletedProgress(id, day){
+  if(publicProgressBusyKey) return;
+  const caption = $('publicProgressCaption')?.value || '';
+  publicProgressBusyKey = id + ':' + day;
+  publicProgressError = '';
+  renderPlan();
+  try{
+    const payload = await publishProgress(id, day, { publicCaption:caption });
+    updatePublicProgressCount(id, payload.publicProgressCount);
+    await dbLoadPublicProgress(id, { limit:12 });
+    flash(payload.alreadyPublished ? 'Progress already published' : 'Progress published');
+  }catch(error){
+    publicProgressError = error.message || 'Could not publish progress.';
+  }finally{
+    publicProgressBusyKey = null;
+    renderPlan();
+  }
+}
+
+async function unpublishCompletedProgress(id, day){
+  if(publicProgressBusyKey) return;
+  publicProgressBusyKey = id + ':' + day;
+  publicProgressError = '';
+  renderPlan();
+  try{
+    const payload = await unpublishProgress(id, day);
+    updatePublicProgressCount(id, payload.publicProgressCount);
+    await dbLoadPublicProgress(id, { limit:12 });
+    flash(payload.alreadyUnpublished ? 'Progress was already unpublished' : 'Progress unpublished');
+  }catch(error){
+    publicProgressError = error.message || 'Could not unpublish progress.';
+  }finally{
+    publicProgressBusyKey = null;
+    renderPlan();
+  }
+}
+
 async function startPathJourney(id, def, triggerButton = null){
   if(!pathCanStart(def)){
     flash('Loading tasks. Try again in a moment.');
@@ -3530,6 +3663,7 @@ function wireJourneyControls(id, def){
       evidenceFormTaskId = null;
       evidenceProofType = 'url';
       evidenceError = '';
+      publicProgressError = '';
       renderPlan();
       const enrollment = currentEnrollmentForPath(id);
       if(enrollment?.id){
@@ -3573,6 +3707,10 @@ function wireJourneyControls(id, def){
   if(freeze) freeze.onclick = () => freezeMissedDay(id, Number(freeze.dataset.day || 1));
   const reset = $('resetMissedDay');
   if(reset) reset.onclick = () => resetMissedDay(id, def, Number(reset.dataset.day || 1));
+  const publish = $('publishProgress');
+  if(publish) publish.onclick = () => publishCompletedProgress(id, Number(publish.dataset.day || 1));
+  const unpublish = $('unpublishProgress');
+  if(unpublish) unpublish.onclick = () => unpublishCompletedProgress(id, Number(unpublish.dataset.day || 1));
 }
 
 /* ============================================================ */

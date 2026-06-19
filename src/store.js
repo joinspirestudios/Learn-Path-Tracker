@@ -82,6 +82,7 @@ export const store = {
   state:           { current:null, skills:{}, userPaths:{}, enrollments:{}, evidenceSubmissions:{}, version:0 },
   catalogue:       [],     // every render entry, each carries .skill
   platformPaths:   {},     // cloud platform paths, normalized into userPaths for rendering
+  publicProgress:  {},     // sanitized public timeline entries keyed by path id
   enrollments:     {},     // current user's per-path enrollment progress
   evidenceSubmissions: {},
   accessRequests:  {},

@@ -13,6 +13,7 @@ import {
 import {
   dateForJourneyDay, journeyDayForDate, localDateString,
 } from './journey.js';
+import { normalizePublicProgressEntry } from './public-progress.js';
 import {
   ENROLLMENT_TIMEOUT_MS, FIRESTORE_PREFLIGHT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
   classifyFirebaseError, cloudStatusMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
@@ -189,6 +190,7 @@ function sectionRef(pathId, sectionId){ return fb.doc(fb.db, 'paths', pathId, 's
 function taskRef(pathId, taskId){ return fb.doc(fb.db, 'paths', pathId, 'tasks', taskId); }
 function memberRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'members', uid); }
 function accessRequestRef(pathId, uid){ return fb.doc(fb.db, 'paths', pathId, 'accessRequests', uid); }
+function publicProgressCol(pathId){ return fb.collection(fb.db, 'paths', pathId, 'publicProgress'); }
 function enrollmentRef(enrollmentId){ return fb.doc(fb.db, 'enrollments', enrollmentId); }
 function dayLogRef(enrollmentId, dayNumber){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'dayLogs', String(dayNumber)); }
 function submissionRef(enrollmentId, submissionId){ return fb.doc(fb.db, 'enrollments', enrollmentId, 'submissions', submissionId); }
@@ -694,6 +696,40 @@ async function loadPathChildren(pathId){
   return { sections, tasks };
 }
 
+function timeValue(value){
+  if(value && typeof value.toDate === 'function') return value.toDate().getTime();
+  if(value instanceof Date) return value.getTime();
+  const n = Date.parse(value || '');
+  return Number.isFinite(n) ? n : 0;
+}
+
+function cachePublicProgress(pathId, entries){
+  store.publicProgress = store.publicProgress || {};
+  const normalized = (Array.isArray(entries) ? entries : [])
+    .map(normalizePublicProgressEntry)
+    .filter(entry => entry.visibility === 'public')
+    .sort((a, b) => timeValue(b.publishedAt || b.completedAt) - timeValue(a.publishedAt || a.completedAt));
+  store.publicProgress[pathId] = normalized;
+  return normalized;
+}
+
+async function loadPublicProgress(pathId, limit = 10){
+  if(!cloudAvailable()) return store.publicProgress?.[pathId] || [];
+  try{
+    const snap = await withTimeout(fb.getDocs(publicProgressCol(pathId)), READ_TIMEOUT_MS, 'load public progress');
+    const entries = [];
+    snap.forEach(d => entries.push({ id:d.id, ...d.data() }));
+    return cachePublicProgress(pathId, entries).slice(0, limit);
+  }catch(e){
+    console.warn('load public progress:', syncErrorMessage(e, 'Could not load public progress. Cached entries remain available.'));
+    return (store.publicProgress?.[pathId] || []).slice(0, limit);
+  }
+}
+
+export async function dbLoadPublicProgress(pathId, options = {}){
+  return loadPublicProgress(pathId, options.limit || 10);
+}
+
 async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
   const path = normalizePathDoc(docSnap.id, docSnap.data());
   const membership = includeChildren ? await loadMembership(docSnap.id) : null;
@@ -701,7 +737,10 @@ async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
   if(includeChildren && canViewPath(path, membership, store.currentUser)){
     children = await loadPathChildren(docSnap.id);
   }
-  return { id:docSnap.id, path, membership, ...children, childrenLoaded: !!includeChildren };
+  const publicProgress = ['public', 'unlisted'].includes(path.visibility)
+    ? await loadPublicProgress(docSnap.id, includeChildren ? 12 : 6)
+    : [];
+  return { id:docSnap.id, path, membership, publicProgress, ...children, childrenLoaded: !!includeChildren };
 }
 
 export async function dbLoadPlatformPath(id){

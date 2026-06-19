@@ -36,11 +36,13 @@ export function normalizePathStats(value = {}, legacy = {}){
   const active = Number(source.activeThisWeek ?? legacy.activeThisWeek ?? 0);
   const completed = Number(source.completedCount ?? legacy.completedCount ?? 0);
   const proof = Number(source.proofSubmissionCount ?? legacy.proofSubmissionCount ?? 0);
+  const publicProgress = Number(source.publicProgressCount ?? legacy.publicProgressCount ?? 0);
   return {
     joinedCount:Number.isFinite(joined) && joined > 0 ? Math.floor(joined) : 0,
     activeThisWeek:Number.isFinite(active) && active > 0 ? Math.floor(active) : 0,
     completedCount:Number.isFinite(completed) && completed > 0 ? Math.floor(completed) : 0,
     proofSubmissionCount:Number.isFinite(proof) && proof > 0 ? Math.floor(proof) : 0,
+    publicProgressCount:Number.isFinite(publicProgress) && publicProgress > 0 ? Math.floor(publicProgress) : 0,
     updatedAt:source.updatedAt || legacy.statsUpdatedAt || null,
   };
 }

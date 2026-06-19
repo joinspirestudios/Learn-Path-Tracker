@@ -261,13 +261,14 @@ test('Phase 5.7 platform visibility and stats model supports joinable public pag
     activeThisWeek:0,
     completedCount:0,
     proofSubmissionCount:0,
+    publicProgressCount:0,
     updatedAt:null,
   });
   assert.equal(normalizePathStats(null, { joinedCount:'9' }).joinedCount, 9);
   assert.equal(normalizePathStats({ joinedCount:'nope' }).joinedCount, 0);
 });
 
-test('public page rendering source includes join/share states and hides private proof timelines', () => {
+test('public page rendering source includes join/share states and sanitized progress timelines', () => {
   const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   assert.match(source, /Sign in to join this path/);
   assert.match(source, /Join this path/);
@@ -278,7 +279,9 @@ test('public page rendering source includes join/share states and hides private 
   assert.match(source, /Be one of the first to join this path/);
   assert.match(source, /The source path remains owned by/);
   assert.match(source, /includes creator constraints/);
-  assert.doesNotMatch(source, /public proof timeline/i);
+  assert.match(source, /Recent public progress/);
+  assert.match(source, /Sanitized learner updates/);
+  assert.doesNotMatch(source, /Add comment|Send cheer|React to progress/i);
 });
 
 test('discoverable source excludes unlisted/private paths while public cards can show joined count', () => {

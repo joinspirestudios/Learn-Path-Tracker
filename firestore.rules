@@ -63,6 +63,7 @@ service cloud.firestore {
         "activeThisWeek",
         "completedCount",
         "proofSubmissionCount",
+        "publicProgressCount",
         "statsUpdatedAt"
       ];
     }
@@ -155,6 +156,7 @@ service cloud.firestore {
               "activeThisWeek",
               "completedCount",
               "proofSubmissionCount",
+              "publicProgressCount",
               "statsUpdatedAt"
             ])
         );
@@ -250,6 +252,15 @@ service cloud.firestore {
             && requestId == request.auth.uid
             && resource.data.requesterId == request.auth.uid
           );
+      }
+
+      match /publicProgress/{entryId} {
+        allow read: if pathDoc(pathId).data.visibility in [
+          "public",
+          "unlisted"
+        ] && resource.data.visibility == "public";
+
+        allow write: if false;
       }
     }
 

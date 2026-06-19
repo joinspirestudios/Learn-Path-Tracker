@@ -2,7 +2,7 @@
 
 Learn Path Tracker is a Vite + Firebase proof-of-growth app for creating learning paths, habits, challenges, and personal-development roadmaps. It supports local mode, platform paths, creator attribution, enrollments, day logs, streaks, freezes, evidence, templates, and an optional Anthropic-powered AI path builder.
 
-Phase 5.4.1 adds stable live voice transcription on top of responsive guided path creation, protected Phase 5 AI routes, and the guided daily evidence session. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, and day completion. Live web research is not part of this phase.
+Phase 5.8 adds public progress timelines on top of stable live voice transcription, responsive guided path creation, protected Phase 5 AI routes, and the guided daily evidence session. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, day completion, and optional sanitized progress sharing. Live web research is not part of this phase.
 
 ## Install and run
 
@@ -133,11 +133,19 @@ The guided AI builder is split into focused frontend modules under `src/views/ai
 
 Public and unlisted paths have shareable preview pages that explain what the path is, who created it, duration, intensity, evidence expectations and milestones. Owners can copy a clean `/path/{pathId}/preview` share link for Public or Unlisted paths; legacy `#/path/{pathId}/preview` links remain supported. The app preserves shared path routes during boot and retries them after cloud readiness so direct links do not fall back to Discover. Private paths remain private and are not exposed through guessed links.
 
+### Public progress timelines
+
+Phase 5.8 lets a signed-in learner publish a completed day from their own enrollment to `paths/{pathId}/publicProgress/{entryId}` when the source path is Public or Unlisted. Publishing is explicit and optional; completing a day does not automatically make anything public.
+
+Public timeline entries are sanitized mirrors. They include public author display metadata, day number, completed task counts, evidence count, evidence type labels and an optional public caption. They do not expose private evidence URLs, file names, evidence notes, task reflections, day-log summaries, enrollment documents, raw submissions or another user's progress records.
+
+Browser clients cannot write public progress documents directly. `POST /api/publish-progress` and `POST /api/unpublish-progress` verify Firebase Authentication server-side, confirm the enrollment belongs to the caller, require the day log to be completed, sanitize the public entry, and update `stats.publicProgressCount`. Unpublishing deletes only the public mirror and leaves private day logs and evidence history intact.
+
 ### Joinable paths
 
 When a user joins a path, the source path remains owned by the creator. The joiner receives their own membership, enrollment, day logs and evidence records, and does not receive editor permissions or an editable cloned copy of the source path.
 
-Phase 5.7 introduces real joined-count tracking. Other community proof metrics such as active this week, completion count and proof count are reserved for later phases unless accurately computed. Comments, cheers, reactions, public proof timelines, notifications and creator profiles are deferred to later community phases.
+Phase 5.7 introduces real joined-count tracking. Phase 5.8 adds accurate public progress counts from the server-managed timeline mirror. Other community proof metrics such as active this week, completion count and proof count are reserved for later phases unless accurately computed. Comments, cheers, reactions, notifications and creator profiles are deferred to later community phases.
 
 ### Domain-aware setup
 
@@ -218,6 +226,9 @@ The server applies verified-UID limits before calling Anthropic or Deepgram. Def
 | Goal interpretation | 8 | 40 |
 | Roadmap generation | 3 | 12 |
 | Voice transcription | 6 | 20 |
+| Join path | 12 | 80 |
+| Publish progress | 10 | 60 |
+| Unpublish progress | 20 | 80 |
 
 Override them with positive integers:
 
@@ -225,9 +236,15 @@ Override them with positive integers:
 RATE_LIMIT_INTERPRET_PER_HOUR
 RATE_LIMIT_GENERATE_PER_HOUR
 RATE_LIMIT_TRANSCRIBE_PER_HOUR
+RATE_LIMIT_JOIN_PATH_PER_HOUR
+RATE_LIMIT_PUBLISH_PROGRESS_PER_HOUR
+RATE_LIMIT_UNPUBLISH_PROGRESS_PER_HOUR
 RATE_LIMIT_INTERPRET_BURST_PER_10_MINUTES
 RATE_LIMIT_GENERATE_BURST_PER_10_MINUTES
 RATE_LIMIT_TRANSCRIBE_BURST_PER_10_MINUTES
+RATE_LIMIT_JOIN_PATH_BURST_PER_10_MINUTES
+RATE_LIMIT_PUBLISH_PROGRESS_BURST_PER_10_MINUTES
+RATE_LIMIT_UNPUBLISH_PROGRESS_BURST_PER_10_MINUTES
 ```
 
 Counters are stored by Firebase Admin in `_internalRateLimits`. Each user/route uses one rolling document with `expiresAt`, so document growth is bounded. Client Firestore rules explicitly deny all access. For automatic cleanup, enable a Firestore TTL policy on the `expiresAt` field for the `_internalRateLimits` collection group.
@@ -240,6 +257,9 @@ These routes require `Authorization: Bearer <firebase-id-token>`:
 - `POST /api/generate-path`
 - `POST /api/deepgram-token`
 - `POST /api/transcribe-voice`
+- `POST /api/join-path`
+- `POST /api/publish-progress`
+- `POST /api/unpublish-progress`
 
 The frontend obtains the current Firebase user's ID token immediately before each request. A `401` triggers one forced token refresh and one retry only. Client-supplied UIDs are ignored; rate limits use the UID from the verified token.
 
@@ -264,6 +284,9 @@ api/interpret-goal.js: 120 seconds
 api/generate-path.js: 240 seconds
 api/deepgram-token.js: 15 seconds
 api/transcribe-voice.js: 90 seconds
+api/join-path.js: 15 seconds
+api/publish-progress.js: 15 seconds
+api/unpublish-progress.js: 15 seconds
 ```
 
 The live token route verifies Firebase Authentication, applies the voice transcription rate limit, calls Deepgram's temporary-token grant endpoint with the server-side `DEEPGRAM_API_KEY`, and returns only the temporary JWT, expiration metadata, and request ID. The permanent Deepgram key is never returned to the browser.
@@ -334,7 +357,10 @@ api/
     require-auth.js
   generate-path.js
   interpret-goal.js
+  join-path.js
+  publish-progress.js
   transcribe-voice.js
+  unpublish-progress.js
 src/
   api.js
   ai-builder-model.js
@@ -343,6 +369,7 @@ src/
   firebase.js
   journey.js
   main.js
+  public-progress.js
   ai-timeouts.js
   views.js
 tests/
@@ -350,8 +377,11 @@ tests/
   api-security.test.js
   firestore.rules.test.js
   generation-reliability.test.js
+  join-path-api.test.js
   latency-logging.test.js
   phase5.model.test.js
+  public-progress-api.test.js
+  public-progress-model.test.js
   timeout-alignment.test.js
 ```
 
