@@ -139,6 +139,8 @@ Phase 5.8 lets a signed-in learner publish a completed day from their own enroll
 
 Public timeline entries are sanitized mirrors. They include public author display metadata, day number, completed task counts, evidence count, evidence type labels and an optional public caption. They do not expose private evidence URLs, file names, evidence notes, task reflections, day-log summaries, enrollment documents, raw submissions or another user's progress records.
 
+Public progress timeline reads are constrained to documents where `visibility == "public"` so Firestore Rules can authorize collection queries safely.
+
 Browser clients cannot write public progress documents directly. `POST /api/publish-progress` and `POST /api/unpublish-progress` verify Firebase Authentication server-side, confirm the enrollment belongs to the caller, require the day log to be completed, sanitize the public entry, and update `stats.publicProgressCount`. Unpublishing deletes only the public mirror and leaves private day logs and evidence history intact.
 
 ### Joinable paths

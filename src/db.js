@@ -716,7 +716,11 @@ function cachePublicProgress(pathId, entries){
 async function loadPublicProgress(pathId, limit = 10){
   if(!cloudAvailable()) return store.publicProgress?.[pathId] || [];
   try{
-    const snap = await withTimeout(fb.getDocs(publicProgressCol(pathId)), READ_TIMEOUT_MS, 'load public progress');
+    const publicEntriesQuery = fb.query(
+      publicProgressCol(pathId),
+      fb.where('visibility', '==', 'public')
+    );
+    const snap = await withTimeout(fb.getDocs(publicEntriesQuery), READ_TIMEOUT_MS, 'load public progress');
     const entries = [];
     snap.forEach(d => entries.push({ id:d.id, ...d.data() }));
     return cachePublicProgress(pathId, entries).slice(0, limit);

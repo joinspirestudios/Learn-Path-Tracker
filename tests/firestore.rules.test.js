@@ -11,8 +11,10 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 
@@ -165,6 +167,11 @@ describe('deterministic enrollment bootstrap', () => {
 
     const signedOut = testEnv.unauthenticatedContext().firestore();
     await assertSucceeds(getDoc(doc(signedOut, 'paths', pathId, 'publicProgress', 'entry-1')));
+    await assertSucceeds(getDocs(query(
+      collection(signedOut, 'paths', pathId, 'publicProgress'),
+      where('visibility', '==', 'public')
+    )));
+    await assertFails(getDocs(collection(signedOut, 'paths', pathId, 'publicProgress')));
 
     const userDb = testEnv.authenticatedContext(userB).firestore();
     await assertFails(setDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-2'), {
@@ -175,6 +182,33 @@ describe('deterministic enrollment bootstrap', () => {
       status:'completed',
       visibility:'public',
     }));
+  });
+
+  test('denies public progress list reads when the parent path is private', async () => {
+    const privatePathId = 'private-path';
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const adminDb = context.firestore();
+      await setDoc(doc(adminDb, 'paths', privatePathId), {
+        id:privatePathId,
+        ownerId:userA,
+        title:'Private timeline path',
+        visibility:'private',
+      });
+      await setDoc(doc(adminDb, 'paths', privatePathId, 'publicProgress', 'entry-1'), {
+        id:'entry-1',
+        pathId:privatePathId,
+        userId:userB,
+        dayNumber:1,
+        status:'completed',
+        visibility:'public',
+      });
+    });
+
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDocs(query(
+      collection(signedOut, 'paths', privatePathId, 'publicProgress'),
+      where('visibility', '==', 'public')
+    )));
   });
 });
 

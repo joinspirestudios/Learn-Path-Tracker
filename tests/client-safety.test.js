@@ -203,6 +203,17 @@ test('client join helper uses authenticated route and safe user-facing errors', 
   assert.doesNotMatch(joinBlock, /console\.error/);
 });
 
+test('public progress loading queries only public timeline entries', () => {
+  const source = fs.readFileSync(new URL('../src/db.js', import.meta.url), 'utf8');
+  const loadBlock = source.slice(source.indexOf('async function loadPublicProgress'), source.indexOf('export async function dbLoadPublicProgress'));
+  assert.match(loadBlock, /fb\.query\(/);
+  assert.match(loadBlock, /publicProgressCol\(pathId\)/);
+  assert.match(loadBlock, /fb\.where\('visibility', '==', 'public'\)/);
+  assert.match(loadBlock, /fb\.getDocs\(publicEntriesQuery\)/);
+  assert.doesNotMatch(loadBlock, /fb\.getDocs\(publicProgressCol\(pathId\)\)/);
+  assert.match(loadBlock, /cachePublicProgress\(pathId, entries\)\.slice\(0, limit\)/);
+});
+
 test('public join button disables duplicate clicks while join request is active', () => {
   const source = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   const joinBlock = source.slice(source.indexOf('async function joinPublicPath'), source.indexOf('function currentEnrollmentForPath'));
