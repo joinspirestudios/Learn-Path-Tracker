@@ -211,6 +211,8 @@ test('public progress loading queries only public timeline entries', () => {
   assert.match(loadBlock, /fb\.where\('visibility', '==', 'public'\)/);
   assert.match(loadBlock, /fb\.getDocs\(publicEntriesQuery\)/);
   assert.doesNotMatch(loadBlock, /fb\.getDocs\(publicProgressCol\(pathId\)\)/);
+  assert.doesNotMatch(loadBlock, /syncErrorMessage/);
+  assert.doesNotMatch(loadBlock, /applyCloudResult/);
   assert.match(loadBlock, /cachePublicProgress\(pathId, entries\)\.slice\(0, limit\)/);
 });
 

@@ -11,13 +11,15 @@ import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider, s
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
+const env = import.meta.env || {};
+
 const cfg = {
-  apiKey:     import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId:  import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:      import.meta.env.VITE_FIREBASE_APP_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  apiKey:     env.VITE_FIREBASE_API_KEY,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:  env.VITE_FIREBASE_PROJECT_ID,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:      env.VITE_FIREBASE_APP_ID,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
 };
 
 export const EXPECTED_FIREBASE_PROJECT_ID = 'learn-path-tracker';
@@ -51,7 +53,7 @@ export const firebaseDiagnostics = {
   initializationError: initializationError ? String(initializationError.message || initializationError) : null,
 };
 
-if(import.meta.env.DEV){
+if(env.DEV){
   console.info('[firebase diagnostics]', {
     projectId: firebaseDiagnostics.projectId,
     expectedProjectId: firebaseDiagnostics.expectedProjectId,

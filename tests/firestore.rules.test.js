@@ -182,6 +182,9 @@ describe('deterministic enrollment bootstrap', () => {
       status:'completed',
       visibility:'public',
     }));
+    await assertFails(updateDoc(doc(userDb, 'paths', pathId, 'publicProgress', 'entry-1'), {
+      publicCaption:'browser update',
+    }));
   });
 
   test('denies public progress list reads when the parent path is private', async () => {

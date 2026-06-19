@@ -83,6 +83,14 @@ function syncErrorMessage(error, fallback){
   return message;
 }
 
+function optionalPublicProgressWarning(error, fallback){
+  const classified = classifyFirebaseError(error);
+  return {
+    status: classified.status,
+    message: classified.status === 'unknown_error' ? fallback : classified.message,
+  };
+}
+
 export async function dbLoadState(){
   if(cloudActive()){
     try{
@@ -725,7 +733,14 @@ async function loadPublicProgress(pathId, limit = 10){
     snap.forEach(d => entries.push({ id:d.id, ...d.data() }));
     return cachePublicProgress(pathId, entries).slice(0, limit);
   }catch(e){
-    console.warn('load public progress:', syncErrorMessage(e, 'Could not load public progress. Cached entries remain available.'));
+    const warning = optionalPublicProgressWarning(e, 'Could not load public progress. Cached entries remain available.');
+    store.cloudDiagnostics = {
+      ...store.cloudDiagnostics,
+      publicProgressStatus: warning.status,
+      publicProgressMessage: warning.message,
+      publicProgressFailedAt: Date.now(),
+    };
+    console.warn('load public progress:', warning.message);
     return (store.publicProgress?.[pathId] || []).slice(0, limit);
   }
 }
