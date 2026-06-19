@@ -86,6 +86,7 @@ export const store = {
   evidenceSubmissions: {},
   accessRequests:  {},
   route:           { kind:'catalog' },
+  pendingRoute:    null,
   bootReady:       false,
   authSoftTimedOut:false,
   syncStatus:      '',

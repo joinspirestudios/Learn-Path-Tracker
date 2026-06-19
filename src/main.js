@@ -27,8 +27,10 @@ import {
   renderLadders, renderDrills, renderRes, renderLog,
   openSkill, goCatalog, goWeek, editPath,
   refreshSuggest, updateLogDot, handleHashRoute,
+  hasPendingPathRoute, hasSharedPathRouteState, renderPendingPathRouteState, retryPendingPathRoute,
 } from './views.js';
 import { trackOperation } from './sync.js';
+import { hashRouteUrl, initialRouteIntent, parsePathRoute } from './routes.js';
 
 let preflightPromise = null;
 let platformSyncPromise = null;
@@ -49,7 +51,7 @@ function persistRoute(hash){
 function updateRouteHashForTab(tab){
   const hash = routeHashForCurrent(tab);
   persistRoute(hash);
-  if(location.hash !== hash) history.replaceState(null, '', hash);
+  if(location.hash !== hash || location.pathname.startsWith('/path/')) history.replaceState(null, '', hashRouteUrl(hash));
 }
 
 function switchTab(t){
@@ -83,8 +85,12 @@ async function finishLoad(){
   store.enrollments = store.state.enrollments || {};
   store.evidenceSubmissions = store.state.evidenceSubmissions || {};
   applyHeader(); updateLogDot();
-  const hash = location.hash || (() => { try{ return localStorage.getItem(LAST_ROUTE_KEY) || ''; }catch(e){ return ''; } })();
-  if(hash && hash !== location.hash) history.replaceState(null, '', hash);
+  const lastRoute = (() => { try{ return localStorage.getItem(LAST_ROUTE_KEY) || ''; }catch(e){ return ''; } })();
+  const routeIntent = initialRouteIntent({ hash:location.hash, pathname:location.pathname, search:location.search }, lastRoute);
+  const hash = parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search })
+    ? location.hash
+    : (location.hash || routeIntent.restoreHash || '');
+  if(hash && hash !== location.hash) history.replaceState(null, '', hashRouteUrl(hash));
   if(await handleHashRoute()){
     markBootReady();
     return;
@@ -112,6 +118,15 @@ async function loadLocalAndRender(){
 }
 
 function refreshVisibleRoute(){
+  if(hasPendingPathRoute()){
+    if(cloudAvailable()) retryPendingPathRoute();
+    else renderPendingPathRouteState();
+    return;
+  }
+  if(!store.state.current && (parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search }) || hasSharedPathRouteState())){
+    handleHashRoute();
+    return;
+  }
   if(store.state.current && store.activeTab === 'plan') renderPlan();
   else if(store.state.current) switchTab(store.activeTab);
   else renderCatalog();
@@ -127,12 +142,14 @@ function startPlatformSync(label = 'platform summaries load'){
     .then(() => {
       platformSyncKey = key;
       store.syncStatus = '';
-      refreshVisibleRoute();
+      if(hasPendingPathRoute()) retryPendingPathRoute();
+      else refreshVisibleRoute();
     })
     .catch(e => {
       store.syncStatus = '';
       console.warn(label + ':', e && e.message ? e.message : e);
-      refreshVisibleRoute();
+      if(hasPendingPathRoute()) renderPendingPathRouteState();
+      else refreshVisibleRoute();
     })
     .finally(() => { platformSyncPromise = null; });
   return platformSyncPromise;
@@ -242,9 +259,13 @@ function reconcileSignedInWorkspace(){
 function startConnectedCloudWork(){
   if(!cloudAvailable()) return;
   if(store.currentUser){
-    reconcileSignedInWorkspace().then(() => startPlatformSync());
+    reconcileSignedInWorkspace().then(() => {
+      if(hasPendingPathRoute()) return retryPendingPathRoute();
+      return startPlatformSync();
+    });
   } else {
-    startPlatformSync();
+    if(hasPendingPathRoute()) retryPendingPathRoute().then(() => startPlatformSync());
+    else startPlatformSync();
   }
 }
 
@@ -260,7 +281,8 @@ function runCloudPreflight(force = false){
   preflightPromise = checkFirestoreConnection()
     .then(result => {
       store.syncStatus = '';
-      refreshVisibleRoute();
+      if(result.ok && hasPendingPathRoute()) retryPendingPathRoute();
+      else refreshVisibleRoute();
       if(result.ok) startConnectedCloudWork();
       return result;
     })
@@ -307,7 +329,10 @@ setSignOutHandler(() => {
   reconciledUserId = null;
   platformSyncKey = null;
   applyHeader();
-  if(store.state.current == null) renderCatalog();
+  if(store.state.current == null){
+    if(hasPendingPathRoute() || parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search })) handleHashRoute();
+    else renderCatalog();
+  }
   if(cloudAvailable()) startPlatformSync();
 });
 

@@ -36,6 +36,9 @@ import {
   isOwner, isPathParticipant, normalizePathStats, resolveCreatorName,
 } from './platform.js';
 import {
+  hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathShareLink,
+} from './routes.js';
+import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
   AI_INTENSITY_DETAILS, AI_INTENSITY_LEVELS,
   MAX_AI_CLARIFICATION_ROUNDS, assumptionsForFinalClarification,
@@ -103,6 +106,7 @@ let startingJourneyId = null;
 let aiSaveClientId = null;
 let joiningPathId = null;
 let shareLinkMessage = '';
+let pendingRouteRetrying = false;
 
 function abortAIRequest(kind = null, builder = aiBuilder){
   if(!builder?.requests) return;
@@ -160,22 +164,7 @@ function scheduleSave(ms = 650){
 
 function setRoute(hash){
   try{ localStorage.setItem('lpt_last_route', hash); }catch(e){}
-  if(location.hash !== hash) history.replaceState(null, '', hash);
-}
-
-function pathHash(id, tab = store.activeTab || 'plan', day = null){
-  let hash = '#/path/' + encodeURIComponent(id) + '/' + encodeURIComponent(tab || 'plan');
-  if(day != null) hash += '/roadmap/day/' + encodeURIComponent(day);
-  return hash;
-}
-
-function pathPreviewHash(id){
-  return '#/path/' + encodeURIComponent(id) + '/preview';
-}
-
-function pathShareLink(id){
-  const base = location.origin + location.pathname;
-  return base + pathPreviewHash(id);
+  if(location.hash !== hash || location.pathname.startsWith('/path/')) history.replaceState(null, '', hashRouteUrl(hash));
 }
 
 function authRestoring(){
@@ -224,6 +213,7 @@ function pathCanStart(def){
 }
 
 function renderPathOpening(title = 'Opening path...', message = 'Loading path details.'){
+  store.route = { kind:'path-loading', id:store.pendingRoute?.id || store.state.current || null };
   applyHeader();
   $('content').innerHTML = '<div class="panel card path-loading"><div class="chip">Loading</div><h3>' + esc(title) + '</h3><p class="muted">' + esc(message) + '</p></div>';
 }
@@ -236,6 +226,72 @@ function renderPathLoadError(id, title = 'Could not load path tasks. Try again.'
     if(!cloudAvailable() && store.nav.retryCloud) await store.nav.retryCloud();
     if(cloudAvailable()) openSkill(id, { tab:'plan' });
   };
+}
+
+function setPendingPathRoute(route, waitingFor = 'cloud'){
+  const next = makePendingPathRoute(route, waitingFor);
+  if(!next) return null;
+  const previous = store.pendingRoute && store.pendingRoute.id === next.id ? store.pendingRoute : null;
+  store.pendingRoute = {
+    ...next,
+    attempts:previous ? Number(previous.attempts || 0) + 1 : Number(next.attempts || 0),
+  };
+  store.route = { kind:'path-loading', id:next.id };
+  return store.pendingRoute;
+}
+
+function clearPendingPathRoute(id = null){
+  if(!store.pendingRoute) return;
+  if(id && store.pendingRoute.id !== id) return;
+  store.pendingRoute = null;
+}
+
+export function hasPendingPathRoute(){
+  return !!store.pendingRoute;
+}
+
+export function hasSharedPathRouteState(){
+  if(store.pendingRoute) return true;
+  return ['path-preview', 'path-error', 'path-loading'].includes(store.route?.kind);
+}
+
+export function renderPendingPathRouteState(){
+  const pending = store.pendingRoute;
+  if(!pending) return false;
+  const checking = (store.cloudStatus || 'checking') === 'checking';
+  const title = checking ? 'Opening shared path...' : 'We could not load this shared path yet.';
+  const message = checking ? 'Checking cloud connection.' : cloudFailureMessage();
+  applyHeader();
+  $('content').innerHTML = syncStatusHTML()
+    + '<div class="panel card empty-state path-loading"><div class="chip">' + esc(checking ? 'Loading' : 'Cloud unavailable') + '</div>'
+    + '<div class="section-title">' + esc(title) + '</div><div class="muted">' + esc(message) + '</div>'
+    + (checking ? '' : '<div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="btn gold" id="retrySharedPath">Retry</button><button class="btn" id="backDiscover">Back to discover</button></div>')
+    + '</div>';
+  const retry = $('retrySharedPath');
+  if(retry) retry.onclick = async () => {
+    if(!cloudAvailable() && store.nav.retryCloud) await store.nav.retryCloud();
+    await retryPendingPathRoute();
+  };
+  const back = $('backDiscover');
+  if(back) back.onclick = () => { clearPendingPathRoute(); goCatalog(); };
+  return true;
+}
+
+export async function retryPendingPathRoute(){
+  const pending = store.pendingRoute;
+  if(!pending) return false;
+  if(pendingRouteRetrying) return true;
+  if(!cloudAvailable()){
+    renderPendingPathRouteState();
+    return true;
+  }
+  pendingRouteRetrying = true;
+  try{
+    await openPathRoute(pending.id, pending.preview, pending.options || {}, { source:pending.source || 'hash', retryPending:true });
+  }finally{
+    pendingRouteRetrying = false;
+  }
+  return true;
 }
 
 function upSave(){     saveCurrentPath(); }
@@ -2372,6 +2428,8 @@ function createPath(){
 /* ---- enter / leave a skill ---- */
 function renderOpenedPath(id, options = {}){
   store.state.current = id; ensureSkill(id); store.editMode = false;
+  store.route = { kind:'path', id };
+  clearPendingPathRoute(id);
   selectedJourneyDay = options.day ? (Number(options.day) || null) : null;
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
@@ -2451,6 +2509,8 @@ export async function openSkill(id, options = {}){
   syncOpenedPathInBackground(id);
 }
 export function goCatalog(){
+  clearPendingPathRoute();
+  store.route = { kind:'catalog' };
   store.state.current = null; store.editMode = false;
   dbSaveState(); applyHeader(); renderCatalog();
   setRoute('#/discover');
@@ -2459,24 +2519,22 @@ export function goCatalog(){
 
 export async function handleHashRoute(){
   const hash = (location.hash || '').replace(/^#\/?/, '');
-  if(!hash) return false;
   if(hash === 'discover' || hash === 'my-paths'){
     goCatalog();
     return true;
   }
-  const parts = hash.split('/').map(decodeURIComponent);
-  if(parts[0] !== 'path' || !parts[1]) return false;
-  const tab = parts[2] === 'preview' ? null : parts[2];
-  const dayIdx = parts.indexOf('day');
-  const day = dayIdx >= 0 ? Number(parts[dayIdx + 1] || 0) : null;
-  await openPathRoute(parts[1], parts[2] === 'preview', { tab, day });
+  const route = parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search });
+  if(!route) return false;
+  await openPathRoute(route.id, route.preview, route.options || {}, { source:route.source || 'hash' });
   return true;
 }
 
-async function openPathRoute(id, forcePreview, options = {}){
+async function openPathRoute(id, forcePreview, options = {}, routeMeta = {}){
   if(isUserPath(id) || SKILLS.some(s => s.id === id)){
     if(forcePreview && isUserPath(id)){
       const def = store.state.userPaths[id];
+      clearPendingPathRoute(id);
+      store.route = { kind:'path-preview', id, source:routeMeta.source || 'hash' };
       renderPathPreview({ id, path:def.platformData || def, membership:def.membership || null, sections:[], tasks:[] });
     } else await openSkill(id, options);
     return;
@@ -2484,36 +2542,51 @@ async function openPathRoute(id, forcePreview, options = {}){
   let record = null;
   try{
     renderPathOpening('Opening path...', 'Loading platform path details.');
-    if(!cloudAvailable()) throw new Error(cloudFailureMessage());
+    if(!cloudAvailable()){
+      setPendingPathRoute({ kind:'path', id, preview:forcePreview, options, source:routeMeta.source || 'hash' }, 'cloud');
+      renderPendingPathRouteState();
+      return;
+    }
     record = await trackOperation('path children load', withTimeout(dbLoadPlatformPath(id), PATH_OPEN_TIMEOUT_MS, 'load platform path'));
   }catch(e){
-    renderPathLoadError(id, !cloudAvailable() ? cloudFailureMessage() : userSyncMessage(e, 'Could not load path tasks. Try again.'));
+    if(!cloudAvailable()){
+      setPendingPathRoute({ kind:'path', id, preview:forcePreview, options, source:routeMeta.source || 'hash' }, 'cloud');
+      renderPendingPathRouteState();
+    } else {
+      clearPendingPathRoute(id);
+      renderPathLoadError(id, userSyncMessage(e, 'Could not load path tasks. Try again.'));
+    }
     return;
   }
   if(!record){
+    clearPendingPathRoute(id);
     renderMissingPath();
     return;
   }
   if(!forcePreview && canViewPath(record.path, record.membership, store.currentUser)){
+    clearPendingPathRoute(id);
     await openSkill(id, options);
     return;
   }
   if(canPreviewPath(record.path, store.currentUser)){
     if(store.currentUser) await dbLoadMyAccessRequest(id);
+    clearPendingPathRoute(id);
+    store.route = { kind:'path-preview', id, source:routeMeta.source || 'hash' };
     renderPathPreview(record);
   } else {
+    clearPendingPathRoute(id);
     renderAccessBlocked(record);
   }
 }
 
 function renderMissingPath(){
-  store.state.current = null; store.editMode = false; applyHeader();
-  $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">Path not found</div><div class="muted">This path may have been removed, hidden, or shared with the wrong link.</div><button class="btn" id="backDiscover" style="margin-top:14px">Back to discover</button></div>';
+  store.state.current = null; store.editMode = false; store.route = { kind:'path-error', reason:'missing' }; applyHeader();
+  $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">Path not found.</div><div class="muted">This path may have been removed, hidden, or shared with the wrong link.</div><button class="btn" id="backDiscover" style="margin-top:14px">Back to discover</button></div>';
   const b = $('backDiscover'); if(b) b.onclick = goCatalog;
 }
 
 function renderAccessBlocked(record){
-  store.state.current = null; store.editMode = false; applyHeader();
+  store.state.current = null; store.editMode = false; store.route = { kind:'path-error', reason:'private', id:record?.id || null }; applyHeader();
   $('content').innerHTML = '<div class="panel card empty-state"><div class="section-title">' + esc(record.path.title) + '</div><div class="muted">This path is private. The creator has not enabled a public preview.</div></div>';
 }
 
@@ -2601,6 +2674,8 @@ function renderPathPreview(record){
   const joining = joiningPathId === record.id;
   const shareable = owner && ['public', 'unlisted'].includes(path.visibility);
   const shareLink = pathShareLink(record.id);
+  clearPendingPathRoute(record.id);
+  store.route = { kind:'path-preview', id:record.id };
   store.state.current = null; store.editMode = false; applyHeader();
   let h = '<div class="public-path-page">'
     + '<section class="public-path-hero panel">'

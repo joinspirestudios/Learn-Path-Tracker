@@ -25,6 +25,10 @@
     {
       "source": "/__/firebase/:path*",
       "destination": "https://learn-path-tracker.firebaseapp.com/__/firebase/:path*"
+    },
+    {
+      "source": "/path/:path*",
+      "destination": "/index.html"
     }
   ]
 }

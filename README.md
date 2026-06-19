@@ -131,7 +131,7 @@ The guided AI builder is split into focused frontend modules under `src/views/ai
 
 ### Public path pages
 
-Public and unlisted paths have shareable preview pages that explain what the path is, who created it, duration, intensity, evidence expectations and milestones. Owners can copy a `#/path/{pathId}/preview` share link for Public or Unlisted paths; Private paths remain private and are not presented as public share links.
+Public and unlisted paths have shareable preview pages that explain what the path is, who created it, duration, intensity, evidence expectations and milestones. Owners can copy a clean `/path/{pathId}/preview` share link for Public or Unlisted paths; legacy `#/path/{pathId}/preview` links remain supported. The app preserves shared path routes during boot and retries them after cloud readiness so direct links do not fall back to Discover. Private paths remain private and are not exposed through guessed links.
 
 ### Joinable paths
 
