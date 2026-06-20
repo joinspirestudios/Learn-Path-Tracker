@@ -133,6 +133,16 @@ The guided AI builder is split into focused frontend modules under `src/views/ai
 
 Public and unlisted paths have shareable preview pages that explain what the path is, who created it, duration, intensity, evidence expectations and milestones. Owners can copy a clean `/path/{pathId}/preview` share link for Public or Unlisted paths; legacy `#/path/{pathId}/preview` links remain supported. The app preserves shared path routes during boot and retries them after cloud readiness so direct links do not fall back to Discover. Private paths remain private and are not exposed through guessed links.
 
+### Discovery and curation
+
+Phase 5.11 adds search, filters, sort options and curated discovery sections for public discoverable paths. Discover can search public path title, goal, preview copy, creator display name, category/domain and intensity; filter by category, duration, intensity and proof/activity signals; and sort by recommended, newest, most joined, most proof-backed, recently active, most completed, shortest and longest.
+
+Discover uses public path metadata and aggregate trust metrics only. It does not expose private enrollments, day logs, submissions, participantStats, members lists, private evidence, raw proof URLs, private reflections or full task/section content to public viewers. Discovery cards use real stored metrics only; fake numbers, placeholder activity and stale active-this-week badges are not displayed.
+
+Public discovery is preview-first. Signed-out users and signed-in users who have not joined a public path see the preview page and must join before opening the full roadmap or starting the path. Joined users and owners can open the full path through the existing access model.
+
+Personalized recommendations, trending algorithms, global feeds, followers, notifications, public media proof display, Gemini evidence intelligence, research, citations, adaptive planning and paid promotion remain deferred.
+
 ### Public progress timelines
 
 Phase 5.8 lets a signed-in learner publish a completed day from their own enrollment to `paths/{pathId}/publicProgress/{entryId}` when the source path is Public or Unlisted. Publishing is explicit and optional; completing a day does not automatically make anything public.

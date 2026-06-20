@@ -823,7 +823,7 @@ async function loadPlatformRecordFromDoc(docSnap, includeChildren = true){
   if(fullAccess){
     children = await loadPathChildren(docSnap.id);
   }
-  const publicProgress = ['public', 'unlisted'].includes(path.visibility)
+  const publicProgress = includeChildren && ['public', 'unlisted'].includes(path.visibility)
     ? await loadPublicProgress(docSnap.id, includeChildren ? 12 : 6, {
         includeComments:!!includeChildren,
         includeCurrentUserReaction:!!includeChildren,

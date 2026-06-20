@@ -210,6 +210,25 @@
 
 /* ---- skill catalog ---- */
 .cat-intro{margin-bottom:24px}
+.discovery-controls{margin-bottom:22px;padding:16px}
+.discovery-search-row{display:flex;gap:10px;align-items:center}
+.discovery-search-row input[type=search]{flex:1;min-width:0;background:var(--ink2);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'DM Sans';font-size:14px;padding:10px 12px}
+.discovery-search-row input[type=search]:focus{outline:none;border-color:var(--gold)}
+.discovery-filter-row{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:10px;margin-top:14px}
+.discovery-filter-row label{display:flex;flex-direction:column;gap:6px;color:var(--sand);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;font-weight:700}
+.discovery-filter-row select{width:100%;background:var(--ink2);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'DM Sans';font-size:13px;padding:9px 10px}
+.discovery-filter-row select:focus{outline:none;border-color:var(--gold)}
+.discovery-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.discovery-warning{margin-bottom:16px;color:var(--sand)}
+.discovery-section{margin:22px 0 28px}
+.discovery-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.discovery-section-head h3{margin:0;font-family:'Fraunces',serif;color:var(--cream);font-size:19px}
+.discovery-section-head span{color:var(--gold-soft);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.discovery-card{min-height:260px}
+.discovery-badges,.discovery-metrics{display:flex;gap:7px;flex-wrap:wrap}
+.discovery-badges span{border:1px solid rgba(212,175,55,.34);border-radius:999px;color:var(--gold);background:rgba(212,175,55,.08);padding:4px 8px;font-size:10.5px;font-weight:800}
+.discovery-metrics span{border:1px solid var(--line2);border-radius:999px;color:var(--sand);background:rgba(239,231,216,.035);padding:4px 8px;font-size:11px;font-weight:700}
+.personal-library{margin-top:34px}
 .cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
 .skill-card{text-align:left;border:1px solid var(--line2);border-radius:18px;background:linear-gradient(180deg,var(--panel),var(--ink2));box-shadow:var(--shadow);padding:24px 22px;cursor:pointer;transition:.18s;display:flex;flex-direction:column;gap:10px;min-height:210px;color:inherit;font-family:inherit}
 .skill-card:hover{border-color:var(--gold);transform:translateY(-3px)}
@@ -681,6 +700,8 @@
   #auth,.startbar,.overall{flex-wrap:wrap}
   nav.tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:6px;margin:14px -16px 18px;padding-left:16px;padding-right:16px;scrollbar-width:thin}
   .tab{white-space:nowrap;padding:8px 12px;font-size:12.5px}
+  .discovery-filter-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .discovery-search-row{align-items:stretch}
   .cat-grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
   .skill-card{min-height:180px;padding:20px 18px;border-radius:14px}
   .modal-overlay{align-items:flex-start;justify-content:center;overflow:auto;padding:12px}
@@ -704,6 +725,8 @@
   .ring{width:46px;height:46px}
   .ring svg{width:46px;height:46px}
   .ring .pct{font-size:12px}
+  .discovery-filter-row{grid-template-columns:1fr}
+  .discovery-search-row{flex-direction:column}
   .cat-grid{grid-template-columns:1fr}
   .skill-card .sc-top{font-size:20px}
   .plan-head{display:block}

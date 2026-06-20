@@ -83,6 +83,7 @@ export const store = {
   catalogue:       [],     // every render entry, each carries .skill
   platformPaths:   {},     // cloud platform paths, normalized into userPaths for rendering
   publicProgress:  {},     // sanitized public timeline entries keyed by path id
+  discovery:       { query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' },
   enrollments:     {},     // current user's per-path enrollment progress
   evidenceSubmissions: {},
   accessRequests:  {},

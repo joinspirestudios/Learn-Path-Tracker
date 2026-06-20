@@ -252,6 +252,29 @@ test('public path preview requires join before full path open or enrollment', ()
   assert.match(syncSource, /join_required:'Join this path before starting it\.'/);
 });
 
+test('discover UI uses public metadata controls and preview-first cards', () => {
+  const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const dbSource = fs.readFileSync(new URL('../src/db.js', import.meta.url), 'utf8');
+  const storeSource = fs.readFileSync(new URL('../src/store.js', import.meta.url), 'utf8');
+  const cardBlock = viewSource.slice(viewSource.indexOf('function publicPathCardHTML'), viewSource.indexOf('function renderDiscoveryGrid'));
+  const catalogBlock = viewSource.slice(viewSource.indexOf('export function renderCatalog'), viewSource.indexOf('function shouldShowUserPath'));
+  const loadBlock = dbSource.slice(dbSource.indexOf('async function loadPlatformRecordFromDoc'), dbSource.indexOf('export async function dbLoadPlatformPath'));
+  assert.match(viewSource, /Search paths by goal, topic, creator or category/);
+  assert.match(viewSource, /data-discovery-field="category"/);
+  assert.match(viewSource, /data-discovery-field="duration"/);
+  assert.match(viewSource, /data-discovery-field="intensity"/);
+  assert.match(viewSource, /data-discovery-field="proof"/);
+  assert.match(viewSource, /data-discovery-field="sort"/);
+  assert.match(catalogBlock, /publicDiscoveryPaths\(\)/);
+  assert.match(catalogBlock, /discoverySectionsHTML\(publicPaths, discoveryState\)/);
+  assert.match(cardBlock, /View &rarr;/);
+  assert.doesNotMatch(cardBlock, /Start/);
+  assert.doesNotMatch(cardBlock, /creatorEmail|ownerEmail/);
+  assert.doesNotMatch(cardBlock, /weeks|tasks|sections|dayLogs|submissions|participantStats/);
+  assert.match(loadBlock, /includeChildren && \['public', 'unlisted'\]\.includes\(path\.visibility\)/);
+  assert.match(storeSource, /discovery:\s+\{ query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' \}/);
+});
+
 test('public progress interaction UI escapes comments and uses protected API helpers', () => {
   const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');

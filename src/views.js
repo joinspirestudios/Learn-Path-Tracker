@@ -93,6 +93,11 @@ import {
 import {
   canPublishCompletedDay, evidenceTypeLabel, normalizePublicComment, normalizePublicProgressEntry, publicProgressEntryId,
 } from './public-progress.js';
+import {
+  DEFAULT_DISCOVERY_STATE, DISCOVERY_DURATION_BUCKETS, DISCOVERY_INTENSITIES, DISCOVERY_PROOF_FILTERS, DISCOVERY_SORTS,
+  clearDiscoveryState, curatedDiscoverySections, discoverPaths, discoveryCategory, discoveryCategoryOptions,
+  isDiscoverablePublicPath, isDiscoveryDefault, normalizeDiscoveryState, proofSignals,
+} from './discovery.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -101,6 +106,7 @@ let evidenceFormTaskId = null;
 let evidenceProofType = 'url';
 let evidenceBusy = false;
 let evidenceError = '';
+let discoverySearchTimer = null;
 let dailySessionSaveState = 'idle';
 let dailySessionError = '';
 let dailySessionActionToken = 0;
@@ -382,7 +388,100 @@ async function openCatalogPath(id){
   await openSkill(id);
 }
 
+function optionListHTML(options, selected){
+  return options.map(option => '<option value="' + esc(option.id) + '" ' + (option.id === selected ? 'selected' : '') + '>' + esc(option.label) + '</option>').join('');
+}
+
+function publicDiscoveryPaths(){
+  return Object.entries(store.state.userPaths || {})
+    .map(([id, def]) => ({ ...def, id }))
+    .filter(isDiscoverablePublicPath);
+}
+
+function publicPathCardHTML(path){
+  const id = path.id;
+  const stats = normalizePathStats(path.stats, path);
+  const active = displayableActiveThisWeek(stats);
+  const signals = proofSignals(path);
+  const creator = resolveCreatorName(path, store.currentUser);
+  const category = discoveryCategory(path);
+  const full = canOpenFullPath(id, store.state.userPaths[id]);
+  const owner = isOwner(path.platformData || path, store.currentUser);
+  const cta = owner ? 'Open / manage &rarr;' : (full ? 'Open &rarr;' : 'View &rarr;');
+  const chips = [];
+  if(category) chips.push(category);
+  if(path.durationDays) chips.push(path.durationDays + ' days');
+  else if(path.durationLabel) chips.push(path.durationLabel);
+  if(path.intensity) chips.push(String(path.intensity).charAt(0).toUpperCase() + String(path.intensity).slice(1));
+  if(stats.joinedCount) chips.push(stats.joinedCount + ' joined');
+  if(stats.publicProgressCount) chips.push(stats.publicProgressCount + ' public updates');
+  if(stats.proofSubmissionCount) chips.push(stats.proofSubmissionCount + ' proof submitted');
+  if(stats.completedCount) chips.push(stats.completedCount + ' completed');
+  if(active) chips.push(active + ' active this week');
+  const badges = [];
+  if(signals.proofBacked) badges.push('Proof-backed');
+  if(signals.activeThisWeek) badges.push('Active this week');
+  const summary = path.previewDescription || path.description || path.goal || 'A public learning path with preview-first access.';
+  return '<button class="skill-card discovery-card" data-id="' + esc(id) + '">'
+    + '<div class="sc-badge">By ' + esc(creator) + '</div>'
+    + '<div class="sc-top">' + esc(path.title || 'Untitled path') + '</div>'
+    + '<div class="sc-tag">' + esc(category || 'Learning path') + '</div>'
+    + (badges.length ? '<div class="discovery-badges">' + badges.map(badge => '<span>' + esc(badge) + '</span>').join('') + '</div>' : '')
+    + '<div class="sc-blurb">' + esc(summary.length > 150 ? summary.slice(0, 147) + '...' : summary) + '</div>'
+    + '<div class="discovery-metrics">' + (chips.length ? chips.map(chip => '<span>' + esc(chip) + '</span>').join('') : '<span>No public metrics yet</span>') + '</div>'
+    + '<div class="sc-cta">' + cta + '</div></button>';
+}
+
+function renderDiscoveryGrid(paths, emptyCopy){
+  if(!paths.length) return '<div class="panel card empty-state"><div class="section-title">No paths found.</div><div class="muted">' + esc(emptyCopy) + '</div></div>';
+  return '<div class="cat-grid discovery-grid">' + paths.map(publicPathCardHTML).join('') + '</div>';
+}
+
+function discoveryControlsHTML(paths, state){
+  const categoryOptions = [{ id:'all', label:'All categories' }, ...discoveryCategoryOptions(paths)];
+  return '<div class="discovery-controls panel card">'
+    + '<div class="discovery-search field"><label for="discoveryQuery">Search public paths</label><div class="discovery-search-row"><input type="search" id="discoveryQuery" value="' + esc(state.query) + '" placeholder="Search paths by goal, topic, creator or category"/><button class="btn" id="clearDiscoverySearch" type="button" ' + (state.query ? '' : 'disabled') + '>Clear</button></div></div>'
+    + '<div class="discovery-filter-row">'
+    + '<label>Category<select data-discovery-field="category">' + optionListHTML(categoryOptions, state.category) + '</select></label>'
+    + '<label>Duration<select data-discovery-field="duration">' + optionListHTML(DISCOVERY_DURATION_BUCKETS, state.duration) + '</select></label>'
+    + '<label>Intensity<select data-discovery-field="intensity">' + optionListHTML(DISCOVERY_INTENSITIES, state.intensity) + '</select></label>'
+    + '<label>Proof/activity<select data-discovery-field="proof">' + optionListHTML(DISCOVERY_PROOF_FILTERS, state.proof) + '</select></label>'
+    + '<label>Sort<select data-discovery-field="sort">' + optionListHTML(DISCOVERY_SORTS, state.sort) + '</select></label>'
+    + '</div><div class="discovery-actions"><button class="btn" id="clearDiscoveryFilters" type="button" ' + (isDiscoveryDefault(state) ? 'disabled' : '') + '>Clear filters</button></div>'
+    + '</div>';
+}
+
+function discoverySectionsHTML(paths, state){
+  if(!paths.length){
+    return '<div class="panel card empty-state"><div class="section-title">No public paths yet.</div><div class="muted">Create a path and publish it when you are ready to share.</div></div>';
+  }
+  const filtered = discoverPaths(paths, state);
+  if(!isDiscoveryDefault(state)){
+    return '<div class="discovery-section"><div class="discovery-section-head"><h3>Matching public paths</h3><span>' + filtered.length + '</span></div>'
+      + renderDiscoveryGrid(filtered, state.query ? 'No public paths match this search yet. Try a broader goal, category or intensity.' : 'No paths match these filters. Try clearing a filter or searching a broader goal.') + '</div>';
+  }
+  let h = curatedDiscoverySections(paths).map(section =>
+    '<div class="discovery-section"><div class="discovery-section-head"><h3>' + esc(section.title) + '</h3><span>' + section.paths.length + '</span></div>'
+      + renderDiscoveryGrid(section.paths, '') + '</div>'
+  ).join('');
+  h += '<div class="discovery-section"><div class="discovery-section-head"><h3>All public paths</h3><span>' + paths.length + '</span></div>'
+    + renderDiscoveryGrid(discoverPaths(paths, { ...DEFAULT_DISCOVERY_STATE, sort:'recommended' }), '') + '</div>';
+  return h;
+}
+
+function personalPathIds(){
+  return Object.keys(store.state.userPaths || {}).filter(id => {
+    const def = store.state.userPaths[id];
+    if(!def) return false;
+    if(!def.platform) return true;
+    return canOpenFullPath(id, def) && !isDiscoverablePublicPath({ ...def, id });
+  });
+}
+
 export function renderCatalog(){
+  store.discovery = normalizeDiscoveryState(store.discovery || DEFAULT_DISCOVERY_STATE);
+  const discoveryState = store.discovery;
+  const publicPaths = publicDiscoveryPaths();
   let h = '<div class="cat-intro"><div class="section-title">Discover <em>Learning Paths</em></div>'
     + '<div class="muted" style="max-width:640px">Explore public journeys, keep your own private paths close, and turn local drafts into shareable learning paths when you are ready.</div></div>';
   h += syncStatusHTML();
@@ -392,6 +491,12 @@ export function renderCatalog(){
     applyHeader();
     return;
   }
+  if(configPresent() && store.cloudStatus && store.cloudStatus !== 'connected' && publicPaths.length){
+    h += '<div class="panel card discovery-warning">Could not refresh public paths right now. Showing cached paths where available.</div>';
+  }
+  h += discoveryControlsHTML(publicPaths, discoveryState);
+  h += discoverySectionsHTML(publicPaths, discoveryState);
+  h += '<div class="personal-library"><div class="discovery-section-head"><h3>Your workspace</h3><span>Private tools and drafts</span></div>';
   h += '<div class="cat-grid">';
   SKILLS.forEach(s => {
     const t = totalsFor(s.id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
@@ -403,7 +508,7 @@ export function renderCatalog(){
       + '<div class="sc-foot"><div class="progress-bar" style="flex:1"><div style="width:' + pct + '%"></div></div><span class="sc-pct">' + pct + '%</span></div>'
       + '<div class="sc-cta">' + (started ? 'Continue' : 'Start') + ' →</div></button>';
   });
-  Object.keys(store.state.userPaths || {}).filter(id => shouldShowUserPath(id)).forEach(id => {
+  personalPathIds().forEach(id => {
     const def = store.state.userPaths[id];
     const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
     const goal = pathGoal(id);
@@ -437,8 +542,38 @@ export function renderCatalog(){
       + '<div class="sc-blurb">Sign in to create and track your own learning paths, synced across your devices.</div>'
       + '<div class="sc-cta">Sign in to start →</div></button>';
   }
-  h += '</div>';
+  h += '</div></div>';
   $('content').innerHTML = h;
+  const dq = $('discoveryQuery');
+  if(dq) dq.oninput = e => {
+    store.discovery.query = e.target.value;
+    const cursor = e.target.selectionStart || store.discovery.query.length;
+    clearTimeout(discoverySearchTimer);
+    discoverySearchTimer = setTimeout(() => {
+      renderCatalog();
+      const next = $('discoveryQuery');
+      if(next){
+        next.focus();
+        try{ next.setSelectionRange(cursor, cursor); }catch(error){}
+      }
+    }, 160);
+  };
+  const clearSearch = $('clearDiscoverySearch');
+  if(clearSearch) clearSearch.onclick = () => {
+    store.discovery.query = '';
+    renderCatalog();
+  };
+  $('content').querySelectorAll('[data-discovery-field]').forEach(select => {
+    select.onchange = e => {
+      store.discovery[e.target.dataset.discoveryField] = e.target.value;
+      renderCatalog();
+    };
+  });
+  const clearFilters = $('clearDiscoveryFilters');
+  if(clearFilters) clearFilters.onclick = () => {
+    store.discovery = clearDiscoveryState();
+    renderCatalog();
+  };
   $('content').querySelectorAll('.skill-card[data-id]').forEach(c => c.onclick = () => {
     if(openingPathId === c.dataset.id) return;
     openingPathId = c.dataset.id;
