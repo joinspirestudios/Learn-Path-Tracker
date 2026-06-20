@@ -143,6 +143,8 @@ Public discovery is preview-first. Signed-out users and signed-in users who have
 
 Personalized recommendations, trending algorithms, global feeds, followers, notifications, public media proof display, Gemini evidence intelligence, research, citations, adaptive planning and paid promotion remain deferred.
 
+Phase 5.11.1 modularizes catalog/discovery rendering and event binding without changing product behaviour. `src/views/catalog/render.js` composes the Discover/catalog HTML, `src/views/catalog/cards.js` renders public and workspace cards, `src/views/catalog/controls.js` renders search/filter/sort controls, `src/views/catalog/sections.js` builds curated and filtered sections, `src/views/catalog/events.js` binds catalog UI actions, and `src/views/catalog/access.js` owns catalog-specific access/CTA helpers. Full route orchestration remains in `src/views.js` for now because it coordinates path loading, preview rendering, pending shared routes and full-path opening state; moving it safely needs a later router-only pass.
+
 ### Public progress timelines
 
 Phase 5.8 lets a signed-in learner publish a completed day from their own enrollment to `paths/{pathId}/publicProgress/{entryId}` when the source path is Public or Unlisted. Publishing is explicit and optional; completing a day does not automatically make anything public.

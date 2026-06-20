@@ -228,17 +228,19 @@ test('public join button disables duplicate clicks while join request is active'
 
 test('public path preview requires join before full path open or enrollment', () => {
   const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const catalogEventsSource = fs.readFileSync(new URL('../src/views/catalog/events.js', import.meta.url), 'utf8');
+  const catalogAccessSource = fs.readFileSync(new URL('../src/views/catalog/access.js', import.meta.url), 'utf8');
   const dbSource = fs.readFileSync(new URL('../src/db.js', import.meta.url), 'utf8');
   const syncSource = fs.readFileSync(new URL('../src/sync.js', import.meta.url), 'utf8');
-  const catalogBlock = viewSource.slice(viewSource.indexOf('async function openCatalogPath'), viewSource.indexOf('export function renderCatalog'));
   const openBlock = viewSource.slice(viewSource.indexOf('export async function openSkill'), viewSource.indexOf('export function goCatalog'));
   const routeBlock = viewSource.slice(viewSource.indexOf('async function openPathRoute'), viewSource.indexOf('function renderMissingPath'));
   const syncBlock = viewSource.slice(viewSource.indexOf('function syncOpenedPathInBackground'), viewSource.indexOf('export async function openSkill'));
   const planBlock = viewSource.slice(viewSource.indexOf('export function renderPlan'), viewSource.indexOf('  const editable = canEditUserPath'));
   const startBlock = viewSource.slice(viewSource.indexOf('async function startPathJourney'), viewSource.indexOf('async function startSavedPathDayOne'));
   const ensureBlock = dbSource.slice(dbSource.indexOf('export async function dbEnsureEnrollment'), dbSource.indexOf('function upsertPlatformPath'));
-  assert.match(catalogBlock, /openPathRoute\(id, true/);
-  assert.match(viewSource, /View &rarr;/);
+  assert.match(catalogEventsSource, /openPathRoute\(id, true/);
+  assert.match(catalogAccessSource, /canAccessFullPath\?\.\(record\.path, record\.membership, store\?\.currentUser\)/);
+  assert.match(catalogEventsSource + fs.readFileSync(new URL('../src/views/catalog/cards.js', import.meta.url), 'utf8'), /View &rarr;/);
   assert.match(openBlock, /!canOpenFullPath\(id, existingDef\)/);
   assert.match(openBlock, /renderPathPreview\(previewRecord\)/);
   assert.match(routeBlock, /canAccessFullPath\(record\.path, record\.membership, store\.currentUser\)/);
@@ -254,23 +256,27 @@ test('public path preview requires join before full path open or enrollment', ()
 
 test('discover UI uses public metadata controls and preview-first cards', () => {
   const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+  const cardsSource = fs.readFileSync(new URL('../src/views/catalog/cards.js', import.meta.url), 'utf8');
+  const controlsSource = fs.readFileSync(new URL('../src/views/catalog/controls.js', import.meta.url), 'utf8');
+  const renderSource = fs.readFileSync(new URL('../src/views/catalog/render.js', import.meta.url), 'utf8');
+  const sectionsSource = fs.readFileSync(new URL('../src/views/catalog/sections.js', import.meta.url), 'utf8');
   const dbSource = fs.readFileSync(new URL('../src/db.js', import.meta.url), 'utf8');
   const storeSource = fs.readFileSync(new URL('../src/store.js', import.meta.url), 'utf8');
-  const cardBlock = viewSource.slice(viewSource.indexOf('function publicPathCardHTML'), viewSource.indexOf('function renderDiscoveryGrid'));
-  const catalogBlock = viewSource.slice(viewSource.indexOf('export function renderCatalog'), viewSource.indexOf('function shouldShowUserPath'));
   const loadBlock = dbSource.slice(dbSource.indexOf('async function loadPlatformRecordFromDoc'), dbSource.indexOf('export async function dbLoadPlatformPath'));
-  assert.match(viewSource, /Search paths by goal, topic, creator or category/);
-  assert.match(viewSource, /data-discovery-field="category"/);
-  assert.match(viewSource, /data-discovery-field="duration"/);
-  assert.match(viewSource, /data-discovery-field="intensity"/);
-  assert.match(viewSource, /data-discovery-field="proof"/);
-  assert.match(viewSource, /data-discovery-field="sort"/);
-  assert.match(catalogBlock, /publicDiscoveryPaths\(\)/);
-  assert.match(catalogBlock, /discoverySectionsHTML\(publicPaths, discoveryState\)/);
-  assert.match(cardBlock, /View &rarr;/);
-  assert.doesNotMatch(cardBlock, /Start/);
-  assert.doesNotMatch(cardBlock, /creatorEmail|ownerEmail/);
-  assert.doesNotMatch(cardBlock, /weeks|tasks|sections|dayLogs|submissions|participantStats/);
+  assert.match(controlsSource, /Search paths by goal, topic, creator or category/);
+  assert.match(controlsSource, /data-discovery-field="category"/);
+  assert.match(controlsSource, /data-discovery-field="duration"/);
+  assert.match(controlsSource, /data-discovery-field="intensity"/);
+  assert.match(controlsSource, /data-discovery-field="proof"/);
+  assert.match(controlsSource, /data-discovery-field="sort"/);
+  assert.match(renderSource, /publicDiscoveryPaths\(store\)/);
+  assert.match(renderSource, /discoverySectionsHTML\(publicPaths, discoveryState/);
+  assert.match(sectionsSource, /isDiscoverablePublicPath/);
+  assert.match(cardsSource, /View &rarr;/);
+  assert.doesNotMatch(cardsSource, /Start this path/);
+  const publicCardBlock = cardsSource.slice(cardsSource.indexOf('export function publicPathCardHTML'), cardsSource.indexOf('export function builtInPathCardHTML'));
+  assert.doesNotMatch(publicCardBlock, /creatorEmail|ownerEmail/);
+  assert.doesNotMatch(publicCardBlock, /weeks|tasks|sections|dayLogs|submissions|participantStats/);
   assert.match(loadBlock, /includeChildren && \['public', 'unlisted'\]\.includes\(path\.visibility\)/);
   assert.match(storeSource, /discovery:\s+\{ query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' \}/);
 });

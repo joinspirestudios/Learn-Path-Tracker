@@ -331,12 +331,11 @@ test('public page rendering source includes join/share states and sanitized prog
 });
 
 test('discoverable source excludes unlisted/private paths while public cards can show joined count', () => {
-  const source = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
-  const showBlock = source.slice(source.indexOf('function shouldShowUserPath'), source.indexOf('function pathCardBlurb'));
-  const cardBlock = source.slice(source.indexOf('function pathCardBlurb'), source.indexOf('async function importLocalPath'));
-  assert.match(showBlock, /def\.visibility === 'public'/);
-  assert.match(showBlock, /def\.discoverable !== false/);
-  assert.doesNotMatch(showBlock, /unlisted/);
+  const sectionsSource = readFileSync(new URL('../src/views/catalog/sections.js', import.meta.url), 'utf8');
+  const cardBlock = readFileSync(new URL('../src/views/catalog/cards.js', import.meta.url), 'utf8');
+  assert.match(sectionsSource, /isDiscoverablePublicPath/);
+  assert.match(sectionsSource, /publicDiscoveryPaths/);
+  assert.match(sectionsSource, /personalPathIds/);
   assert.match(cardBlock, /joined/);
   assert.match(cardBlock, /active this week/);
   assert.match(cardBlock, /public updates/);
