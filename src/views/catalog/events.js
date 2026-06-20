@@ -15,7 +15,7 @@ export function bindCatalogEvents(context = {}){
   const {
     $, store, renderCatalog, openPathRoute, openSkill, canOpenFullPath,
     getOpeningPathId, setOpeningPathId, importLocalPath, createPath,
-    openAIPathBuilder, openAuthModal,
+    openAIPathBuilder, openAuthModal, loadMorePublicPaths,
   } = context;
   const content = $('content');
   const dq = $('discoveryQuery');
@@ -48,6 +48,14 @@ export function bindCatalogEvents(context = {}){
     store.discovery = clearDiscoveryState();
     renderCatalog();
   };
+  const loadMore = $('loadMorePublicPaths');
+  if(loadMore && typeof loadMorePublicPaths === 'function'){
+    loadMore.onclick = async () => {
+      loadMore.disabled = true;
+      loadMore.textContent = 'Loading more paths...';
+      await loadMorePublicPaths();
+    };
+  }
   content.querySelectorAll('.skill-card[data-id]').forEach(card => {
     card.onclick = () => {
       const id = card.dataset.id;

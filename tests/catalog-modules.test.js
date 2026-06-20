@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   bindCatalogEvents, catalogCtaForPath, canOpenFullPlatformPath,
-  discoveryControlsHTML, discoverySectionsHTML, openCatalogPath,
+  discoveryControlsHTML, discoveryPaginationHTML, discoverySectionsHTML, openCatalogPath,
   platformAccessRecordFromState, publicDiscoveryPaths, publicPathCardHTML,
   renderCatalogView,
 } from '../src/views/catalog/index.js';
@@ -47,10 +47,38 @@ test('catalog module exports focused render, bind, access, and card helpers', ()
   assert.equal(typeof bindCatalogEvents, 'function');
   assert.equal(typeof publicPathCardHTML, 'function');
   assert.equal(typeof discoveryControlsHTML, 'function');
+  assert.equal(typeof discoveryPaginationHTML, 'function');
   assert.equal(typeof discoverySectionsHTML, 'function');
   assert.equal(typeof platformAccessRecordFromState, 'function');
   assert.equal(typeof canOpenFullPlatformPath, 'function');
   assert.equal(typeof catalogCtaForPath, 'function');
+});
+
+test('public discovery paths honor loaded pagination ids after page state exists', () => {
+  const store = {
+    discoveryPage:{ loadedPublicIds:['public'], lastLoadedAt:123, hasMore:true },
+    state:{ userPaths:{
+      public:path('public'),
+      cached:path('cached'),
+      hidden:path('hidden', { discoverable:false }),
+    } },
+  };
+  assert.deepEqual(publicDiscoveryPaths(store).map(item => item.id), ['public']);
+});
+
+test('discovery pagination renders load-more states and honest loaded-set copy', () => {
+  const more = discoveryPaginationHTML({ hasMore:true, loadingMore:false }, 3, { cloudAvailable:true });
+  assert.match(more, /Search, filters, sort and curated sections apply to the loaded public set/);
+  assert.match(more, /id="loadMorePublicPaths"/);
+  assert.match(more, /Load more public paths/);
+
+  const loading = discoveryPaginationHTML({ hasMore:true, loadingMore:true }, 3, { cloudAvailable:true });
+  assert.match(loading, /disabled/);
+  assert.match(loading, /Loading more paths\.\.\./);
+
+  const done = discoveryPaginationHTML({ hasMore:false }, 3, { cloudAvailable:true });
+  assert.doesNotMatch(done, /id="loadMorePublicPaths"/);
+  assert.match(done, /You have reached the end of public paths loaded for now/);
 });
 
 test('public discovery cards render real compact metrics and preview-first CTA', () => {
@@ -183,4 +211,50 @@ test('catalog event binder updates filters and clears discovery state', () => {
   handlers.clearFilters();
   assert.deepEqual(store.discovery, { query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' });
   assert.equal(renders, 3);
+});
+
+test('catalog event binder calls load-more without resetting discovery filters', async () => {
+  const handlers = {};
+  const root = {
+    querySelectorAll(selector){
+      if(selector === '[data-discovery-field]' || selector === '.skill-card[data-id]' || selector === '[data-import]') return [];
+      return [];
+    },
+  };
+  const elements = {
+    content:root,
+    clearDiscoveryFilters:null,
+    clearDiscoverySearch:null,
+    discoveryQuery:null,
+    loadMorePublicPaths:{
+      disabled:false,
+      textContent:'Load more public paths',
+      set onclick(fn){ handlers.loadMore = fn; },
+    },
+  };
+  const store = {
+    discovery:{ query:'draw', category:'creative', duration:'month', intensity:'balanced', proof:'proof_backed', sort:'newest' },
+    state:{ userPaths:{} },
+  };
+  let loaded = 0;
+  bindCatalogEvents({
+    $:id => elements[id] || null,
+    store,
+    renderCatalog:() => {},
+    openPathRoute:() => {},
+    openSkill:() => {},
+    canOpenFullPath:() => false,
+    getOpeningPathId:() => null,
+    setOpeningPathId:() => {},
+    importLocalPath:() => {},
+    createPath:() => {},
+    openAIPathBuilder:() => {},
+    openAuthModal:() => {},
+    loadMorePublicPaths:async () => { loaded += 1; },
+  });
+  await handlers.loadMore();
+  assert.equal(loaded, 1);
+  assert.deepEqual(store.discovery, { query:'draw', category:'creative', duration:'month', intensity:'balanced', proof:'proof_backed', sort:'newest' });
+  assert.equal(elements.loadMorePublicPaths.disabled, true);
+  assert.equal(elements.loadMorePublicPaths.textContent, 'Loading more paths...');
 });

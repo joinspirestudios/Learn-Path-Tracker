@@ -15,6 +15,9 @@ import {
 } from './journey.js';
 import { normalizePublicComment, normalizePublicProgressEntry, normalizeReactionType } from './public-progress.js';
 import {
+  boundedDiscoveryPageSize, mergeDiscoveryLoadedIds, normalizeDiscoveryPageState, resetDiscoveryPageState,
+} from './discovery-pagination.js';
+import {
   ENROLLMENT_TIMEOUT_MS, FIRESTORE_PREFLIGHT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
   classifyFirebaseError, cloudStatusMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
@@ -853,32 +856,164 @@ export async function dbLoadPlatformPath(id){
   }
 }
 
-export async function dbLoadPlatformPaths(){
+function isPublicDiscoveryRecord(record){
+  return !!(record?.path && record.path.visibility === 'public' && record.path.discoverable !== false);
+}
+
+function loadedDiscoveryRecords(){
+  const page = normalizeDiscoveryPageState(store.discoveryPage);
+  return page.loadedPublicIds
+    .map(id => store.platformPaths?.[id])
+    .filter(isPublicDiscoveryRecord);
+}
+
+function updateDiscoveryDiagnostics(status, elapsedMs = null){
+  const page = normalizeDiscoveryPageState(store.discoveryPage);
+  store.cloudDiagnostics.discoveryPageSize = page.pageSize;
+  store.cloudDiagnostics.discoveryLoadedCount = page.loadedPublicIds.length;
+  store.cloudDiagnostics.discoveryHasMore = page.hasMore;
+  if(elapsedMs != null) store.cloudDiagnostics.discoveryLastLoadElapsedMs = elapsedMs;
+  store.cloudDiagnostics.discoveryLoadStatus = status;
+  store.cloudDiagnostics.discoveryLoadMessage = page.errorMessage || '';
+}
+
+function discoveryQuery(pathsCol, pageSize, cursor = null){
+  const constraints = [fb.where('visibility', '==', 'public')];
+  if(cursor && typeof fb.startAfter === 'function') constraints.push(fb.startAfter(cursor));
+  constraints.push(fb.limit(pageSize));
+  return fb.query(pathsCol, ...constraints);
+}
+
+async function loadPublicDiscoveryPage({ cursor = null, pageSize, maxAttempts = 3 } = {}){
+  const pathsCol = fb.collection(fb.db, 'paths');
+  const safePageSize = boundedDiscoveryPageSize(pageSize);
+  const records = [];
+  let lastDoc = cursor || null;
+  let hasMore = false;
+  let attempts = 0;
+  while(records.length < safePageSize && attempts < maxAttempts){
+    const remaining = safePageSize - records.length;
+    const snap = await withTimeout(
+      fb.getDocs(discoveryQuery(pathsCol, remaining, lastDoc)),
+      READ_TIMEOUT_MS,
+      'platform summaries load'
+    );
+    const docs = Array.isArray(snap.docs) ? snap.docs : [];
+    attempts += 1;
+    if(!docs.length){
+      hasMore = false;
+      break;
+    }
+    lastDoc = docs[docs.length - 1];
+    hasMore = docs.length === remaining;
+    for(const d of docs){
+      const record = await loadPlatformRecordFromDoc(d, false);
+      if(isPublicDiscoveryRecord(record)) records.push(record);
+    }
+    if(docs.length < remaining) break;
+  }
+  return { records, cursor:lastDoc, hasMore };
+}
+
+async function loadOwnerPlatformRecords(seen = new Set()){
+  const records = [];
+  if(!store.currentUser) return records;
+  const pathsCol = fb.collection(fb.db, 'paths');
+  const snap = await withTimeout(
+    fb.getDocs(fb.query(pathsCol, fb.where('ownerId', '==', store.currentUser.uid))),
+    READ_TIMEOUT_MS,
+    'platform owner summaries load'
+  );
+  for(const d of snap.docs || []){
+    if(seen.has(d.id)) continue;
+    seen.add(d.id);
+    records.push(await loadPlatformRecordFromDoc(d, false));
+  }
+  return records;
+}
+
+export async function dbLoadPlatformPaths(options = {}){
   if(!cloudAvailable()) return [];
   const started = Date.now();
-  const seen = new Set();
-  const records = [];
-  async function collect(q){
-    const snap = await withTimeout(fb.getDocs(q), READ_TIMEOUT_MS, 'platform summaries load');
-    for(const d of snap.docs){
-      if(seen.has(d.id)) continue;
-      seen.add(d.id);
-      records.push(await loadPlatformRecordFromDoc(d, false));
-    }
-  }
+  const pageSize = boundedDiscoveryPageSize(options.pageSize || store.discoveryPage?.pageSize);
+  store.discoveryPage = resetDiscoveryPageState(pageSize);
+  store.discoveryPage.loading = true;
+  updateDiscoveryDiagnostics('loading');
   try{
-    const pathsCol = fb.collection(fb.db, 'paths');
-    await collect(fb.query(pathsCol, fb.where('visibility', '==', 'public')));
-    if(store.currentUser){
-      await collect(fb.query(pathsCol, fb.where('ownerId', '==', store.currentUser.uid)));
-    }
+    const publicPage = await loadPublicDiscoveryPage({ pageSize });
+    const seen = new Set(publicPage.records.map(record => record.id));
+    const ownerRecords = await loadOwnerPlatformRecords(seen);
+    const records = [...publicPage.records, ...ownerRecords];
     records.forEach(upsertPlatformPath);
+    store.discoveryPage = {
+      ...normalizeDiscoveryPageState(store.discoveryPage),
+      loading:false,
+      cursor:publicPage.cursor,
+      hasMore:publicPage.hasMore,
+      loadedPublicIds:mergeDiscoveryLoadedIds(
+        [],
+        [...publicPage.records, ...ownerRecords].filter(isPublicDiscoveryRecord).map(record => record.id)
+      ),
+      lastLoadedAt:Date.now(),
+      errorStatus:'',
+      errorMessage:'',
+    };
     store.cloudDiagnostics.platformSummaryElapsedMs = Date.now() - started;
+    updateDiscoveryDiagnostics('loaded', Date.now() - started);
     return records;
   }catch(e){
+    store.discoveryPage = {
+      ...normalizeDiscoveryPageState(store.discoveryPage),
+      loading:false,
+      errorStatus:classifyFirebaseError(e).status,
+      errorMessage:classifyFirebaseError(e).message,
+    };
     store.cloudDiagnostics.platformSummaryElapsedMs = Date.now() - started;
+    updateDiscoveryDiagnostics('error', Date.now() - started);
     console.warn('load platform paths:', syncErrorMessage(e, 'Could not load platform paths. Your cached paths remain available.'));
     throw e;
+  }
+}
+
+export async function dbLoadMorePlatformPaths(options = {}){
+  if(!cloudAvailable()) return loadedDiscoveryRecords();
+  const started = Date.now();
+  const page = normalizeDiscoveryPageState(store.discoveryPage);
+  if(page.loadingMore || page.hasMore === false) return loadedDiscoveryRecords();
+  store.discoveryPage = { ...page, loadingMore:true, errorStatus:'', errorMessage:'' };
+  updateDiscoveryDiagnostics('loading_more');
+  try{
+    const publicPage = await loadPublicDiscoveryPage({
+      cursor:store.discoveryPage.cursor,
+      pageSize:boundedDiscoveryPageSize(options.pageSize || store.discoveryPage.pageSize),
+    });
+    publicPage.records.forEach(upsertPlatformPath);
+    store.discoveryPage = {
+      ...normalizeDiscoveryPageState(store.discoveryPage),
+      loadingMore:false,
+      cursor:publicPage.cursor,
+      hasMore:publicPage.hasMore,
+      loadedPublicIds:mergeDiscoveryLoadedIds(
+        store.discoveryPage.loadedPublicIds,
+        publicPage.records.filter(isPublicDiscoveryRecord).map(record => record.id)
+      ),
+      lastLoadedAt:Date.now(),
+      errorStatus:'',
+      errorMessage:'',
+    };
+    updateDiscoveryDiagnostics('loaded_more', Date.now() - started);
+    return publicPage.records;
+  }catch(e){
+    const classified = classifyFirebaseError(e);
+    store.discoveryPage = {
+      ...normalizeDiscoveryPageState(store.discoveryPage),
+      loadingMore:false,
+      errorStatus:classified.status,
+      errorMessage:classified.message,
+    };
+    updateDiscoveryDiagnostics('error', Date.now() - started);
+    console.warn('load more platform paths:', classified.message);
+    return loadedDiscoveryRecords();
   }
 }
 

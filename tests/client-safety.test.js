@@ -263,6 +263,8 @@ test('discover UI uses public metadata controls and preview-first cards', () => 
   const dbSource = fs.readFileSync(new URL('../src/db.js', import.meta.url), 'utf8');
   const storeSource = fs.readFileSync(new URL('../src/store.js', import.meta.url), 'utf8');
   const loadBlock = dbSource.slice(dbSource.indexOf('async function loadPlatformRecordFromDoc'), dbSource.indexOf('export async function dbLoadPlatformPath'));
+  const discoveryQueryBlock = dbSource.slice(dbSource.indexOf('function discoveryQuery'), dbSource.indexOf('async function loadPublicDiscoveryPage'));
+  const platformSummariesBlock = dbSource.slice(dbSource.indexOf('async function loadPublicDiscoveryPage'), dbSource.indexOf('export async function dbSavePlatformPath'));
   assert.match(controlsSource, /Search paths by goal, topic, creator or category/);
   assert.match(controlsSource, /data-discovery-field="category"/);
   assert.match(controlsSource, /data-discovery-field="duration"/);
@@ -271,14 +273,22 @@ test('discover UI uses public metadata controls and preview-first cards', () => 
   assert.match(controlsSource, /data-discovery-field="sort"/);
   assert.match(renderSource, /publicDiscoveryPaths\(store\)/);
   assert.match(renderSource, /discoverySectionsHTML\(publicPaths, discoveryState/);
+  assert.match(renderSource, /discoveryPaginationHTML\(store\.discoveryPage/);
   assert.match(sectionsSource, /isDiscoverablePublicPath/);
+  assert.match(sectionsSource, /loadedPublicIds/);
   assert.match(cardsSource, /View &rarr;/);
   assert.doesNotMatch(cardsSource, /Start this path/);
   const publicCardBlock = cardsSource.slice(cardsSource.indexOf('export function publicPathCardHTML'), cardsSource.indexOf('export function builtInPathCardHTML'));
   assert.doesNotMatch(publicCardBlock, /creatorEmail|ownerEmail/);
   assert.doesNotMatch(publicCardBlock, /weeks|tasks|sections|dayLogs|submissions|participantStats/);
+  assert.match(discoveryQueryBlock, /fb\.where\('visibility', '==', 'public'\)/);
+  assert.match(discoveryQueryBlock, /fb\.limit\(pageSize\)/);
+  assert.match(discoveryQueryBlock, /fb\.startAfter\(cursor\)/);
+  assert.match(platformSummariesBlock, /loadPlatformRecordFromDoc\(d, false\)/);
+  assert.doesNotMatch(platformSummariesBlock, /publicProgressCol|loadPublicProgress|loadPathChildren|enrollmentRef|dayLogRef|evidenceCollection/);
   assert.match(loadBlock, /includeChildren && \['public', 'unlisted'\]\.includes\(path\.visibility\)/);
   assert.match(storeSource, /discovery:\s+\{ query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' \}/);
+  assert.match(storeSource, /discoveryPage:\s+\{ \.\.\.DEFAULT_DISCOVERY_PAGE/);
 });
 
 test('public progress interaction UI escapes comments and uses protected API helpers', () => {

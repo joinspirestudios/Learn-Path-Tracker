@@ -7,6 +7,7 @@
 // lets modules do `store.catalogue = store.catalogue.filter(...)` cleanly.
 
 import { normalizeDurationDays, SCHEDULE_TYPES } from './journey.js';
+import { DEFAULT_DISCOVERY_PAGE } from './discovery-pagination.js';
 
 export const STATE_KEY  = 'lpt_state';
 export const CAT_PREFIX = 'lpt_cat:';
@@ -84,6 +85,7 @@ export const store = {
   platformPaths:   {},     // cloud platform paths, normalized into userPaths for rendering
   publicProgress:  {},     // sanitized public timeline entries keyed by path id
   discovery:       { query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' },
+  discoveryPage:   { ...DEFAULT_DISCOVERY_PAGE, loadedPublicIds:[] },
   enrollments:     {},     // current user's per-path enrollment progress
   evidenceSubmissions: {},
   accessRequests:  {},
@@ -116,6 +118,12 @@ export const store = {
     metricsSyncStatus:null,
     metricsSyncMessage:null,
     metricsSyncFailedAt:null,
+    discoveryPageSize:null,
+    discoveryLoadedCount:null,
+    discoveryHasMore:null,
+    discoveryLastLoadElapsedMs:null,
+    discoveryLoadStatus:null,
+    discoveryLoadMessage:null,
   },
   currentUser:     null,
   authChecked:     false,

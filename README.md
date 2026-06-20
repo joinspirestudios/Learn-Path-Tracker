@@ -145,6 +145,12 @@ Personalized recommendations, trending algorithms, global feeds, followers, noti
 
 Phase 5.11.1 modularizes catalog/discovery rendering and event binding without changing product behaviour. `src/views/catalog/render.js` composes the Discover/catalog HTML, `src/views/catalog/cards.js` renders public and workspace cards, `src/views/catalog/controls.js` renders search/filter/sort controls, `src/views/catalog/sections.js` builds curated and filtered sections, `src/views/catalog/events.js` binds catalog UI actions, and `src/views/catalog/access.js` owns catalog-specific access/CTA helpers. Full route orchestration remains in `src/views.js` for now because it coordinates path loading, preview rendering, pending shared routes and full-path opening state; moving it safely needs a later router-only pass.
 
+Phase 5.11.2 adds bounded discovery loading and a Load more control so Discover no longer assumes every public path can be loaded at once. The public query reads `visibility == "public"` path documents with a safe page limit, then uses a runtime cursor for additional pages. Owner paths still load separately into the signed-in user's workspace and duplicate path IDs are deduped.
+
+Discovery cards use public path metadata and aggregate stats only. They do not load child sections/tasks, comments, reactions, public progress entries, private day logs, evidence submissions, participantStats or member lists. Search, filters, sort options and curated sections operate on the loaded public path set until a full search backend is introduced.
+
+Server-side/full-database search, personalized recommendations, trending algorithms and external search providers remain deferred.
+
 ### Public progress timelines
 
 Phase 5.8 lets a signed-in learner publish a completed day from their own enrollment to `paths/{pathId}/publicProgress/{entryId}` when the source path is Public or Unlisted. Publishing is explicit and optional; completing a day does not automatically make anything public.

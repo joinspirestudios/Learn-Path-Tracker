@@ -11,6 +11,7 @@ import { $, esc, flash, undoToast } from './helpers.js';
 import { externalLinkHTML, safeExternalUrl } from './urls.js';
 import {
   dbSaveState, dbSaveRender, dbDelRender, dbCreatePlatformPath, dbLoadPlatformPath,
+  dbLoadMorePlatformPaths,
   dbRequestAccess, dbLoadMyAccessRequest, dbSavePlatformPath,
   dbEnsureEnrollment, dbReconcileEnrollment, dbSaveEnrollment, dbSaveDayLog,
   dbStartEnrollment, enrollmentIdFor, makeDayLog, makeEnrollment,
@@ -364,6 +365,12 @@ function canOpenFullPath(id, def = store.state.userPaths?.[id]){
   return canOpenFullPlatformPath({ store, id, def, canAccessFullPath });
 }
 
+async function loadMorePublicPaths(){
+  await dbLoadMorePlatformPaths();
+  if(store.discoveryPage?.errorMessage) flash(store.discoveryPage.errorMessage);
+  renderCatalog();
+}
+
 export function renderCatalog(){
   const result = renderCatalogView({
     store,
@@ -394,6 +401,7 @@ export function renderCatalog(){
     createPath,
     openAIPathBuilder,
     openAuthModal,
+    loadMorePublicPaths,
   });
 }
 async function importLocalPath(id){

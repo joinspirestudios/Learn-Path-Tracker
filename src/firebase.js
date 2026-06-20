@@ -8,7 +8,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, limit, startAfter, writeBatch } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const env = import.meta.env || {};
@@ -74,6 +74,6 @@ export const fb = {
   storage, storageReady: !!(storage && cfg.storageBucket),
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail,
-  doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, writeBatch,
+  doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, limit, startAfter, writeBatch,
   storageRef, uploadBytes, getDownloadURL,
 };

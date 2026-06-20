@@ -4,7 +4,7 @@ import {
 } from './cards.js';
 import { discoveryControlsHTML } from './controls.js';
 import {
-  discoverySectionsHTML, personalPathIds, publicDiscoveryPaths,
+  discoveryPaginationHTML, discoverySectionsHTML, personalPathIds, publicDiscoveryPaths,
 } from './sections.js';
 
 export function renderCatalogView(context = {}){
@@ -27,6 +27,7 @@ export function renderCatalogView(context = {}){
   }
   h += discoveryControlsHTML(publicPaths, discoveryState);
   h += discoverySectionsHTML(publicPaths, discoveryState, { store, canOpenFullPath });
+  h += discoveryPaginationHTML(store.discoveryPage || {}, publicPaths.length, { cloudAvailable:cloudActive() });
   h += '<div class="personal-library"><div class="discovery-section-head"><h3>Your workspace</h3><span>Private tools and drafts</span></div>';
   h += '<div class="cat-grid">';
   skills.forEach(skill => {

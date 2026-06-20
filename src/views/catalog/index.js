@@ -8,5 +8,5 @@ export { discoveryControlsHTML, optionListHTML } from './controls.js';
 export { bindCatalogEvents, openCatalogPath } from './events.js';
 export { renderCatalogView } from './render.js';
 export {
-  discoverySectionsHTML, personalPathIds, publicDiscoveryPaths, renderDiscoveryGrid,
+  discoveryPaginationHTML, discoverySectionsHTML, personalPathIds, publicDiscoveryPaths, renderDiscoveryGrid,
 } from './sections.js';

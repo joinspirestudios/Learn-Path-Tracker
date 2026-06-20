@@ -220,6 +220,9 @@
 .discovery-filter-row select:focus{outline:none;border-color:var(--gold)}
 .discovery-actions{display:flex;justify-content:flex-end;margin-top:12px}
 .discovery-warning{margin-bottom:16px;color:var(--sand)}
+.discovery-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0 28px}
+.discovery-page-note{font-size:12.5px;max-width:620px}
+.discovery-load-more{margin-left:auto}
 .discovery-section{margin:22px 0 28px}
 .discovery-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
 .discovery-section-head h3{margin:0;font-family:'Fraunces',serif;color:var(--cream);font-size:19px}
