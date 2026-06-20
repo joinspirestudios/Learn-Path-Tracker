@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildPrompt,
   AI_SUPPORTING_TASK_LIMIT, PATH_DRAFT_TOOL, callAnthropic as callGenerateAnthropic,
   createGeneratePathHandler, normalizeDraft, normalizePrompt,
 } from '../api/generate-path.js';
@@ -71,6 +72,28 @@ function compactPlan(overrides = {}){
     ...overrides,
   };
 }
+
+test('generation prompt includes explicit intensity policy behavior', () => {
+  const base = normalizePrompt({
+    confirmedBrief:confirmBrief({
+      goal:'Build a focused drawing practice',
+      durationDays:30,
+      intensity:'balanced',
+      coreCommitments:[{ title:'Draw from reference', cadence:{ type:'daily' }, evidenceRequired:false }],
+    }),
+  });
+  const soft = buildPrompt({ ...base, intensity:'soft' });
+  const balanced = buildPrompt({ ...base, intensity:'balanced' });
+  const intensive = buildPrompt({ ...base, intensity:'intensive' });
+  assert.match(soft, /Soft means fewer daily tasks/);
+  assert.match(soft, /pass threshold around 55%/);
+  assert.match(balanced, /Balanced means moderate daily task load/);
+  assert.match(balanced, /pass threshold around 65%/);
+  assert.match(intensive, /Intensive means higher daily task load/);
+  assert.match(intensive, /stronger proof expectations/);
+  assert.match(intensive, /staying achievable and safe/);
+  assert.match(intensive, /Confirmed intensity policy: Intensive/);
+});
 
 function streamClient(message){
   let calls = 0;

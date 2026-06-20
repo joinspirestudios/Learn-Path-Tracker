@@ -31,6 +31,8 @@ test('public progress entries sanitize private proof details', () => {
       completedTaskIds:['required-proof', 'optional-note'],
       verifiedTaskIds:['required-proof'],
       completedAt:new Date('2026-06-19T09:30:00.000Z'),
+      completionScore:70,
+      completionTier:'passed',
       summary:'private summary',
       taskReflections:{ 'required-proof':'private reflection' },
     },
@@ -52,6 +54,8 @@ test('public progress entries sanitize private proof details', () => {
   assert.equal(entry.optionalCompletedCount, 1);
   assert.equal(entry.optionalTotalCount, 1);
   assert.equal(entry.evidenceCount, 1);
+  assert.equal(entry.completionScore, 70);
+  assert.equal(entry.completionTier, 'passed');
   assert.deepEqual(entry.evidenceTypes, ['file']);
   assert.equal(evidenceTypeLabel(entry.evidenceTypes[0]), 'File');
 
@@ -75,6 +79,8 @@ test('public progress normalization bounds public text and preserves public iden
     dayNumber:'2',
     visibility:'public',
     publicCaption:longCaption,
+    completionScore:120,
+    completionTier:'strong',
     evidenceTypes:['file', 'other'],
   });
 
@@ -82,6 +88,8 @@ test('public progress normalization bounds public text and preserves public iden
   assert.equal(entry.authorPhotoURL, '');
   assert.equal(entry.dayNumber, 2);
   assert.equal(entry.publicCaption.length, 500);
+  assert.equal(entry.completionScore, 100);
+  assert.equal(entry.completionTier, 'strong');
   assert.deepEqual(entry.evidenceTypes, ['file', 'url']);
 });
 

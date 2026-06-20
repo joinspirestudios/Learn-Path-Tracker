@@ -201,6 +201,14 @@ Confirmed courses, books and existing programmes are preserved as structured res
 
 Path intensity uses the user-facing labels `Soft`, `Balanced` and `Intensive`, with canonical values `soft`, `balanced` and `intensive`. Intensity affects time load, task volume, progression, recovery, required versus optional work and evidence expectations. It never overrides safety boundaries, fixed challenge rules, confirmed resources, fixed course or programme sequence, or explicit user availability.
 
+Phase 6.1 makes intensity part of daily completion policy. Days can pass once the learner completes enough meaningful weighted work for the path intensity, while perfect days are still celebrated separately. Required tasks carry full weight, optional tasks carry lighter weight, skipped optional tasks do not add score, evidence-required tasks count only after proof is verified, and explicit anchor/core tasks can still block completion.
+
+Soft paths use a gentler workload, lower pass threshold and more flexibility. Balanced paths use realistic discipline, a moderate pass threshold and standard proof expectations. Intensive paths use a focused workload, higher pass threshold and stronger proof expectations while staying achievable.
+
+Completion scores and tiers are safe aggregate metadata. Private task details, private reflections, private evidence and raw evidence URLs remain private. Public progress may show sanitized completion score/tier metadata for completed days without exposing failed task details.
+
+Adaptive replanning, Gemini evidence intelligence, full UI redesign, notifications and personalized recommendations remain deferred.
+
 Phase 5.5 does not fetch course or book metadata, perform live web research, verify external resources or add citations. Gemini evidence intelligence, research enrichment and rolling adaptive planning remain deferred.
 
 ## Unified voice input

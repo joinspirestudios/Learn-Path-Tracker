@@ -128,6 +128,8 @@ function seedCompletedPath(){
         completedTaskIds:['t1'],
         verifiedTaskIds:['t1'],
         completedAt:new Date('2026-06-19T09:00:00.000Z'),
+        completionScore:70,
+        completionTier:'passed',
       },
       [`enrollments/${enrollmentId}/submissions/s1`]:{
         id:'s1',
@@ -157,6 +159,8 @@ test('publish progress route creates sanitized public entry and increments count
   const entry = db.get(entryPath);
   assert.equal(entry.publicCaption, 'Shared update');
   assert.equal(entry.evidenceCount, 1);
+  assert.equal(entry.completionScore, 70);
+  assert.equal(entry.completionTier, 'passed');
   assert.deepEqual(entry.evidenceTypes, ['url']);
   assert.equal(db.get('paths/public-path').stats.publicProgressCount, 1);
   assert.equal(db.get('paths/public-path').stats.proofSubmissionCount, 1);

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   normalizeConfirmedBrief, unacceptedMaterialAssumptions, validatePhase55Brief,
 } from '../src/ai-builder-model.js';
+import { intensityPolicySummary } from '../src/intensity-policy.js';
 import { safeExternalUrl } from '../src/urls.js';
 import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
 import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
@@ -625,7 +626,8 @@ export function normalizeDraft(raw, input, source = 'ai'){
   };
 }
 
-function buildPrompt(input){
+export function buildPrompt(input){
+  const intensityPolicy = intensityPolicySummary(input.intensity || 'balanced');
   return [
     'Use the create_learning_path tool and return no prose or markdown.',
     'Return a compact supporting roadmap specification. The server owns the confirmed goal, duration, visibility, resources, and Core Commitments.',
@@ -636,7 +638,12 @@ function buildPrompt(input){
     'Use sections for phases and tasks for supporting milestones, progression work, implementation checks, and review points.',
     'Treat confirmedBrief as the user-confirmed source of truth. Never overwrite its confirmedFields.',
     'Use the supplied confirmed duration. Do not insert a hidden default duration, level, or intensity.',
-    'Use intensity as soft, balanced, or intensive. It may affect time load, task volume, progression, recovery, optional work, and evidence expectations.',
+    'Use intensity as a concrete policy, not display metadata.',
+    `Confirmed intensity policy: ${intensityPolicy}`,
+    'Soft means fewer daily tasks, more recovery/flexible days, simpler resources, lower daily time load, more optional stretch work, lighter evidence expectations, and a pass threshold around 55%.',
+    'Balanced means moderate daily task load, steady progression, clear required work, reasonable optional stretch work, standard evidence expectations, and a pass threshold around 65%.',
+    'Intensive means higher daily task load, more focused progression, deeper resources, more output-oriented tasks, stronger proof expectations, fewer low-effort days, and a pass threshold around 75%, while staying achievable and safe.',
+    'Intensity should shape number of tasks per day, estimated daily time, task difficulty, optional/stretch work, resource depth, evidence strictness, progression pace, and recovery/flex days.',
     'Intensity must never override safety boundaries, fixed challenge rules, confirmed resources, fixed course or programme sequence, explicit availability, or accepted constraints.',
     'For course goals, organize the confirmed course from current progress. Do not invent lesson names, module titles, or course content.',
     'For book goals, keep reading or study work within confirmed page scope and current progress. Do not invent chapters or editions.',

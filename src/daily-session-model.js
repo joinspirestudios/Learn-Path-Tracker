@@ -1,3 +1,7 @@
+import {
+  completionTierForScore, policyForIntensity,
+} from './intensity-policy.js';
+
 const SESSION_PHASES = new Set([
   'agenda',
   'evidence-preparation',
@@ -27,6 +31,10 @@ export function isRequiredTask(task){
 
 export function taskNeedsEvidence(task){
   return !!task?.evidenceRequired;
+}
+
+export function isAnchorTask(task){
+  return !!(task?.anchor || task?.core || task?.critical || task?.completionCritical);
 }
 
 function asArray(value){
@@ -106,6 +114,7 @@ export function sessionTaskStates(tasks = [], dayLog = {}, evidenceSubmissions =
 
 export function sessionProgress(tasks = [], dayLog = {}, evidenceSubmissions = []){
   const states = sessionTaskStates(tasks, dayLog, evidenceSubmissions);
+  const score = dailyCompletionScore(tasks, dayLog, evidenceSubmissions);
   const required = states.filter(item => item.state.required);
   const optional = states.filter(item => item.state.optional);
   const requiredResolved = required.filter(item => item.state.resolved).length;
@@ -117,6 +126,7 @@ export function sessionProgress(tasks = [], dayLog = {}, evidenceSubmissions = [
     ? Math.round((requiredResolved / requiredTotal) * 100)
     : (states.length ? 100 : 0);
   return {
+    ...score,
     requiredTotal,
     requiredResolved,
     optionalTotal,
@@ -128,15 +138,90 @@ export function sessionProgress(tasks = [], dayLog = {}, evidenceSubmissions = [
     pendingRequired:required.filter(item => !item.state.resolved).length,
     pendingOptional:optional.filter(item => !item.state.resolved).length,
     evidenceRequired:states.filter(item => item.state.needsEvidence).length,
-    percent,
+    percent:score.totalWeight ? score.score : percent,
+    requiredPercent:percent,
   };
 }
 
-export function canCompleteDailySession(tasks = [], dayLog = {}, evidenceSubmissions = []){
-  const progress = sessionProgress(tasks, dayLog, evidenceSubmissions);
-  if(!tasks.length) return false;
-  if(progress.requiredTotal === 0) return true;
-  return progress.requiredResolved === progress.requiredTotal;
+export function dailyCompletionScore(tasks = [], dayLog = {}, evidenceSubmissions = [], options = {}){
+  const policy = policyForIntensity(options.intensity || dayLog?.intensity);
+  const states = sessionTaskStates(tasks, dayLog, evidenceSubmissions);
+  let completedWeight = 0;
+  let totalWeight = 0;
+  let requiredCompleted = 0;
+  let requiredTotal = 0;
+  let optionalCompleted = 0;
+  let optionalTotal = 0;
+  let evidenceCompleted = 0;
+  let evidenceRequired = 0;
+  let anchorTotal = 0;
+  let anchorCompleted = 0;
+  states.forEach(item => {
+    const weight = item.state.optional ? 0.5 : 1;
+    totalWeight += weight;
+    if(item.state.required) requiredTotal += 1;
+    if(item.state.optional) optionalTotal += 1;
+    if(item.state.needsEvidence) evidenceRequired += 1;
+    if(isAnchorTask(item.task)){
+      anchorTotal += 1;
+      if(item.state.completed) anchorCompleted += 1;
+    }
+    if(!item.state.completed) return;
+    completedWeight += weight;
+    if(item.state.required) requiredCompleted += 1;
+    if(item.state.optional) optionalCompleted += 1;
+    if(item.state.needsEvidence) evidenceCompleted += 1;
+  });
+  const score = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+  const anchorSatisfied = anchorTotal === 0 || anchorCompleted === anchorTotal;
+  const baseTier = completionTierForScore(score, policy);
+  const thresholdMet = score >= policy.passThreshold;
+  const tier = thresholdMet && !anchorSatisfied ? 'blocked_anchor' : baseTier;
+  return {
+    score,
+    percent:score,
+    completedWeight,
+    totalWeight,
+    passThreshold:policy.passThreshold,
+    strongThreshold:policy.strongThreshold,
+    perfectThreshold:policy.perfectThreshold,
+    participationThreshold:policy.participationThreshold,
+    tier,
+    canComplete:states.length > 0 && thresholdMet && anchorSatisfied,
+    canRecordAttempt:score > 0,
+    anchorSatisfied,
+    anchorTotal,
+    anchorCompleted,
+    requiredCompleted,
+    requiredTotal,
+    optionalCompleted,
+    optionalTotal,
+    evidenceCompleted,
+    evidenceRequired,
+    intensity:policy.id,
+  };
+}
+
+export function completionScoreMetadata(score = {}){
+  return {
+    completionScore:score.score,
+    completionTier:score.tier,
+    passThreshold:score.passThreshold,
+    intensity:score.intensity,
+    anchorSatisfied:score.anchorSatisfied,
+    completedWeight:score.completedWeight,
+    totalWeight:score.totalWeight,
+    requiredCompleted:score.requiredCompleted,
+    requiredTotal:score.requiredTotal,
+    optionalCompleted:score.optionalCompleted,
+    optionalTotal:score.optionalTotal,
+    evidenceCompleted:score.evidenceCompleted,
+    evidenceRequired:score.evidenceRequired,
+  };
+}
+
+export function canCompleteDailySession(tasks = [], dayLog = {}, evidenceSubmissions = [], options = {}){
+  return dailyCompletionScore(tasks, dayLog, evidenceSubmissions, options).canComplete;
 }
 
 export function firstUnresolvedTaskId(tasks = [], dayLog = {}, evidenceSubmissions = [], optionalOnly = false){
@@ -229,6 +314,17 @@ export function encouragementForProgress(percent){
   return 'Today is fully documented.';
 }
 
+export function completionTierCopy(score = {}){
+  const tier = score.tier || 'not_started';
+  if(tier === 'blocked_anchor') return 'One core task is still unfinished. Complete it to pass the day.';
+  if(tier === 'perfect') return 'Perfect day. Every commitment is documented.';
+  if(tier === 'strong') return 'Strong day. You went beyond the minimum today.';
+  if(tier === 'passed') return 'Day passed. You did enough meaningful work to keep this journey moving.';
+  if(tier === 'attempted') return 'You showed up today. This is recorded, but you need a little more progress to complete the day.';
+  if(tier === 'in_progress') return 'Good start. Keep going until the day has enough meaningful work.';
+  return 'Ready when you are.';
+}
+
 export function saveStateLabel(saveState){
   return ({
     idle:'',
@@ -247,8 +343,9 @@ export function deriveDailySessionState({
   evidenceSubmissions = [],
   saveState = 'idle',
   error = '',
+  intensity = 'balanced',
 } = {}){
-  const progress = sessionProgress(tasks, dayLog, evidenceSubmissions);
+  const progress = dailyCompletionScore(tasks, dayLog, evidenceSubmissions, { intensity });
   const ordered = sessionTaskStates(tasks, dayLog, evidenceSubmissions);
   const currentTaskId = resumeTaskId(tasks, dayLog, evidenceSubmissions);
   let phase = normalizeSessionPhase(dayLog?.sessionViewState, 'agenda');
@@ -256,7 +353,7 @@ export function deriveDailySessionState({
   else if(!tasks.length) phase = 'error';
   else if(phase === 'task-evidence' && !currentTaskId) phase = 'completion-check';
   else if((phase === 'task' || phase === 'partial-summary') && !currentTaskId){
-    phase = canCompleteDailySession(tasks, dayLog, evidenceSubmissions) ? 'completion-check' : 'partial-summary';
+    phase = canCompleteDailySession(tasks, dayLog, evidenceSubmissions, { intensity }) ? 'completion-check' : 'partial-summary';
   }
   return {
     pathId,

@@ -62,7 +62,8 @@ import {
   localDateString, normalizeDurationDays,
 } from './journey.js';
 import {
-  canCompleteDailySession, isOptionalTask, nextUnresolvedTaskId, resumeTaskId,
+  canCompleteDailySession, completionScoreMetadata, dailyCompletionScore,
+  isOptionalTask, nextUnresolvedTaskId, resumeTaskId,
   sessionTaskStates, taskNeedsEvidence,
 } from './daily-session-model.js';
 import { dailySessionHTML } from './views/daily-session.js';
@@ -2776,11 +2777,12 @@ function publicProgressTimelineHTML(record){
       const evidence = entry.hasEvidence
         ? (entry.evidenceCount + ' proof item' + (entry.evidenceCount === 1 ? '' : 's') + (entry.evidenceTypes.length ? ' - ' + entry.evidenceTypes.map(evidenceTypeLabel).join(', ') : ''))
         : 'No public proof details';
+      const score = entry.completionScore ? '<span>' + esc(entry.completionScore) + '% ' + esc((entry.completionTier || 'completed').replace(/_/g, ' ')) + '</span>' : '';
       h += '<article class="public-progress-entry">'
         + '<div class="progress-author">' + (entry.authorPhotoURL ? '<img src="' + esc(entry.authorPhotoURL) + '" alt=""/>' : '<span></span>')
         + '<div><b>' + esc(entry.authorName) + '</b><small>Day ' + esc(entry.dayNumber) + ' completed' + (dateText(entry.publishedAt) ? ' - ' + esc(dateText(entry.publishedAt)) : '') + '</small></div></div>'
         + (entry.publicCaption ? '<p class="progress-caption">' + esc(entry.publicCaption) + '</p>' : '')
-        + '<div class="progress-metrics"><span>' + esc(entry.requiredCompletedCount) + '/' + esc(entry.requiredTotalCount) + ' required</span><span>' + esc(entry.optionalCompletedCount) + '/' + esc(entry.optionalTotalCount) + ' optional</span><span>' + esc(evidence) + '</span></div>';
+        + '<div class="progress-metrics"><span>' + esc(entry.requiredCompletedCount) + '/' + esc(entry.requiredTotalCount) + ' required</span><span>' + esc(entry.optionalCompletedCount) + '/' + esc(entry.optionalTotalCount) + ' optional</span><span>' + esc(evidence) + '</span>' + score + '</div>';
       if(entry.taskSummary.length){
         h += '<div class="progress-tasks">' + entry.taskSummary.map(item => '<em>' + esc(item.title) + '</em>').join('') + '</div>';
       }
@@ -3209,9 +3211,9 @@ function evidenceFormHTML(task){
     + '</div>';
 }
 
-function dailySessionNextPhase(dayTasks, nextTaskId, log, evidenceSubmissions){
+function dailySessionNextPhase(dayTasks, nextTaskId, log, evidenceSubmissions, intensity = 'balanced'){
   if(nextTaskId) return 'task';
-  return canCompleteDailySession(dayTasks, log, evidenceSubmissions) ? 'completion-check' : 'partial-summary';
+  return canCompleteDailySession(dayTasks, log, evidenceSubmissions, { intensity }) ? 'completion-check' : 'partial-summary';
 }
 
 async function saveDailySessionLog(enrollment, day, dayTasks, patch){
@@ -3318,7 +3320,7 @@ async function markDailySessionTask(id, def, taskId, mode){
   const nextTaskId = mode === 'not-done'
     ? nextUnresolvedTaskId(dayTasks, baseLog, evidence, taskId)
     : resumeTaskId(dayTasks, { ...baseLog, lastActiveTaskId:null }, evidence);
-  const phase = dailySessionNextPhase(dayTasks, nextTaskId, baseLog, evidence);
+  const phase = dailySessionNextPhase(dayTasks, nextTaskId, baseLog, evidence, def.intensity);
   await saveDailySessionLog(enrollment, day, dayTasks, {
     ...baseLog,
     sessionStartedAt: existing?.sessionStartedAt || new Date(),
@@ -3460,6 +3462,7 @@ function journeyDetailHTML(id, def){
       accepts:ACCEPTED_EVIDENCE_TYPES.join(','),
       saveState:dailySessionSaveState,
       error:dailySessionError,
+      intensity:def.intensity || def.aiBrief?.intensity || 'balanced',
     });
     if(status === 'active' && !canCompleteDay(day, enrollment, today)) h += '<div class="hint">This day is not eligible for completion today.</div>';
   }
@@ -3578,7 +3581,7 @@ async function submitEvidenceForTask(id, def, taskId){
     };
     const evidence = cachedEvidenceFor(enrollment.id, day);
     const nextTaskId = resumeTaskId(dayTasks, { ...nextBase, lastActiveTaskId:null }, evidence);
-    const phase = dailySessionNextPhase(dayTasks, nextTaskId, nextBase, evidence);
+    const phase = dailySessionNextPhase(dayTasks, nextTaskId, nextBase, evidence, def.intensity);
     await dbSaveDayLog(enrollment.id, makeDayLog(day, {
       ...nextBase,
       dayNumber: day,
@@ -3618,8 +3621,11 @@ async function completeJourneyDay(id, def, day){
   const completedTaskIds = existing?.completedTaskIds || [];
   const verifiedTaskIds = existing?.verifiedTaskIds || [];
   const evidence = cachedEvidenceFor(enrollment.id, day);
-  if(!canCompleteDailySession(dayTasks, existing, evidence)){
-    flash('Required tasks must be documented before this day can be completed.');
+  const score = dailyCompletionScore(dayTasks, existing, evidence, { intensity:def.intensity || def.aiBrief?.intensity });
+  if(!score.canComplete){
+    flash(score.tier === 'blocked_anchor'
+      ? 'Complete the core task before finishing this day.'
+      : `Reach ${score.passThreshold}% meaningful progress before completing this day.`);
     return;
   }
   const wasCompleted = existing?.status === 'completed';
@@ -3638,6 +3644,7 @@ async function completeJourneyDay(id, def, day){
     evidenceCount: evidenceCountFor(enrollment.id, day),
     sessionViewState: 'complete',
     sessionCompletedAt: existing?.sessionCompletedAt || new Date(),
+    ...completionScoreMetadata(score),
   }));
   await dbSaveEnrollment({
     ...store.enrollments[enrollment.id],

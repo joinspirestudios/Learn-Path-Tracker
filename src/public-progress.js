@@ -20,6 +20,11 @@ function cleanText(value, max = 120){
     .slice(0, max);
 }
 
+function cleanCompletionTier(value){
+  return ['not_started', 'in_progress', 'attempted', 'passed', 'strong', 'perfect', 'blocked_anchor']
+    .includes(value) ? value : '';
+}
+
 export function normalizeReactionType(value){
   const type = String(value == null ? '' : value).trim().toLowerCase();
   return PUBLIC_REACTION_TYPES.includes(type) ? type : null;
@@ -147,6 +152,8 @@ export function createSanitizedPublicProgressEntry({
     optionalCompletedCount:progress.optionalCompleted,
     optionalTotalCount:progress.optionalTotal,
     evidenceCount:evidence.length,
+    completionScore:cleanNumber(dayLog?.completionScore),
+    completionTier:cleanCompletionTier(dayLog?.completionTier),
     evidenceTypes,
     hasEvidence:evidence.length > 0,
     taskSummary:completedTaskSummary(dayTasks, dayLog || {}, evidence),
@@ -214,6 +221,8 @@ export function normalizePublicProgressEntry(raw = {}){
     optionalCompletedCount:cleanNumber(raw.optionalCompletedCount),
     optionalTotalCount:cleanNumber(raw.optionalTotalCount),
     evidenceCount:cleanNumber(raw.evidenceCount),
+    completionScore:Math.min(100, cleanNumber(raw.completionScore)),
+    completionTier:cleanCompletionTier(raw.completionTier),
     evidenceTypes,
     hasEvidence:!!raw.hasEvidence || cleanNumber(raw.evidenceCount) > 0,
     reactionCounts,

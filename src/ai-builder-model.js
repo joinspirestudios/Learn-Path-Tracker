@@ -1,4 +1,7 @@
 import { safeExternalUrl } from './urls.js';
+import {
+  INTENSITY_LEVELS, INTENSITY_POLICIES, normalizeIntensityPolicy,
+} from './intensity-policy.js';
 
 export const AI_PATH_TYPES = [
   'auto', 'skill', 'habit', 'challenge', 'fitness', 'creative_project',
@@ -20,12 +23,12 @@ export const AI_DOMAIN_TYPES = ['general', 'course', 'book', 'fitness'];
 
 export const AI_DOMAIN_CONFIDENCE = ['low', 'medium', 'high'];
 
-export const AI_INTENSITY_LEVELS = ['soft', 'balanced', 'intensive'];
+export const AI_INTENSITY_LEVELS = INTENSITY_LEVELS;
 
 export const AI_INTENSITY_DETAILS = {
-  soft:'Lower load, more recovery, fewer required tasks, and lighter evidence expectations.',
-  balanced:'Steady load, practical progression, regular recovery, and evidence where it helps the goal.',
-  intensive:'Higher load, more frequent work, tighter milestones, and stronger proof expectations where safe.',
+  soft:INTENSITY_POLICIES.soft.description,
+  balanced:INTENSITY_POLICIES.balanced.description,
+  intensive:INTENSITY_POLICIES.intensive.description,
 };
 
 export const AI_BUILD_PHASES = [
@@ -114,12 +117,6 @@ export const AI_ANSWER_TARGETS = [
 const ANSWER_TARGETS = new Set(AI_ANSWER_TARGETS);
 const RESOURCE_TARGETS = new Set(['courseResource', 'bookResource', 'programmeResource']);
 
-const LEGACY_INTENSITY_MAP = {
-  light:'soft',
-  moderate:'balanced',
-  intense:'intensive',
-};
-
 const DOMAIN_HINTS = {
   course:/\b(course|lesson|module|class|certification|curriculum|instructor|udemy|coursera|edx|skillshare|bootcamp)\b/i,
   book:/\b(book|chapter|author|edition|read and study|study a)\b|\b\d{2,5}\s*-\s*page\b|\b\d{2,5}\s+pages?\b.{0,80}\b(book|read|study)\b/i,
@@ -128,8 +125,7 @@ const DOMAIN_HINTS = {
 };
 
 export function normalizeIntensity(value){
-  const key = cleanText(value, 40).toLowerCase();
-  return AI_INTENSITY_LEVELS.includes(key) ? key : (LEGACY_INTENSITY_MAP[key] || 'balanced');
+  return normalizeIntensityPolicy(value);
 }
 
 export function intensityLabel(value){
