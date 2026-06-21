@@ -487,8 +487,15 @@ src/
   public-progress.js
   shared-api-contracts.js
   shared-dtos.js
+  design-tokens.js
+  design-system-contracts.js
   ai-timeouts.js
   views.js
+docs/
+  api-contracts.md
+  behavioral-ux-retention-redesign-spec.md
+  design-system-foundation.md
+  mobile-core-loop-and-architecture.md
 tests/
   anthropic-streaming.test.js
   api-security.test.js
@@ -527,6 +534,16 @@ Phase 6.7 extracts shared API contracts and privacy-safe DTO helpers into pure d
 - [`docs/api-contracts.md`](docs/api-contracts.md) documents all 13 endpoints with router, purpose, auth, method, request/response, privacy, and mobile use case.
 
 No public API URLs were changed. No request/response payloads were changed. No server route handler files were changed. No mobile app was built.
+
+## Design system foundation (Phase 6.8)
+
+Phase 6.8 defines the design system foundation: the repeatable interface language for proof-backed growth journeys. This phase establishes tokens, component contracts and screen composition models without implementing any production UI changes.
+
+- [`src/design-tokens.js`](src/design-tokens.js) exports semantic tokens for color (surface/text/border/accent/state/tier), typography (system-ui stack, 10 roles), spacing (12-step scale), radius, elevation, motion (durations/easing/product moments/reduced-motion), interaction states and accessibility (tap targets, focus rings, contrast, ARIA).
+- [`src/design-system-contracts.js`](src/design-system-contracts.js) exports 25 core component contracts (Button through RoadmapNode), a universal component state model, 13-screen composition model (landing-auth through profile-account) and a deferred work list.
+- [`docs/design-system-foundation.md`](docs/design-system-foundation.md) covers the design system thesis, dark editorial aesthetic, token philosophy, color/typography/spacing/radius/elevation/motion/state/accessibility systems, mobile and desktop baselines, component inventory, screen composition model, and Figma implementation guidance.
+
+No production UI redesign was implemented. No Figma file was committed. No font files were committed. No mobile app was built. No animation library was installed. No analytics SDK was added.
 
 ## Deferred work
 

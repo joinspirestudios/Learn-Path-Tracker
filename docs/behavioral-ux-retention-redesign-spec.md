@@ -337,6 +337,16 @@ Each core screen needs designs for:
 | Session header | default, progress, complete | With back navigation |
 | Roadmap node | locked, active, complete, skipped | With day number and status |
 
+## Design system foundation
+
+Phase 6.8 defines the design system foundation that connects this behavioral UX specification to future UI implementation. The design system tokens, component contracts and screen composition model live in:
+
+- [`src/design-tokens.js`](../src/design-tokens.js) — semantic color, typography, spacing, radius, elevation, motion, state and accessibility tokens
+- [`src/design-system-contracts.js`](../src/design-system-contracts.js) — 25 core component contracts, component state model, 13-screen composition model, deferred work list
+- [`docs/design-system-foundation.md`](design-system-foundation.md) — full design system thesis, token philosophy, Figma guidance and implementation boundaries
+
+The design system thesis, dark editorial aesthetic, semantic token philosophy, motion rules and accessibility baseline defined in the design-system-foundation document are direct continuations of the behavioral UX principles established here.
+
 ## What to implement later
 
 In order of priority:

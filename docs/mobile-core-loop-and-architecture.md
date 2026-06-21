@@ -465,6 +465,14 @@ Not implemented in this phase. Planned approach:
 6. **Phase 6.11**: Profile, settings, notification preferences
 7. **Phase 7.x**: Push notifications, offline session drafts, adaptive planning
 
+## Design system foundation
+
+Phase 6.8 defines the design system foundation that the future mobile skin will consume. The design tokens are platform-agnostic and can generate React Native StyleSheet values. Component contracts and screen composition models cover both mobile and desktop behavior. See:
+
+- [`src/design-tokens.js`](../src/design-tokens.js) — semantic tokens for color, typography, spacing, radius, elevation, motion, state and accessibility
+- [`src/design-system-contracts.js`](../src/design-system-contracts.js) — component contracts with mobile notes, screen composition model with mobile behavior
+- [`docs/design-system-foundation.md`](design-system-foundation.md) — full design system thesis, mobile interaction baseline, Figma guidance
+
 ## What not to build yet
 
 - No Expo project scaffold
