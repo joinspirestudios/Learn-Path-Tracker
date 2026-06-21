@@ -505,6 +505,12 @@ tests/
 
 `api/analyze.js` was removed because it was an unused public diagnostic surface.
 
+## Mobile architecture (Phase 6.5)
+
+Phase 6.5 defines the mobile-native direction using a one-brain/two-skins architecture. The existing Firebase/Vercel/domain logic remains the shared brain. The current Vite web app remains the desktop/public web skin. A future React Native/Expo app will become the mobile-native skin centered on the daily habit loop: Today, Daily Focus, proof upload, completion result and Discover.
+
+No mobile app was built in this phase. See [`docs/mobile-core-loop-and-architecture.md`](docs/mobile-core-loop-and-architecture.md) for the full mobile architecture, screen map, API contract map, auth strategy, offline strategy and push notification plan.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.
