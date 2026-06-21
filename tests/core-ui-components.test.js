@@ -127,9 +127,9 @@ test('Consistency card documents real progress or an honest empty state', () => 
   const empty = renderConsistencyCard({ empty:true });
   assert.match(real, /proof-consistency-card has-data/);
   assert.match(real, /5 day streak/);
-  assert.match(real, /9 completed day values from real progress/);
+  assert.match(real, /9 completed days from real progress/);
   assert.match(empty, /proof-consistency-card is-empty/);
-  assert.match(empty, /Not enough data yet/);
+  assert.match(empty, /Not enough completed days yet/);
   assert.match(empty, /Complete a few sessions/);
   assert.doesNotMatch(real + empty, /Following|Leaderboard|ranking|follower/i);
 });

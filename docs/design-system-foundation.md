@@ -40,13 +40,15 @@ Tokens are semantic, not decorative. A color is not a raw palette swatch; it is 
 
 All tokens live in [`src/design-tokens.js`](../src/design-tokens.js) as a pure data module with no DOM, Firebase or runtime dependencies. Phase 6.9 adds [`src/design-token-css.js`](../src/design-token-css.js) and `scripts/generate-design-token-css.mjs` to generate token-backed CSS custom properties for the web rollout.
 
-Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again.
+Phase 6.9.1 corrected the first UI rollout palette with the then-current warm editorial skin and stronger contrast.
 
 Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
 
 Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
 
 Phase 6.9.4 replaces the gold Proof Studio skin with the Aurora visual direction (indigo lead, green = proof, purple = peak, deep neutral-violet base), adds a consistent UX interaction/behavior system, and hardens the design system for radius, hierarchy, alignment and contrast. Proof Studio product integrity (real data only, no leaderboard, no following, no fake proof) is unchanged.
+
+Phase 6.9.5 repairs the rendered Aurora UI by replacing the bulky Discovery toolbar markup, removing stray numeric artifacts, rebuilding path cards with non-overlap structure, normalizing radius through tokens, and rebuilding the roadmap as a clean vertical proof journey. Aurora indigo remains the primary action/progress color, while Proof Studio integrity rules remain unchanged.
 
 ## Color system
 

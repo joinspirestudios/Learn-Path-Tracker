@@ -31,6 +31,8 @@ Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily ac
 
 Phase 6.9.4 replaces the gold visual skin with Aurora: indigo is the single lead color for action/progress/active state, green means proof, purple means peak, and Proof Studio integrity remains unchanged.
 
+Phase 6.9.5 repairs the rendered Aurora UI by replacing the bulky Discovery toolbar markup, removing stray numeric artifacts, rebuilding path cards with non-overlap structure, normalizing radius through tokens, and rebuilding the roadmap as a clean vertical proof journey. Aurora indigo remains the primary action/progress color, while Proof Studio integrity rules remain unchanged.
+
 Proof Studio copy prefers Today's proof, Continue day, Start today, Proof needed, Proof submitted, Proof verified, Respect, Comment, Report, Path trust, Your consistency, Every number here is proof-backed and Not enough data yet. It avoids Like, Kudos, XP, Gems, Lives, Leaderboard, Pass mark, 65% needed and fake verified claims.
 
 ### Cue → Routine → Reward model

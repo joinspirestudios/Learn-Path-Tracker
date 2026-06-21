@@ -556,13 +556,15 @@ Phase 6.9 begins the incremental production web redesign rollout by wiring desig
 
 The native mobile app was not built. The full app was not redesigned. No design library, animation library or runtime analytics SDK was installed.
 
-Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again. The token generator remains intact and `src/generated/design-tokens.css` is regenerated from `src/design-tokens.js`.
+Phase 6.9.1 corrected the first UI rollout palette with the then-current warm editorial skin. The token generator remains intact and `src/generated/design-tokens.css` is regenerated from `src/design-tokens.js`.
 
 Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
 
 Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
 
 Phase 6.9.4 replaces the gold Proof Studio skin with the Aurora visual direction (indigo lead, green = proof, purple = peak, deep neutral-violet base), adds a consistent UX interaction/behavior system, and hardens the design system for radius, hierarchy, alignment and contrast. Proof Studio product integrity (real data only, no leaderboard, no following, no fake proof) is unchanged.
+
+Phase 6.9.5 repairs the rendered Aurora UI by replacing the bulky Discovery toolbar markup, removing stray numeric artifacts, rebuilding path cards with non-overlap structure, normalizing radius through tokens, and rebuilding the roadmap as a clean vertical proof journey. Aurora indigo remains the primary action/progress color, while Proof Studio integrity rules remain unchanged.
 
 The Proof Studio direction keeps proof-first product integrity while Aurora owns the visual skin: indigo is the primary action/progress color, green is proof-only, purple is peak-only, and filled accent labels use the mathematically verified on-fill text color rather than relying on token names.
 

@@ -27,7 +27,7 @@ The redesign does not turn the daily loop into a dashboard. One task, one action
 
 ## Phase 6.9.1 Contrast Hotfix
 
-Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again.
+Phase 6.9.1 corrected the first UI rollout palette with the then-current warm editorial skin and stronger contrast.
 
 The token generator remains the source of truth. The hotfix updates `src/design-tokens.js`, regenerates `src/generated/design-tokens.css`, strengthens the legacy aliases in `src/styles.css`, and adds pure contrast tests without changing app behavior.
 
@@ -35,7 +35,7 @@ The token generator remains the source of truth. The hotfix updates `src/design-
 
 Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
 
-This direction rejects the supplied HTML sample palette, keeps blue out of primary action/progress roles, keeps gold as the primary progress/action accent, and avoids fake leaderboards, fake social proof, followers, gems, hearts and shop economy. Public progress uses Respect as the visible reaction label while the stored reaction model remains unchanged.
+This direction rejected the supplied HTML sample palette and avoided fake leaderboards, fake social proof, followers, gems, hearts and shop economy. Phase 6.9.4 superseded the old warm accent with Aurora indigo as the primary action/progress color. Public progress uses Respect as the visible reaction label while the stored reaction model remains unchanged.
 
 ## Phase 6.9.3 UI Polish
 
@@ -48,6 +48,10 @@ The polish pass keeps existing Discovery behavior, public path access, roadmap s
 Phase 6.9.4 replaces the gold Proof Studio skin with the Aurora visual direction (indigo lead, green = proof, purple = peak, deep neutral-violet base), adds a consistent UX interaction/behavior system, and hardens the design system for radius, hierarchy, alignment and contrast. Proof Studio product integrity (real data only, no leaderboard, no following, no fake proof) is unchanged.
 
 Aurora uses indigo for primary actions, progress, active roadmap state and streak continuity. Green is reserved for proof states and Strong tier. Purple is reserved for Perfect tier and peak moments. Filled accent labels use the color that passes contrast: white on indigo, dark inverse text on green and purple.
+
+## Phase 6.9.5 Rendered Aurora UI Repair
+
+Phase 6.9.5 repairs the rendered Aurora UI by replacing the bulky Discovery toolbar markup, removing stray numeric artifacts, rebuilding path cards with non-overlap structure, normalizing radius through tokens, and rebuilding the roadmap as a clean vertical proof journey. Aurora indigo remains the primary action/progress color, while Proof Studio integrity rules remain unchanged.
 
 ## Core UI Helpers
 

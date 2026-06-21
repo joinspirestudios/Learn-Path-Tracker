@@ -68,6 +68,7 @@ import {
   sessionTaskStates, taskNeedsEvidence,
 } from './daily-session-model.js';
 import { dailySessionHTML, focusScreenHTML } from './views/daily-session.js';
+import { auroraRoadmapDayItemHTML } from './views/roadmap-render.js';
 import {
   makeVoiceInputState, mapVoiceError,
   voiceIsActive, voiceTargetFromField,
@@ -3597,9 +3598,9 @@ function roadmapHTML(id, def){
   const today = localDateString();
   const totalDays = getMaxRoadmapDay(def, enrollment);
   const activeDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate, today) : 1;
-  let h = '<div class="panel card roadmap-foundation proof-studio-roadmap">'
-    + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Proof journey</h3></div>'
-    + '<div class="road-stats"><span>Streak ' + esc(enrollment?.streak || 0) + '</span><span>Freezes ' + esc(enrollment?.freezeCount ?? 1) + '</span></div></div>';
+  let h = '<section class="aurora-roadmap-panel proof-studio-roadmap">'
+    + '<header class="aurora-roadmap-header"><div><span class="aurora-section-kicker">Your path</span><h3>Proof journey</h3></div>'
+    + '<div class="aurora-roadmap-summary"><span>Streak ' + esc(enrollment?.streak || 0) + '</span><span>Freezes ' + esc(enrollment?.freezeCount ?? 1) + '</span></div></header>';
   if(enrollment?.syncPending){
     h += '<div class="sync-banner offline"><span>Started locally &mdash; waiting to sync</span></div>';
   }
@@ -3612,7 +3613,7 @@ function roadmapHTML(id, def){
       + (canStart ? 'Set today as Day 1 and begin tracking daily progress.' : 'Add or load at least one Day 1 task before starting this path.')
       + '</p></div><button class="btn gold" id="startJourney" ' + (starting || !canStart ? 'disabled' : '') + '>' + (starting ? 'Starting...' : 'Start this path') + '</button></div>';
   }
-  h += '<div class="road-days vertical proof-journey-spine">';
+  h += '<ol class="aurora-journey-list">';
   for(let day = 1; day <= totalDays; day++){
     const status = getDayStatus(day, enrollment, logs, today);
     const open = canOpenDay(day, status);
@@ -3621,13 +3622,20 @@ function roadmapHTML(id, def){
     const log = logs[day] || logs[String(day)] || {};
     const tier = log.completionTier || log.tier || '';
     const proofSubmitted = Number(log.evidenceCount || 0) > 0 || (log.verifiedTaskIds || []).length > 0;
-    h += '<button type="button" class="road-day proof-roadmap-node proof-journey-node proof-roadmap-' + status + ' ' + status + (day === activeDay ? ' today' : '') + '" data-roadmap-state="' + esc(status) + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled aria-disabled="true"') + '>'
-      + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' - ' + esc(date.slice(5)) : '') + '</small>'
-      + '<em>' + (tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks') + '</em>'
-      + '<strong>' + esc(status === 'active' ? "Open today's session" : statusLabel(status)) + '</strong>'
-      + '<span class="proof-roadmap-node-meta">' + (tier ? '<span>' + esc(String(tier).replace(/_/g, ' ')) + '</span>' : '') + (proofSubmitted ? '<span>Proof submitted</span>' : '') + '</span></button>';
+    h += auroraRoadmapDayItemHTML({
+      day,
+      status,
+      label:statusLabel(status),
+      date:date ? date.slice(5) : '',
+      title:status === 'active' ? "Today's proof session" : status === 'completed' ? 'Completed proof day' : 'Scheduled proof day',
+      taskSummary:tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks',
+      tier,
+      proofSubmitted,
+      open,
+      isToday:day === activeDay,
+    });
   }
-  h += '</div></div>';
+  h += '</ol></section>';
   return h;
 }
 
@@ -4632,7 +4640,7 @@ export function renderToday(){
   h += '<aside class="panel card today-side lpt-today-metrics proof-studio-right-rail" aria-label="Real progress summary">';
   h += '<article class="proof-consistency-card ' + (hasConsistencyData ? 'has-data' : 'is-empty') + '">'
     + '<span>Your consistency</span>'
-    + '<b>' + esc(hasConsistencyData ? (streak + ' day streak') : 'Not enough data yet') + '</b>'
+    + '<b>' + esc(hasConsistencyData ? (streak + ' day streak') : 'Not enough completed days yet.') + '</b>'
     + '<p>' + esc(hasConsistencyData ? (completedValues + ' completed progress value' + (completedValues === 1 ? '' : 's') + ' from real local progress.') : 'Complete a few sessions to see your consistency map.') + '</p></article>';
   h += '<div class="stat-row"><span>This week</span><b>' + wpct + '%</b></div><div class="progress-bar"><div style="width:' + wpct + '%"></div></div>';
   h += '<div class="stat-row" style="margin-top:14px"><span>Path trust</span><b>' + (tot.total ? tpct + '%' : 'Not enough data yet') + '</b></div><div class="progress-bar"><div style="width:' + tpct + '%"></div></div>';

@@ -234,7 +234,7 @@ export function renderConsistencyCard({ streak = 0, completedDays = 0, empty = f
   const isEmpty = empty || (!safeStreak && !safeCompleted);
   return '<article class="proof-consistency-card ' + (isEmpty ? 'is-empty' : 'has-data') + '">'
     + '<span>Your consistency</span>'
-    + '<b>' + esc(isEmpty ? 'Not enough data yet' : safeStreak + ' day streak') + '</b>'
-    + '<p>' + esc(isEmpty ? 'Complete a few sessions to see your consistency map.' : safeCompleted + ' completed day value' + (safeCompleted === 1 ? '' : 's') + ' from real progress.') + '</p>'
+    + '<b>' + esc(isEmpty ? 'Not enough completed days yet.' : safeStreak + ' day streak') + '</b>'
+    + '<p>' + esc(isEmpty ? 'Complete a few sessions to see your consistency map.' : safeCompleted + ' completed day' + (safeCompleted === 1 ? '' : 's') + ' from real progress.') + '</p>'
     + '</article>';
 }
