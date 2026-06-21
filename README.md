@@ -209,6 +209,29 @@ Completion scores and tiers are safe aggregate metadata. Private task details, p
 
 Adaptive replanning, Gemini evidence intelligence, full UI redesign, notifications and personalized recommendations remain deferred.
 
+### Schema versioning
+
+Phase 6.2 centralizes persisted document schema versions in `src/schema-versioning.js`. Current versions are:
+
+| Document type | Version |
+| --- | ---: |
+| `path` | 1 |
+| `pathStats` | 1 |
+| `member` | 1 |
+| `participantStats` | 1 |
+| `enrollment` | 1 |
+| `dayLog` | 2 |
+| `evidenceSubmission` | 1 |
+| `publicProgress` | 2 |
+| `publicProgressComment` | 1 |
+| `publicProgressReaction` | 1 |
+| `discoveryPagination` | 1 |
+| `rateLimit` | 1 |
+
+Legacy documents without `schemaVersion` are normalized safely in memory as legacy version `0`. Malformed schema versions also normalize safely. New writes attach the current `schemaVersion`, while explicitly newer versions are not downgraded. Bulk production migrations remain deferred until needed and must be bounded, authenticated, rate-limited and tested before launch.
+
+Schema versioning does not make private data public. Private day logs, private evidence submissions, raw evidence URLs, enrollments, participantStats, private path content and user-private local state remain protected by the existing access model.
+
 Phase 5.5 does not fetch course or book metadata, perform live web research, verify external resources or add citations. Gemini evidence intelligence, research enrichment and rolling adaptive planning remain deferred.
 
 ## Unified voice input

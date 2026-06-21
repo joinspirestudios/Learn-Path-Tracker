@@ -1,10 +1,11 @@
 import { getTasksForDay } from './journey.js';
 import { sessionProgress, sessionTaskStates, taskTitle } from './daily-session-model.js';
+import { currentSchemaVersion, normalizeDocumentSchemaVersion } from './schema-versioning.js';
 import { safeExternalUrl } from './urls.js';
 
-export const PUBLIC_PROGRESS_SCHEMA_VERSION = 1;
+export const PUBLIC_PROGRESS_SCHEMA_VERSION = currentSchemaVersion('publicProgress');
 export const PUBLIC_PROGRESS_CAPTION_MAX = 500;
-export const PUBLIC_COMMENT_SCHEMA_VERSION = 1;
+export const PUBLIC_COMMENT_SCHEMA_VERSION = currentSchemaVersion('publicProgressComment');
 export const PUBLIC_COMMENT_MAX = 500;
 export const PUBLIC_REACTION_TYPES = ['cheer', 'keep_going', 'inspired'];
 
@@ -28,6 +29,17 @@ function cleanCompletionTier(value){
 export function normalizeReactionType(value){
   const type = String(value == null ? '' : value).trim().toLowerCase();
   return PUBLIC_REACTION_TYPES.includes(type) ? type : null;
+}
+
+export function normalizePublicProgressReaction(raw = {}){
+  const type = normalizeReactionType(raw.type);
+  return {
+    userId:cleanText(raw.userId, 160),
+    type,
+    createdAt:raw.createdAt || null,
+    updatedAt:raw.updatedAt || raw.createdAt || null,
+    schemaVersion:normalizeDocumentSchemaVersion('publicProgressReaction', raw),
+  };
 }
 
 export function emptyReactionCounts(){
@@ -183,7 +195,7 @@ export function normalizePublicComment(raw = {}){
     hiddenAt:raw.hiddenAt || null,
     hiddenBy:cleanText(raw.hiddenBy, 160),
     hiddenReason:cleanText(raw.hiddenReason, 80),
-    schemaVersion:cleanNumber(raw.schemaVersion, PUBLIC_COMMENT_SCHEMA_VERSION),
+    schemaVersion:normalizeDocumentSchemaVersion('publicProgressComment', raw),
   };
 }
 
@@ -239,7 +251,7 @@ export function normalizePublicProgressEntry(raw = {}){
         }))
       : [],
     source:raw.source === 'day-log' ? 'day-log' : 'day-log',
-    schemaVersion:cleanNumber(raw.schemaVersion, PUBLIC_PROGRESS_SCHEMA_VERSION),
+    schemaVersion:normalizeDocumentSchemaVersion('publicProgress', raw),
   };
 }
 

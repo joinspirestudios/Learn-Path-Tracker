@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { apiError } from './errors.js';
 import { boundedText } from './http.js';
 import { safeExternalUrl } from '../../src/urls.js';
+import { withSchemaVersion } from '../../src/schema-versioning.js';
 import {
   PUBLIC_COMMENT_MAX,
   cleanAuthorName,
@@ -125,7 +126,7 @@ export function makeComment({ pathId, entryId, auth, body, now }){
   const user = publicUser(auth);
   const id = 'comment_' + randomUUID().replace(/-/g, '').slice(0, 24);
   const stamp = now();
-  return {
+  return withSchemaVersion('publicProgressComment', {
     id,
     pathId,
     entryId,
@@ -140,6 +141,5 @@ export function makeComment({ pathId, entryId, auth, body, now }){
     hiddenAt:null,
     hiddenBy:'',
     hiddenReason:'',
-    schemaVersion:1,
-  };
+  });
 }

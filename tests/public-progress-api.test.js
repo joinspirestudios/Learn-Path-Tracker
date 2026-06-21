@@ -161,6 +161,7 @@ test('publish progress route creates sanitized public entry and increments count
   assert.equal(entry.evidenceCount, 1);
   assert.equal(entry.completionScore, 70);
   assert.equal(entry.completionTier, 'passed');
+  assert.equal(entry.schemaVersion, 2);
   assert.deepEqual(entry.evidenceTypes, ['url']);
   assert.equal(db.get('paths/public-path').stats.publicProgressCount, 1);
   assert.equal(db.get('paths/public-path').stats.proofSubmissionCount, 1);

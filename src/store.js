@@ -8,6 +8,7 @@
 
 import { normalizeDurationDays, SCHEDULE_TYPES } from './journey.js';
 import { DEFAULT_DISCOVERY_PAGE } from './discovery-pagination.js';
+import { normalizeDocumentSchemaVersion } from './schema-versioning.js';
 
 export const STATE_KEY  = 'lpt_state';
 export const CAT_PREFIX = 'lpt_cat:';
@@ -19,6 +20,12 @@ export const LAST_ROUTE_KEY = 'lpt_last_route';
    stored shape changes. Migrations run once per load on both local and cloud
    bundles, so deployed users do not silently break when data.js evolves. */
 export const SCHEMA_VERSION = 5;
+function cleanNumber(value, fallback = null){
+  if(value == null) return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function migrateState(s){
   s = s && typeof s === 'object' ? s : {};
   // Treat any pre-versioning bundle as v1.
@@ -48,6 +55,7 @@ export function migrateState(s){
     const en = s.enrollments[id] || {};
     en.dayLogs = en.dayLogs || {};
     if(en.freezeCount == null) en.freezeCount = 1;
+    en.schemaVersion = normalizeDocumentSchemaVersion('enrollment', en);
     if(en.lastActivityDate == null) en.lastActivityDate = null;
     if(en.missedDate == null) en.missedDate = null;
     Object.keys(en.dayLogs).forEach(day => {
@@ -67,20 +75,21 @@ export function migrateState(s){
       log.lastActiveTaskId = log.lastActiveTaskId || null;
       log.sessionViewState = log.sessionViewState || null;
       log.sessionCompletedAt = log.sessionCompletedAt || null;
-      log.completionScore = log.completionScore == null ? null : Number(log.completionScore);
+      log.completionScore = cleanNumber(log.completionScore);
       log.completionTier = log.completionTier || null;
-      log.passThreshold = log.passThreshold == null ? null : Number(log.passThreshold);
+      log.passThreshold = cleanNumber(log.passThreshold);
       log.intensity = log.intensity || null;
       log.anchorSatisfied = log.anchorSatisfied == null ? null : !!log.anchorSatisfied;
-      log.completedWeight = log.completedWeight == null ? null : Number(log.completedWeight);
-      log.totalWeight = log.totalWeight == null ? null : Number(log.totalWeight);
-      log.requiredCompleted = log.requiredCompleted == null ? null : Number(log.requiredCompleted);
-      log.requiredTotal = log.requiredTotal == null ? null : Number(log.requiredTotal);
-      log.optionalCompleted = log.optionalCompleted == null ? null : Number(log.optionalCompleted);
-      log.optionalTotal = log.optionalTotal == null ? null : Number(log.optionalTotal);
-      log.evidenceCompleted = log.evidenceCompleted == null ? null : Number(log.evidenceCompleted);
-      log.evidenceRequired = log.evidenceRequired == null ? null : Number(log.evidenceRequired);
-      log.totalTaskCount = Number(log.totalTaskCount || 0);
+      log.completedWeight = cleanNumber(log.completedWeight);
+      log.totalWeight = cleanNumber(log.totalWeight);
+      log.requiredCompleted = cleanNumber(log.requiredCompleted);
+      log.requiredTotal = cleanNumber(log.requiredTotal);
+      log.optionalCompleted = cleanNumber(log.optionalCompleted);
+      log.optionalTotal = cleanNumber(log.optionalTotal);
+      log.evidenceCompleted = cleanNumber(log.evidenceCompleted);
+      log.evidenceRequired = cleanNumber(log.evidenceRequired);
+      log.totalTaskCount = Math.max(0, Math.floor(cleanNumber(log.totalTaskCount, 0) || 0));
+      log.schemaVersion = normalizeDocumentSchemaVersion('dayLog', log);
       en.dayLogs[day] = log;
     });
     s.enrollments[id] = en;

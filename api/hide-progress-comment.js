@@ -4,6 +4,7 @@ import { requireJsonBody } from './_lib/http.js';
 import { getAdminFirestore } from './_lib/firebase-admin.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
+import { withSchemaVersion } from '../src/schema-versioning.js';
 import {
   cleanCommentId,
   cleanEntryId,
@@ -58,14 +59,15 @@ export function createHideProgressCommentHandler({
         const alreadyHidden = comment.status === 'hidden' || comment.visibility === 'hidden';
         if(!alreadyHidden){
           counters.visibleCommentCount = Math.max(0, counters.visibleCommentCount - 1);
-          transaction.set(commentRef, {
+          transaction.set(commentRef, withSchemaVersion('publicProgressComment', {
             status:'hidden',
             visibility:'hidden',
             hiddenAt:now(),
             hiddenBy:auth.uid,
             hiddenReason:isAuthor ? 'author_removed' : 'owner_hidden',
             updatedAt:now(),
-          }, { merge:true });
+            schemaVersion:comment.schemaVersion,
+          }), { merge:true });
           transaction.set(entryRef, {
             visibleCommentCount:counters.visibleCommentCount,
             interactionUpdatedAt:now(),

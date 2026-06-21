@@ -4,6 +4,7 @@ import { boundedText, requireJsonBody } from './_lib/http.js';
 import { getAdminFirestore } from './_lib/firebase-admin.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
+import { withSchemaVersion } from '../src/schema-versioning.js';
 import {
   applyActiveThisWeek,
   currentUtcWeekKey,
@@ -34,19 +35,20 @@ function cleanRole(role){
 
 function makeMembership(uid, now, existing = null){
   const role = existing?.role ? cleanRole(existing.role) : 'viewer';
-  return {
+  return withSchemaVersion('member', {
     uid,
     role,
     joinedAt:existing?.joinedAt || now,
     joinStatus:existing?.joinStatus || 'active',
     source:existing?.source || 'join',
     updatedAt:now,
-  };
+    schemaVersion:existing?.schemaVersion,
+  });
 }
 
 function makeEnrollment(pathId, uid, now, existing = null){
   const id = enrollmentIdFor(pathId, uid);
-  return {
+  return withSchemaVersion('enrollment', {
     id,
     pathId,
     userId:uid,
@@ -61,7 +63,8 @@ function makeEnrollment(pathId, uid, now, existing = null){
     joinedAt:existing?.joinedAt || now,
     createdAt:existing?.createdAt || now,
     updatedAt:now,
-  };
+    schemaVersion:existing?.schemaVersion,
+  });
 }
 
 function isOwner(path, uid){

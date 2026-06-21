@@ -18,6 +18,9 @@ import {
   boundedDiscoveryPageSize, mergeDiscoveryLoadedIds, normalizeDiscoveryPageState, resetDiscoveryPageState,
 } from './discovery-pagination.js';
 import {
+  normalizeDocumentSchemaVersion, withSchemaVersion,
+} from './schema-versioning.js';
+import {
   ENROLLMENT_TIMEOUT_MS, FIRESTORE_PREFLIGHT_TIMEOUT_MS, PATH_OPEN_TIMEOUT_MS, READ_TIMEOUT_MS, WRITE_TIMEOUT_MS,
   classifyFirebaseError, cloudStatusMessage, isTemporaryFirebaseError, trackOperation, userSyncMessage, withTimeout,
 } from './sync.js';
@@ -238,6 +241,32 @@ function cleanDayLogStatus(status){
 
 function stamp(){ return new Date(); }
 
+function cleanNumber(value, fallback = 0){
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function cleanPositiveInt(value, fallback = 1){
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function cleanNonNegativeInt(value, fallback = 0){
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function cleanNullableNumber(value){
+  if(value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function cleanCompletionTier(value){
+  return ['not_started', 'in_progress', 'attempted', 'passed', 'strong', 'perfect', 'blocked_anchor']
+    .includes(value) ? value : null;
+}
+
 function enrollmentFailure(code, message){
   const error = new Error(message);
   error.code = code;
@@ -306,20 +335,21 @@ export function makeEnrollment(pathId, userId, data = {}){
     pathId: data.pathId || pathId,
     userId: data.userId || userId,
     startDate: data.startDate || null,
-    currentDay: Number(data.currentDay || 1),
-    streak: Number(data.streak || 0),
-    freezeCount: data.freezeCount == null ? 1 : Number(data.freezeCount || 0),
+    currentDay: cleanPositiveInt(data.currentDay, 1),
+    streak: cleanNonNegativeInt(data.streak, 0),
+    freezeCount: data.freezeCount == null ? 1 : cleanNonNegativeInt(data.freezeCount, 0),
     status: cleanEnrollmentStatus(data.status),
-    lastCompletedDay: data.lastCompletedDay == null ? null : Number(data.lastCompletedDay),
+    lastCompletedDay: data.lastCompletedDay == null ? null : cleanNonNegativeInt(data.lastCompletedDay, 0),
     lastActivityDate: data.lastActivityDate || null,
     missedDate: data.missedDate || null,
     createdAt,
     updatedAt: data.updatedAt || createdAt,
+    schemaVersion: normalizeDocumentSchemaVersion('enrollment', data),
   };
 }
 
 export function makeDayLog(dayNumber, data = {}){
-  const n = Number(data.dayNumber || dayNumber);
+  const n = cleanPositiveInt(data.dayNumber || dayNumber, 1);
   const createdAt = data.createdAt || stamp();
   return {
     dayNumber: n,
@@ -328,7 +358,7 @@ export function makeDayLog(dayNumber, data = {}){
     completedAt: data.completedAt || null,
     frozenAt: data.frozenAt || null,
     summary: data.summary || null,
-    evidenceCount: Number(data.evidenceCount || 0),
+    evidenceCount: cleanNonNegativeInt(data.evidenceCount, 0),
     completedTaskIds: Array.isArray(data.completedTaskIds) ? data.completedTaskIds : [],
     verifiedTaskIds: Array.isArray(data.verifiedTaskIds) ? data.verifiedTaskIds : [],
     unverifiedTaskIds: Array.isArray(data.unverifiedTaskIds) ? data.unverifiedTaskIds : [],
@@ -340,44 +370,47 @@ export function makeDayLog(dayNumber, data = {}){
     lastActiveTaskId: data.lastActiveTaskId || null,
     sessionViewState: data.sessionViewState || null,
     sessionCompletedAt: data.sessionCompletedAt || null,
-    completionScore: data.completionScore == null ? null : Number(data.completionScore),
-    completionTier: data.completionTier || null,
-    passThreshold: data.passThreshold == null ? null : Number(data.passThreshold),
+    completionScore: cleanNullableNumber(data.completionScore),
+    completionTier: cleanCompletionTier(data.completionTier),
+    passThreshold: cleanNullableNumber(data.passThreshold),
     intensity: data.intensity || null,
     anchorSatisfied: data.anchorSatisfied == null ? null : !!data.anchorSatisfied,
-    completedWeight: data.completedWeight == null ? null : Number(data.completedWeight),
-    totalWeight: data.totalWeight == null ? null : Number(data.totalWeight),
-    requiredCompleted: data.requiredCompleted == null ? null : Number(data.requiredCompleted),
-    requiredTotal: data.requiredTotal == null ? null : Number(data.requiredTotal),
-    optionalCompleted: data.optionalCompleted == null ? null : Number(data.optionalCompleted),
-    optionalTotal: data.optionalTotal == null ? null : Number(data.optionalTotal),
-    evidenceCompleted: data.evidenceCompleted == null ? null : Number(data.evidenceCompleted),
-    evidenceRequired: data.evidenceRequired == null ? null : Number(data.evidenceRequired),
-    totalTaskCount: Number(data.totalTaskCount || 0),
+    completedWeight: cleanNullableNumber(data.completedWeight),
+    totalWeight: cleanNullableNumber(data.totalWeight),
+    requiredCompleted: cleanNullableNumber(data.requiredCompleted),
+    requiredTotal: cleanNullableNumber(data.requiredTotal),
+    optionalCompleted: cleanNullableNumber(data.optionalCompleted),
+    optionalTotal: cleanNullableNumber(data.optionalTotal),
+    evidenceCompleted: cleanNullableNumber(data.evidenceCompleted),
+    evidenceRequired: cleanNullableNumber(data.evidenceRequired),
+    totalTaskCount: cleanNonNegativeInt(data.totalTaskCount, 0),
     createdAt,
     updatedAt: data.updatedAt || createdAt,
+    schemaVersion: normalizeDocumentSchemaVersion('dayLog', data),
   };
 }
 
-function makeEvidenceSubmission(enrollmentId, payload = {}){
+export function makeEvidenceSubmission(enrollmentId, payload = {}){
   const enrollment = store.enrollments[enrollmentId] || (store.state.enrollments && store.state.enrollments[enrollmentId]) || {};
   const createdAt = payload.createdAt || stamp();
   return {
     id: payload.id || ('sub_' + Date.now().toString(36) + Math.floor(Math.random() * 100000).toString(36)),
     pathId: payload.pathId || enrollment.pathId || null,
     userId: payload.userId || enrollment.userId || (store.currentUser && store.currentUser.uid) || 'local',
-    dayNumber: Number(payload.dayNumber || 1),
+    dayNumber: cleanPositiveInt(payload.dayNumber, 1),
     taskId: String(payload.taskId || ''),
     taskTitle: String(payload.taskTitle || ''),
-    evidenceType: cleanEvidenceType(payload.evidenceType),
-    evidenceUrl: safeExternalUrl(payload.evidenceUrl),
-    fileName: payload.fileName || null,
-    fileType: payload.fileType || null,
-    fileSize: payload.fileSize == null ? null : Number(payload.fileSize || 0),
+    evidenceType: cleanEvidenceType(payload.evidenceType || payload.type),
+    evidenceUrl: safeExternalUrl(payload.evidenceUrl || payload.url),
+    storagePath: payload.storagePath || null,
+    fileName: payload.fileName || payload.filename || null,
+    fileType: payload.fileType || payload.mimeType || null,
+    fileSize: payload.fileSize == null && payload.sizeBytes == null ? null : cleanNonNegativeInt(payload.fileSize ?? payload.sizeBytes, 0),
     note: payload.note || null,
     status: 'submitted',
     createdAt,
     updatedAt: payload.updatedAt || createdAt,
+    schemaVersion: normalizeDocumentSchemaVersion('evidenceSubmission', payload),
   };
 }
 
@@ -426,7 +459,7 @@ async function loadDayLogs(enrollmentId){
 
 export async function dbSaveEnrollment(enrollment, options = {}){
   if(!enrollment || !enrollment.id) return null;
-  const next = makeEnrollment(enrollment.pathId, enrollment.userId, { ...enrollment, updatedAt: stamp() });
+  const next = withSchemaVersion('enrollment', makeEnrollment(enrollment.pathId, enrollment.userId, { ...enrollment, updatedAt: stamp() }));
   delete next.dayLogs;
   let cloudError = null;
   if(cloudActive()){
@@ -441,7 +474,7 @@ export async function dbSaveEnrollment(enrollment, options = {}){
 
 export async function dbSaveDayLog(enrollmentId, dayLog, options = {}){
   if(!enrollmentId || !dayLog) return null;
-  const next = makeDayLog(dayLog.dayNumber, { ...dayLog, updatedAt: stamp() });
+  const next = withSchemaVersion('dayLog', makeDayLog(dayLog.dayNumber, { ...dayLog, updatedAt: stamp() }));
   let cloudError = null;
   if(cloudActive()){
     try{ await withTimeout(fb.setDoc(dayLogRef(enrollmentId, next.dayNumber), next, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'save day log'); }
@@ -458,7 +491,7 @@ export async function dbSaveDayLog(enrollmentId, dayLog, options = {}){
 
 export async function createEvidenceSubmission(enrollmentId, payload){
   if(!enrollmentId) return null;
-  const submission = makeEvidenceSubmission(enrollmentId, { ...payload, updatedAt: stamp() });
+  const submission = withSchemaVersion('evidenceSubmission', makeEvidenceSubmission(enrollmentId, { ...payload, updatedAt: stamp() }));
   if(cloudActive()){
     try{
       await withTimeout(fb.setDoc(submissionRef(enrollmentId, submission.id), submission, { merge:true }), WRITE_TIMEOUT_MS, 'create evidence submission');
@@ -636,11 +669,11 @@ export async function dbEnsureEnrollment(pathId, options = {}){
     let diagnostic = { enrollmentId, authUid:userId, documentExists:'unknown', ownershipMatches:'unknown' };
     try{
       const ref = enrollmentRef(enrollmentId);
-      await withTimeout(fb.setDoc(ref, {
+      await withTimeout(fb.setDoc(ref, withSchemaVersion('enrollment', {
         id: enrollmentId,
         pathId,
         userId,
-      }, { merge:true }), ENROLLMENT_TIMEOUT_MS, 'bootstrap enrollment');
+      }), { merge:true }), ENROLLMENT_TIMEOUT_MS, 'bootstrap enrollment');
       const snap = await withTimeout(fb.getDoc(ref), ENROLLMENT_TIMEOUT_MS, 'load enrollment');
       diagnostic = {
         enrollmentId,
@@ -677,14 +710,14 @@ export async function dbEnsureEnrollment(pathId, options = {}){
   const enrollmentId = enrollmentIdFor(pathId, userId);
   const local = store.state.enrollments && store.state.enrollments[enrollmentId];
   if(local) return cacheEnrollment(makeEnrollment(pathId, userId, local), local.dayLogs || {});
-  const enrollment = makeEnrollment(pathId, userId, {
+  const enrollment = withSchemaVersion('enrollment', makeEnrollment(pathId, userId, {
     id: enrollmentId,
     status: 'active',
     currentDay: 1,
     streak: 0,
     freezeCount: 1,
     lastCompletedDay: null,
-  });
+  }));
   cacheEnrollment(enrollment, {});
   await dbSaveState();
   return store.enrollments[enrollmentId];
@@ -1054,11 +1087,11 @@ export async function dbSavePlatformPath(id){
       createdAt: (previous && previous.path && previous.path.createdAt) || path.createdAt,
     }, { merge:true });
     if(ownerSaving){
-      batch.set(memberRef(id, ownerId), {
+      batch.set(memberRef(id, ownerId), withSchemaVersion('member', {
         uid: ownerId,
         role: 'owner',
         addedAt: (previous && previous.path && previous.path.createdAt) || new Date(),
-      }, { merge:true });
+      }), { merge:true });
     }
     if(isExistingCloudPath){
       const wantedSections = new Set(sections.map(s => s.id));

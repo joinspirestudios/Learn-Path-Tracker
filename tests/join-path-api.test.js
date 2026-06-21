@@ -137,6 +137,7 @@ test('public path join creates viewer membership, enrollment, and increments cou
   assert.equal(member.role, 'viewer');
   assert.equal(member.joinStatus, 'active');
   assert.equal(member.source, 'join');
+  assert.equal(member.schemaVersion, 1);
 
   const enrollment = db.get(`enrollments/${enrollmentIdFor('public-path', 'joiner')}`);
   assert.equal(enrollment.pathId, 'public-path');
@@ -145,10 +146,12 @@ test('public path join creates viewer membership, enrollment, and increments cou
   assert.equal(enrollment.streak, 0);
   assert.equal(enrollment.freezeCount, 1);
   assert.equal(enrollment.startDate, null);
+  assert.equal(enrollment.schemaVersion, 1);
   const participant = db.get('paths/public-path/participantStats/joiner');
   assert.equal(participant.uid, 'joiner');
   assert.equal(participant.pathId, 'public-path');
   assert.equal(participant.activeWeekKey, '2026-W25');
+  assert.equal(participant.schemaVersion, 1);
   assert.equal(db.get('paths/public-path').stats.activeThisWeek, 1);
 
   const second = responseRecorder();

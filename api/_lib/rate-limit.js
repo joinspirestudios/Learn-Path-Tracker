@@ -1,5 +1,6 @@
 import { getAdminFirestore } from './firebase-admin.js';
 import { apiError } from './errors.js';
+import { withSchemaVersion } from '../../src/schema-versioning.js';
 
 const ROUTE_LIMITS = {
   interpret:{ hourlyEnv:'RATE_LIMIT_INTERPRET_PER_HOUR', burstEnv:'RATE_LIMIT_INTERPRET_BURST_PER_10_MINUTES', hourly:40, burst:8 },
@@ -54,7 +55,7 @@ export async function enforceRateLimit(uid, routeKey, { db = getAdminFirestore()
       return { allowed:false, retryAfterSeconds:Math.ceil((hourlyWindowStart + limits.hourlyWindowMs - now) / 1000) };
     }
 
-    transaction.set(ref, {
+    transaction.set(ref, withSchemaVersion('rateLimit', {
       uid,
       routeKey,
       burstWindowStart:burstActive ? burstWindowStart : now,
@@ -63,7 +64,8 @@ export async function enforceRateLimit(uid, routeKey, { db = getAdminFirestore()
       hourlyCount:hourlyCount + 1,
       updatedAt:new Date(now),
       expiresAt:new Date(now + 2 * limits.hourlyWindowMs),
-    }, { merge:false });
+      schemaVersion:existing.schemaVersion,
+    }), { merge:false });
     return { allowed:true };
   });
 

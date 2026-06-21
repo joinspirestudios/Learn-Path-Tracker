@@ -4,6 +4,7 @@ import { requireJsonBody } from './_lib/http.js';
 import { getAdminFirestore } from './_lib/firebase-admin.js';
 import { enforceRateLimit } from './_lib/rate-limit.js';
 import { requireAuth } from './_lib/require-auth.js';
+import { withSchemaVersion } from '../src/schema-versioning.js';
 import {
   cleanEntryId,
   cleanPathId,
@@ -64,12 +65,13 @@ export function createReactProgressHandler({
         counters.totalReactionCount = Object.values(counters.reactionCounts).reduce((sum, count) => sum + count, 0);
 
         if(requestedReaction){
-          transaction.set(reactionRef, {
+          transaction.set(reactionRef, withSchemaVersion('publicProgressReaction', {
             userId:auth.uid,
             type:requestedReaction,
             createdAt:reactionSnap.exists ? (reactionSnap.data() || {}).createdAt || now() : now(),
             updatedAt:now(),
-          }, { merge:false });
+            schemaVersion:reactionSnap.exists ? (reactionSnap.data() || {}).schemaVersion : null,
+          }), { merge:false });
         }else if(reactionSnap.exists){
           transaction.delete(reactionRef);
         }

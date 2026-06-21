@@ -153,6 +153,7 @@ test('Firestore-backed rate limiter allows requests below burst limit and reject
   };
   const now = Date.now();
   await enforceRateLimit('user-a', 'generate', { db, now });
+  assert.equal(documents.get('user-a_generate').schemaVersion, 1);
   await enforceRateLimit('user-a', 'generate', { db, now:now + 1 });
   await enforceRateLimit('user-a', 'generate', { db, now:now + 2 });
   await assert.rejects(

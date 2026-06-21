@@ -161,6 +161,7 @@ test('react progress increments, repeats idempotently, changes, and removes with
   assert.equal(first.payload.reactionCounts.cheer, 1);
   assert.equal(first.payload.totalReactionCount, 1);
   assert.equal(db.get('paths/path-1/publicProgress/entry-1/reactions/viewer').userId, 'viewer');
+  assert.equal(db.get('paths/path-1/publicProgress/entry-1/reactions/viewer').schemaVersion, 1);
 
   const repeat = responseRecorder();
   await handler(jsonRequest({ pathId:'path-1', entryId:'entry-1', reaction:'cheer' }), repeat);
@@ -229,6 +230,7 @@ test('comment progress creates sanitized visible comments and ignores client ide
   assert.equal(res.payload.visibleCommentCount, 1);
   const stored = db.get(`paths/path-1/publicProgress/entry-1/comments/${res.payload.comment.id}`);
   assert.equal(stored.userId, 'viewer');
+  assert.equal(stored.schemaVersion, 1);
   assert.equal(db.get('paths/path-1/publicProgress/entry-1').visibleCommentCount, 1);
   assert.equal(db.get('enrollments/private/dayLogs/1').summary, 'private day log');
   assert.equal(db.get('enrollments/private/submissions/proof').note, 'private evidence');

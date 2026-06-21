@@ -18,6 +18,7 @@ test('discovery pagination state normalizes safely with defaults', () => {
     lastLoadedAt: 0,
     errorStatus: '',
     errorMessage: '',
+    schemaVersion: 0,
   });
   assert.deepEqual(normalizeDiscoveryPageState({
     pageSize:'2',
@@ -39,6 +40,7 @@ test('discovery pagination state normalizes safely with defaults', () => {
     lastLoadedAt: 123,
     errorStatus:'offline',
     errorMessage:'Cached only',
+    schemaVersion: 0,
   });
 });
 

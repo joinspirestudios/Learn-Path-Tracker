@@ -7,6 +7,9 @@ import {
   normalizeConfirmedBrief, normalizeCoreCommitments, normalizeDomainProfile,
   normalizeFitnessContext, normalizeIntensity, normalizeStructuredResources,
 } from './ai-builder-model.js';
+import {
+  currentSchemaVersion, normalizeDocumentSchemaVersion, normalizeSchemaVersion, withSchemaVersion,
+} from './schema-versioning.js';
 import { safeExternalUrl } from './urls.js';
 
 export const PATH_VISIBILITIES = ['private', 'unlisted', 'public'];
@@ -30,7 +33,7 @@ export function cleanVisibility(v){
   return PATH_VISIBILITIES.includes(v) ? v : 'private';
 }
 
-export const TRUST_STATS_SCHEMA_VERSION = 1;
+export const TRUST_STATS_SCHEMA_VERSION = currentSchemaVersion('pathStats');
 
 export function currentUtcWeekKey(date = new Date()){
   const d = date instanceof Date ? new Date(date.getTime()) : new Date(date);
@@ -61,7 +64,7 @@ export function normalizePathStats(value = {}, legacy = {}){
     proofSubmissionCount:cleanStat(source.proofSubmissionCount ?? legacy.proofSubmissionCount),
     publicProgressCount:cleanStat(source.publicProgressCount ?? legacy.publicProgressCount),
     updatedAt:source.updatedAt || legacy.statsUpdatedAt || null,
-    schemaVersion:cleanStat(source.schemaVersion ?? legacy.statsSchemaVersion) || TRUST_STATS_SCHEMA_VERSION,
+    schemaVersion:normalizeSchemaVersion(source.schemaVersion ?? legacy.statsSchemaVersion, TRUST_STATS_SCHEMA_VERSION) || TRUST_STATS_SCHEMA_VERSION,
   };
 }
 
@@ -136,6 +139,7 @@ export function normalizePathDoc(id, data = {}){
     intentionallyEmpty: data.intentionallyEmpty === true,
     createdAt: data.createdAt || nowStamp(),
     updatedAt: data.updatedAt || nowStamp(),
+    schemaVersion:normalizeDocumentSchemaVersion('path', data),
   };
 }
 
@@ -238,13 +242,13 @@ export function localPathDefaults(localPath = {}, user){
 
 export function localToPlatformParts(id, localPath, user, ownerId){
   const base = localPathDefaults(localPath, user);
-  const path = normalizePathDoc(id, {
+  const path = withSchemaVersion('path', normalizePathDoc(id, {
     ...base,
     ownerId,
     creatorId:localPath.creatorId || ownerId,
     createdAt: localPath.createdAt || localPath.created || nowStamp(),
     updatedAt: nowStamp(),
-  });
+  }));
   const sections = [];
   const tasks = [];
   (localPath.weeks || []).forEach((week, wi) => {

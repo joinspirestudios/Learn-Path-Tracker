@@ -1,8 +1,10 @@
 import { apiError } from './errors.js';
 import { boundedText } from './http.js';
 import { normalizeDurationDays } from '../../src/journey.js';
+import { currentSchemaVersion, normalizeSchemaVersion, withSchemaVersion } from '../../src/schema-versioning.js';
 
-export const PARTICIPANT_STATS_SCHEMA_VERSION = 1;
+export const PARTICIPANT_STATS_SCHEMA_VERSION = currentSchemaVersion('participantStats');
+export const PATH_STATS_SCHEMA_VERSION = currentSchemaVersion('pathStats');
 
 export const METRIC_EVENTS = new Set(['day_started', 'day_completed', 'path_completed']);
 
@@ -59,7 +61,7 @@ export function normalizeServerPathStats(path = {}){
     publicProgressCount:numericStat(source.publicProgressCount ?? path.publicProgressCount),
     proofSubmissionCount:numericStat(source.proofSubmissionCount ?? path.proofSubmissionCount),
     updatedAt:source.updatedAt || path.statsUpdatedAt || null,
-    schemaVersion:numericStat(source.schemaVersion ?? path.statsSchemaVersion) || 1,
+    schemaVersion:normalizeSchemaVersion(source.schemaVersion ?? path.statsSchemaVersion, PATH_STATS_SCHEMA_VERSION) || PATH_STATS_SCHEMA_VERSION,
   };
 }
 
@@ -83,7 +85,7 @@ export function makeParticipantStats(pathId, uid, now, existing = {}){
     publicProgressCount:numericStat(existing.publicProgressCount),
     proofSubmissionCount:numericStat(existing.proofSubmissionCount),
     updatedAt:existing.updatedAt || now,
-    schemaVersion:PARTICIPANT_STATS_SCHEMA_VERSION,
+    schemaVersion:normalizeSchemaVersion(existing.schemaVersion, 0) || PARTICIPANT_STATS_SCHEMA_VERSION,
   };
 }
 
@@ -196,7 +198,7 @@ export function applyMilestones(stats, participant, milestones, now){
 }
 
 export function statsWrite(stats, now){
-  return {
+  return withSchemaVersion('pathStats', {
     joinedCount:numericStat(stats.joinedCount),
     activeThisWeek:numericStat(stats.activeThisWeek),
     activeWeekKey:String(stats.activeWeekKey || ''),
@@ -207,12 +209,12 @@ export function statsWrite(stats, now){
     publicProgressCount:numericStat(stats.publicProgressCount),
     proofSubmissionCount:numericStat(stats.proofSubmissionCount),
     updatedAt:now,
-    schemaVersion:1,
-  };
+    schemaVersion:normalizeSchemaVersion(stats.schemaVersion, 0),
+  });
 }
 
 export function participantWrite(participant, now){
-  return {
+  return withSchemaVersion('participantStats', {
     uid:participant.uid,
     pathId:participant.pathId,
     joinedAt:participant.joinedAt || now,
@@ -227,6 +229,6 @@ export function participantWrite(participant, now){
     publicProgressCount:numericStat(participant.publicProgressCount),
     proofSubmissionCount:numericStat(participant.proofSubmissionCount),
     updatedAt:now,
-    schemaVersion:PARTICIPANT_STATS_SCHEMA_VERSION,
-  };
+    schemaVersion:normalizeSchemaVersion(participant.schemaVersion, 0),
+  });
 }

@@ -1,3 +1,5 @@
+import { currentSchemaVersion, normalizeDocumentSchemaVersion } from './schema-versioning.js';
+
 export const DISCOVERY_PAGE_SIZE = 24;
 export const DISCOVERY_PAGE_SIZE_MIN = 1;
 export const DISCOVERY_PAGE_SIZE_MAX = 30;
@@ -12,6 +14,7 @@ export const DEFAULT_DISCOVERY_PAGE = {
   lastLoadedAt: 0,
   errorStatus: '',
   errorMessage: '',
+  schemaVersion: currentSchemaVersion('discoveryPagination'),
 };
 
 export function boundedDiscoveryPageSize(value, fallback = DISCOVERY_PAGE_SIZE){
@@ -49,6 +52,7 @@ export function normalizeDiscoveryPageState(value = {}){
     lastLoadedAt: Number.isFinite(Number(state.lastLoadedAt)) ? Number(state.lastLoadedAt) : 0,
     errorStatus: String(state.errorStatus || ''),
     errorMessage: String(state.errorMessage || ''),
+    schemaVersion: normalizeDocumentSchemaVersion('discoveryPagination', state),
   };
 }
 
@@ -65,5 +69,6 @@ export function serializableDiscoveryPageState(value = {}){
   return {
     ...normalized,
     cursor: null,
+    schemaVersion: currentSchemaVersion('discoveryPagination'),
   };
 }
