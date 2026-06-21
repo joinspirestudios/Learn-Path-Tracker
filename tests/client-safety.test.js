@@ -265,11 +265,13 @@ test('discover UI uses public metadata controls and preview-first cards', () => 
   const loadBlock = dbSource.slice(dbSource.indexOf('async function loadPlatformRecordFromDoc'), dbSource.indexOf('export async function dbLoadPlatformPath'));
   const discoveryQueryBlock = dbSource.slice(dbSource.indexOf('function discoveryQuery'), dbSource.indexOf('async function loadPublicDiscoveryPage'));
   const platformSummariesBlock = dbSource.slice(dbSource.indexOf('async function loadPublicDiscoveryPage'), dbSource.indexOf('export async function dbSavePlatformPath'));
-  assert.match(controlsSource, /discovery-toolbar/);
-  assert.match(controlsSource, /discovery-search-shell/);
+  assert.match(controlsSource, /aurora-discovery-toolbar/);
+  assert.match(controlsSource, /aurora-discovery-primary-row/);
+  assert.match(controlsSource, /aurora-search-control/);
   assert.match(controlsSource, /Search by goal, creator or category/);
-  assert.match(controlsSource, /discovery-filter-chips/);
-  assert.doesNotMatch(controlsSource, /discovery-filter-row/);
+  assert.match(controlsSource, /aurora-filter-row/);
+  assert.match(controlsSource, /aurora-filter-pill/);
+  assert.doesNotMatch(controlsSource, /discovery-search-shell|discovery-filter-chips|discovery-filter-row/);
   assert.match(controlsSource, /data-discovery-field="category"/);
   assert.match(controlsSource, /data-discovery-field="duration"/);
   assert.match(controlsSource, /data-discovery-field="intensity"/);

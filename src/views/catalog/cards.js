@@ -5,6 +5,10 @@ import {
 } from '../../platform.js';
 import { catalogCtaForPath } from './access.js';
 
+function tagListHTML(values, className){
+  return '<div class="' + className + '">' + values.map(value => '<span>' + esc(value) + '</span>').join('') + '</div>';
+}
+
 export function pathCardBlurb(def, total, { pathTasksReady } = {}){
   const bits = [];
   if(def.category) bits.push(esc(def.category));
@@ -49,26 +53,28 @@ export function publicPathCardHTML(path, { store, canOpenFullPath } = {}){
   if(signals.proofBacked) badges.push('Proof-backed');
   if(signals.activeThisWeek) badges.push('Active this week');
   const summary = path.previewDescription || path.description || path.goal || 'A public learning path with preview-first access.';
-  return '<button class="skill-card discovery-card lpt-card-polished" data-id="' + esc(id) + '">'
-    + '<div class="lpt-card-header sc-header"><span class="sc-creator">By ' + esc(creator) + '</span></div>'
-    + '<div class="lpt-card-title sc-top">' + esc(path.title || 'Untitled path') + '</div>'
-    + '<div class="lpt-card-subtitle sc-tag">' + esc(category || 'Learning path') + '</div>'
-    + '<div class="lpt-card-body sc-blurb">' + esc(summary.length > 150 ? summary.slice(0, 147) + '...' : summary) + '</div>'
-    + '<div class="lpt-card-tags discovery-badges">' + (badges.length ? badges.map(badge => '<span>' + esc(badge) + '</span>').join('') : '<span>Public preview</span>') + '</div>'
-    + '<div class="lpt-card-tags discovery-metrics">' + (chips.length ? chips.map(chip => '<span>' + esc(chip) + '</span>').join('') : '<span>No public metrics yet</span>') + '</div>'
-    + '<div class="lpt-card-actions sc-cta">' + cta + '</div></button>';
+  return '<button class="skill-card aurora-path-card discovery-card" data-id="' + esc(id) + '">'
+    + '<div class="aurora-path-card-meta"><span class="aurora-path-card-creator">By ' + esc(creator) + '</span><span class="aurora-path-card-status">Public preview</span></div>'
+    + '<h3 class="aurora-path-card-title">' + esc(path.title || 'Untitled path') + '</h3>'
+    + '<p class="aurora-path-card-subtitle">' + esc(category || 'Learning path') + '</p>'
+    + '<p class="aurora-path-card-description">' + esc(summary.length > 150 ? summary.slice(0, 147) + '...' : summary) + '</p>'
+    + tagListHTML(badges.length ? badges : ['Proof status pending'], 'aurora-path-card-tags')
+    + tagListHTML(chips.length ? chips : ['No public metrics yet'], 'aurora-path-card-metrics')
+    + '<div class="aurora-path-card-action">' + cta + '</div></button>';
 }
 
 export function builtInPathCardHTML(skill, { pathTitle, pathGoal, totalsFor, store } = {}){
   const t = totalsFor(skill.id);
   const pct = t.total ? Math.round(t.done / t.total * 100) : 0;
   const started = !!(store.state.skills[skill.id] && Object.keys(store.state.skills[skill.id].progress || {}).length);
-  return '<button class="skill-card lpt-card-polished" data-id="' + esc(skill.id) + '">'
-    + '<div class="lpt-card-title sc-top">' + esc(pathTitle(skill.id)) + '</div>'
-    + '<div class="lpt-card-subtitle sc-tag">' + esc(pathGoal(skill.id)) + '</div>'
-    + '<div class="lpt-card-body sc-blurb">' + esc(skill.blurb) + '</div>'
-    + '<div class="lpt-card-progress sc-foot"><div class="progress-bar" style="flex:1"><div style="width:' + pct + '%"></div></div><span class="sc-pct">' + pct + '%</span></div>'
-    + '<div class="lpt-card-actions sc-cta">' + (started ? 'Continue' : 'Start') + ' &rarr;</div></button>';
+  return '<button class="skill-card aurora-path-card" data-id="' + esc(skill.id) + '">'
+    + '<div class="aurora-path-card-meta"><span class="aurora-path-card-creator">Built-in path</span><span class="aurora-path-card-status">' + (started ? 'Started' : 'Ready') + '</span></div>'
+    + '<h3 class="aurora-path-card-title">' + esc(pathTitle(skill.id)) + '</h3>'
+    + '<p class="aurora-path-card-subtitle">' + esc(pathGoal(skill.id)) + '</p>'
+    + '<p class="aurora-path-card-description">' + esc(skill.blurb) + '</p>'
+    + '<div class="aurora-path-card-metrics"><span>' + pct + '% complete</span></div>'
+    + '<div class="aurora-path-card-progress"><div class="progress-bar"><div style="width:' + pct + '%"></div></div></div>'
+    + '<div class="aurora-path-card-action">' + (started ? 'Continue' : 'Start') + ' &rarr;</div></button>';
 }
 
 export function personalPathCardHTML(id, {
@@ -82,13 +88,14 @@ export function personalPathCardHTML(id, {
   const badge = def.platform
     ? ('By ' + resolveCreatorName(def, store.currentUser))
     : (cloudActive() ? 'Local draft' : 'Your path');
-  let html = '<button class="skill-card lpt-card-polished" data-id="' + esc(id) + '">'
-    + '<div class="lpt-card-header sc-header"><span class="sc-creator">' + esc(badge) + '</span></div>'
-    + '<div class="lpt-card-title sc-top">' + esc(pathTitle(id)) + '</div>'
-    + (goal ? ('<div class="lpt-card-subtitle sc-tag">' + esc(goal) + '</div>') : '')
-    + '<div class="lpt-card-body sc-blurb">' + pathCardBlurb(def, t.total, { pathTasksReady }) + '</div>'
-    + '<div class="lpt-card-progress sc-foot"><div class="progress-bar" style="flex:1"><div style="width:' + pct + '%"></div></div><span class="sc-pct">' + pct + '%</span></div>'
-    + '<div class="lpt-card-actions sc-cta">' + cta + '</div></button>';
+  let html = '<button class="skill-card aurora-path-card" data-id="' + esc(id) + '">'
+    + '<div class="aurora-path-card-meta"><span class="aurora-path-card-creator">' + esc(badge) + '</span><span class="aurora-path-card-status">' + (def.platform ? 'Platform path' : 'Private workspace') + '</span></div>'
+    + '<h3 class="aurora-path-card-title">' + esc(pathTitle(id)) + '</h3>'
+    + (goal ? ('<p class="aurora-path-card-subtitle">' + esc(goal) + '</p>') : '')
+    + '<p class="aurora-path-card-description">' + pathCardBlurb(def, t.total, { pathTasksReady }) + '</p>'
+    + '<div class="aurora-path-card-metrics"><span>' + pct + '% complete</span><span>' + esc(t.done) + ' of ' + esc(t.total || 0) + ' done</span></div>'
+    + '<div class="aurora-path-card-progress"><div class="progress-bar"><div style="width:' + pct + '%"></div></div></div>'
+    + '<div class="aurora-path-card-action">' + cta + '</div></button>';
   if(!def.platform && cloudActive()){
     html += '<button class="mini-import standalone" data-import="' + esc(id) + '">Publish/import "' + esc(pathTitle(id)) + '" to platform</button>';
   }
@@ -97,20 +104,20 @@ export function personalPathCardHTML(id, {
 
 export function createPathCardsHTML({ store, configPresent } = {}){
   if(store.currentUser || !configPresent()){
-    return '<button class="skill-card create lpt-card-polished" id="createCard"><div class="sc-plus">&#65291;</div>'
-      + '<div class="lpt-card-title sc-top">Create new path</div>'
-      + '<div class="lpt-card-body sc-blurb">Build a path you own, keep it private, publish it publicly, or share it by direct link.</div>'
-      + '<div class="lpt-card-actions sc-cta">New path &rarr;</div></button>'
-      + '<button class="skill-card create ai-create lpt-card-polished" id="aiCreateCard"><div class="sc-plus">AI</div>'
-      + '<div class="lpt-card-title sc-top">Build path with AI</div>'
-      + '<div class="lpt-card-body sc-blurb">Describe a goal, review the generated draft, edit it, then save it as a private path.</div>'
-      + '<div class="lpt-card-actions sc-cta">Generate a path</div></button>';
+    return '<button class="skill-card create aurora-path-card" id="createCard"><div class="aurora-path-card-meta"><span class="aurora-path-card-status">Private tool</span></div>'
+      + '<h3 class="aurora-path-card-title">Create new path</h3>'
+      + '<p class="aurora-path-card-description">Build a path you own, keep it private, publish it publicly, or share it by direct link.</p>'
+      + '<div class="aurora-path-card-action">New path &rarr;</div></button>'
+      + '<button class="skill-card create ai-create aurora-path-card" id="aiCreateCard"><div class="aurora-path-card-meta"><span class="aurora-path-card-status">AI draft</span></div>'
+      + '<h3 class="aurora-path-card-title">Build path with AI</h3>'
+      + '<p class="aurora-path-card-description">Describe a goal, review the generated draft, edit it, then save it as a private path.</p>'
+      + '<div class="aurora-path-card-action">Generate a path</div></button>';
   }
   if(configPresent()){
-    return '<button class="skill-card create lpt-card-polished" id="signinCard"><div class="sc-plus">&#65291;</div>'
-      + '<div class="lpt-card-title sc-top">Build your own path</div>'
-      + '<div class="lpt-card-body sc-blurb">Sign in to create and track your own learning paths, synced across your devices.</div>'
-      + '<div class="lpt-card-actions sc-cta">Sign in to start &rarr;</div></button>';
+    return '<button class="skill-card create aurora-path-card" id="signinCard"><div class="aurora-path-card-meta"><span class="aurora-path-card-status">Account required</span></div>'
+      + '<h3 class="aurora-path-card-title">Build your own path</h3>'
+      + '<p class="aurora-path-card-description">Sign in to create and track your own learning paths, synced across your devices.</p>'
+      + '<div class="aurora-path-card-action">Sign in to start &rarr;</div></button>';
   }
   return '';
 }

@@ -63,7 +63,7 @@ export function bindCatalogEvents(context = {}){
       setOpeningPathId(id);
       card.disabled = true;
       card.classList.add('is-opening');
-      const cta = card.querySelector('.sc-cta');
+      const cta = card.querySelector('.aurora-path-card-action, .sc-cta');
       if(cta) cta.textContent = 'Opening...';
       openCatalogPath(id, { store, canOpenFullPath, openPathRoute, openSkill });
     };

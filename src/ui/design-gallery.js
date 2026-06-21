@@ -5,13 +5,15 @@ import {
   renderProofUploadCard, renderRoadmapNode, renderToastBanner, renderConsistencyCard,
 } from './core-components.js';
 import { renderAppShell, renderCoreColumn, renderSessionHeader } from './core-layout.js';
+import { auroraRoadmapDayItemHTML } from '../views/roadmap-render.js';
 
 export function renderDesignSystemGallery(){
   const examples = [
     '<section><h2>Aurora Buttons</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row">'
-      + renderButton({ label:'Primary action', variant:'primary' })
-      + renderButton({ label:'Secondary', variant:'secondary' })
-      + renderButton({ label:'Ghost', variant:'ghost' })
+      + renderButton({ label:'Rest primary', variant:'primary' })
+      + renderButton({ label:'Hover state example', variant:'secondary' })
+      + renderButton({ label:'Active state example', variant:'ghost' })
+      + renderButton({ label:'Focus state example', variant:'secondary' })
       + renderButton({ label:'Destructive', variant:'destructive' })
       + renderButton({ label:'Loading', variant:'primary', loading:true })
       + renderButton({ label:'Disabled', variant:'secondary', disabled:true })
@@ -33,26 +35,25 @@ export function renderDesignSystemGallery(){
         proofSummary:'1 task asks for proof before it can count.',
         ctaLabel:'Continue day',
       }) + '</section>',
-    '<section><h2>Polished public path card</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
-      + '<button class="skill-card discovery-card lpt-card-polished" type="button">'
-      + '<div class="lpt-card-header sc-header"><span class="sc-creator">By Component author</span></div>'
-      + '<div class="lpt-card-title sc-top">A long public path title that wraps without colliding with creator or tags</div>'
-      + '<div class="lpt-card-subtitle sc-tag">Creative practice</div>'
-      + '<div class="lpt-card-body sc-blurb">Proof-first cards stack metadata, title, description, tags and action regions so nothing floats over anything else.</div>'
-      + '<div class="lpt-card-tags discovery-badges"><span>Proof-backed</span><span>Component example</span></div>'
-      + '<div class="lpt-card-tags discovery-metrics"><span>3 joined</span><span>2 proof submitted</span></div>'
-      + '<div class="lpt-card-actions sc-cta">View &rarr;</div></button></section>',
+    '<section><h2>Aurora path card</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
+      + '<button class="skill-card aurora-path-card" type="button">'
+      + '<div class="aurora-path-card-meta"><span class="aurora-path-card-creator">By Component author</span><span class="aurora-path-card-status">Public preview</span></div>'
+      + '<h3 class="aurora-path-card-title">A long public path title that wraps without colliding with creator or tags</h3>'
+      + '<p class="aurora-path-card-subtitle">Creative practice</p>'
+      + '<p class="aurora-path-card-description">Proof-first cards stack metadata, title, description, tags, metrics and action regions so nothing floats over anything else.</p>'
+      + '<div class="aurora-path-card-tags"><span>Proof-backed</span><span>Component example</span></div>'
+      + '<div class="aurora-path-card-metrics"><span>3 joined</span><span>2 proof submitted</span></div>'
+      + '<div class="aurora-path-card-action">View &rarr;</div></button></section>',
     '<section><h2>Compact discovery toolbar</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
-      + '<div class="discovery-controls discovery-toolbar lpt-discovery-toolbar"><div class="discovery-mainline"><div class="discovery-search-shell lpt-search-primary"><input type="search" aria-label="Search public paths" placeholder="Search by goal, creator or category"/><button class="btn subtle discovery-clear-action" type="button">Clear</button></div><label class="discovery-sort-control"><span>Sort</span><select><option>Recommended</option></select></label><button class="btn subtle discovery-clear-action" type="button">Clear filters</button></div><div class="discovery-filter-chips"><label class="discovery-filter-chip"><span>Category</span><select><option>All</option></select></label><label class="discovery-filter-chip"><span>Proof</span><select><option>All</option></select></label></div></div></section>',
+      + '<div class="aurora-discovery-toolbar" aria-label="Discover public paths search and filters"><div class="aurora-discovery-primary-row"><label class="aurora-search-control"><span class="sr-only">Search public paths</span><input id="galleryDiscoveryQuery" type="search" aria-label="Search public paths" placeholder="Search by goal, creator or category"/></label><label class="aurora-sort-control"><span>Sort</span><select><option>Recommended</option></select></label><button class="aurora-button" type="button">Clear</button><button class="aurora-button" type="button">Reset filters</button></div><div class="aurora-filter-row"><label class="aurora-filter-pill"><span>Category</span><select><option>All</option></select></label><label class="aurora-filter-pill"><span>Duration</span><select><option>Any</option></select></label><label class="aurora-filter-pill"><span>Intensity</span><select><option>Any</option></select></label><label class="aurora-filter-pill"><span>Proof</span><select><option>All</option></select></label></div><p class="aurora-filter-summary">Component example. No filters applied.</p></div></section>',
     '<section><h2>Aurora tier chips</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row"><span class="lpt-result-tier lpt-completion-passed">Passed</span><span class="lpt-result-tier lpt-completion-strong">Strong</span><span class="lpt-result-tier lpt-completion-perfect">Perfect</span></div></section>',
-    '<section><h2>RoadmapNode states</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="proof-roadmap-gallery">'
-      + renderRoadmapNode({ day:10, state:'completed', title:'Completed', date:'Jun 19', taskCount:3, tier:'strong', proofSubmitted:true })
-      + renderRoadmapNode({ day:11, state:'active', title:'Active day', date:'Jun 20', taskCount:4, cta:"Open today's session" })
-      + renderRoadmapNode({ day:12, state:'locked', title:'Locked', date:'Jun 21', taskCount:2 })
-      + renderRoadmapNode({ day:13, state:'missed', title:'Missed', date:'Jun 22', taskCount:2 })
-      + renderRoadmapNode({ day:14, state:'frozen', title:'Frozen', date:'Jun 23', taskCount:2 })
-      + renderRoadmapNode({ day:15, state:'perfect', title:'Perfect', date:'Jun 24', taskCount:4, tier:'perfect', proofSubmitted:true })
-      + '</div></section>',
+    '<section><h2>Aurora proof journey</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><section class="aurora-roadmap-panel"><header class="aurora-roadmap-header"><div><span class="aurora-section-kicker">Your path</span><h3>Proof journey</h3></div><div class="aurora-roadmap-summary"><span>Streak 4</span><span>Freezes 1</span></div></header><ol class="aurora-journey-list">'
+      + auroraRoadmapDayItemHTML({ day:10, status:'completed', label:'Completed', date:'Jun 19', title:'Completed proof day', taskSummary:'3 tasks', tier:'strong', proofSubmitted:true, open:true })
+      + auroraRoadmapDayItemHTML({ day:11, status:'active', label:'Today', date:'Jun 20', title:"Today's proof session", taskSummary:'4 tasks', open:true, isToday:true })
+      + auroraRoadmapDayItemHTML({ day:12, status:'locked', label:'Locked', date:'Jun 21', title:'Scheduled proof day', taskSummary:'Unlocks later' })
+      + auroraRoadmapDayItemHTML({ day:13, status:'missed', label:'Missed', date:'Jun 22', title:'Missed proof day', taskSummary:'2 tasks', open:true })
+      + auroraRoadmapDayItemHTML({ day:14, status:'frozen', label:'Frozen', date:'Jun 23', title:'Frozen proof day', taskSummary:'2 tasks', open:true })
+      + '</ol></section></section>',
     '<section><h2>Proof-first Public Progress</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
       + renderProofFirstProgressCard({
         authorName:'Learner',
@@ -66,7 +67,7 @@ export function renderDesignSystemGallery(){
       }) + '</section>',
     '<section><h2>Respect Comment Report row</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
       + renderProofActionRow({ respectCount:2, commentCount:1 }) + '</section>',
-    '<section><h2>Consistency card states</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row">'
+    '<section><h2>Consistency card states</h2><p class="lpt-gallery-note">Component example. Mock values below are static gallery data, not production metrics.</p><div class="lpt-gallery-row">'
       + renderConsistencyCard({ streak:7, completedDays:12 })
       + renderConsistencyCard({ empty:true })
       + '</div></section>',

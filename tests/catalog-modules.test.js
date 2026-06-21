@@ -85,13 +85,13 @@ test('discovery pagination renders load-more states and honest loaded-set copy',
 test('public discovery cards render real compact metrics and preview-first CTA', () => {
   const store = { currentUser:null, state:{ userPaths:{ p1:path('p1') } }, platformPaths:{} };
   const html = publicPathCardHTML(store.state.userPaths.p1, { store, canOpenFullPath:() => false });
-  assert.match(html, /skill-card discovery-card lpt-card-polished/);
-  assert.match(html, /lpt-card-header/);
-  assert.match(html, /lpt-card-title sc-top/);
-  assert.match(html, /lpt-card-tags discovery-badges/);
-  assert.match(html, /lpt-card-tags discovery-metrics/);
-  assert.match(html, /lpt-card-actions sc-cta/);
-  assert.ok(html.indexOf('sc-creator') < html.indexOf('lpt-card-title'));
+  assert.match(html, /skill-card aurora-path-card discovery-card/);
+  assert.match(html, /aurora-path-card-meta/);
+  assert.match(html, /aurora-path-card-title/);
+  assert.match(html, /aurora-path-card-tags/);
+  assert.match(html, /aurora-path-card-metrics/);
+  assert.match(html, /aurora-path-card-action/);
+  assert.ok(html.indexOf('aurora-path-card-creator') < html.indexOf('aurora-path-card-title'));
   assert.match(html, /View &rarr;/);
   assert.doesNotMatch(html, /Start/);
   assert.match(html, /3 joined/);
@@ -120,23 +120,23 @@ test('public discovery excludes private and unlisted paths while controls render
   assert.deepEqual(publicDiscoveryPaths(store).map(item => item.id), ['public']);
   const controls = discoveryControlsHTML(publicDiscoveryPaths(store), { query:'draw', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' });
   assert.match(controls, /id="discoveryQuery"/);
-  assert.match(controls, /discovery-toolbar/);
-  assert.match(controls, /lpt-discovery-toolbar/);
-  assert.match(controls, /discovery-search-shell/);
-  assert.match(controls, /lpt-search-primary/);
-  assert.match(controls, /discovery-filter-chips/);
+  assert.match(controls, /aurora-discovery-toolbar/);
+  assert.match(controls, /aurora-discovery-primary-row/);
+  assert.match(controls, /aurora-search-control/);
+  assert.match(controls, /aurora-filter-row/);
+  assert.match(controls, /aurora-filter-pill/);
   assert.match(controls, /aria-label="Search public paths"/);
   assert.match(controls, /aria-label="Sort public paths"/);
   assert.match(controls, /id="clearDiscoveryFilters"/);
-  assert.match(controls, /btn subtle discovery-clear-action/);
+  assert.match(controls, /id="clearDiscoverySearch"/);
   assert.match(controls, /data-discovery-field="category"/);
   assert.match(controls, /data-discovery-field="duration"/);
   assert.match(controls, /data-discovery-field="intensity"/);
   assert.match(controls, /data-discovery-field="proof"/);
   assert.match(controls, /data-discovery-field="sort"/);
-  assert.ok(controls.indexOf('id="discoveryQuery"') < controls.indexOf('discovery-filter-chips'));
+  assert.ok(controls.indexOf('id="discoveryQuery"') < controls.indexOf('aurora-filter-row'));
   assert.doesNotMatch(controls, /panel card/);
-  assert.doesNotMatch(controls, /discovery-filter-row/);
+  assert.doesNotMatch(controls, /discovery-filter-row|discovery-search-shell|discovery-filter-chips/);
 });
 
 test('renderCatalogView composes discovery, curated sections, and workspace cards', () => {

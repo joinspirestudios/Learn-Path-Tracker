@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { renderDesignSystemGallery } from '../src/ui/core.js';
 import { parsePathRoute } from '../src/routes.js';
 import { dailySessionHTML, focusScreenHTML } from '../src/views/daily-session.js';
+import { auroraRoadmapDayItemHTML } from '../src/views/roadmap-render.js';
 
 const views = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
@@ -29,7 +30,7 @@ test('design gallery route is handled without path parsing or auth', () => {
   assert.match(html, /ProgressMeter/);
   assert.match(html, /CompletionResultPanel/);
   assert.match(html, /Proof Studio Today hero/);
-  assert.match(html, /RoadmapNode states/);
+  assert.match(html, /Aurora proof journey/);
   assert.match(html, /Proof-first Public Progress/);
   assert.match(html, /Component example/);
   assert.match(html, /Respect/);
@@ -113,11 +114,10 @@ test('Roadmap source supports completed, active and locked Proof Studio states',
   const roadmapBlock = views.slice(views.indexOf('function roadmapHTML'), views.indexOf('function journeyDetailHTML'));
   assert.match(roadmapBlock, /proof-studio-roadmap/);
   assert.match(roadmapBlock, /Proof journey/);
-  assert.match(roadmapBlock, /data-roadmap-state/);
-  assert.match(roadmapBlock, /proof-roadmap-node/);
-  assert.match(roadmapBlock, /Open today/);
-  assert.match(roadmapBlock, /Proof submitted/);
-  assert.match(roadmapBlock, /aria-disabled="true"/);
+  assert.match(roadmapBlock, /aurora-roadmap-panel/);
+  assert.match(roadmapBlock, /aurora-journey-list/);
+  assert.match(roadmapBlock, /auroraRoadmapDayItemHTML/);
+  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /Proof submitted - strong/);
   assert.doesNotMatch(roadmapBlock, /evidenceUrl|downloadURL|storagePath/);
 });
 
