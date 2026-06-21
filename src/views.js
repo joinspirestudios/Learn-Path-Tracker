@@ -2793,15 +2793,17 @@ function publicProgressInteractionsHTML(record, entry){
   const commentCount = Number(entry.visibleCommentCount || entry.comments.length || 0);
   const error = progressInteractionErrors[key] || '';
   const owner = isOwner(record.path, user);
-  let h = '<div class="progress-interactions" data-entry-id="' + esc(entry.id) + '">'
+  let h = '<div class="progress-interactions proof-action-row" data-entry-id="' + esc(entry.id) + '">'
     + '<div class="progress-interaction-row">'
     + '<button class="btn progress-cheer" type="button" data-entry-id="' + esc(entry.id) + '" aria-pressed="' + (cheered ? 'true' : 'false') + '" ' + (busy ? 'disabled' : '') + '>'
-    + (cheered ? 'Cheered' : 'Cheer') + '</button>'
-    + '<span aria-label="' + esc(cheerCount + ' cheers') + '">' + esc(cheerCount) + ' cheer' + (cheerCount === 1 ? '' : 's') + '</span>'
+    + (cheered ? 'Respected' : 'Respect') + '</button>'
+    + '<span aria-label="' + esc(cheerCount + ' respects') + '">' + esc(cheerCount) + ' respect' + (cheerCount === 1 ? '' : 's') + '</span>'
+    + '<span>Comment</span>'
     + '<span aria-label="' + esc(commentCount + ' comments') + '">' + esc(commentCount) + ' comment' + (commentCount === 1 ? '' : 's') + '</span>'
+    + '<span>Report</span>'
     + '</div>';
   if(!user){
-    h += '<button class="btn subtle progress-signin" type="button" data-entry-id="' + esc(entry.id) + '">Sign in to cheer or comment</button>';
+    h += '<button class="btn subtle progress-signin" type="button" data-entry-id="' + esc(entry.id) + '">Sign in to respect or comment</button>';
   } else {
     const draft = progressCommentDrafts[key] || '';
     h += '<form class="progress-comment-form" data-entry-id="' + esc(entry.id) + '">'
@@ -2837,7 +2839,7 @@ function publicProgressInteractionsHTML(record, entry){
 function publicProgressTimelineHTML(record){
   const entries = progressEntriesForPath(record.id, record);
   let h = '<section class="panel card public-progress-section" aria-label="Recent public progress">'
-    + '<div class="public-progress-head"><div><h3>Recent public progress</h3><p>Sanitized learner updates from completed days.</p></div>'
+    + '<div class="public-progress-head"><div><h3>Recent public progress</h3><p>Proof-first learner updates from completed days. Every number here is proof-backed.</p></div>'
     + '<span>' + esc(entries.length) + '</span></div>';
   if(!entries.length){
     h += '<div class="muted">No public progress has been shared yet.</div>';
@@ -2848,11 +2850,16 @@ function publicProgressTimelineHTML(record){
         ? (entry.evidenceCount + ' proof item' + (entry.evidenceCount === 1 ? '' : 's') + (entry.evidenceTypes.length ? ' - ' + entry.evidenceTypes.map(evidenceTypeLabel).join(', ') : ''))
         : 'No public proof details';
       const score = entry.completionScore ? '<span>' + esc(entry.completionScore) + '% ' + esc((entry.completionTier || 'completed').replace(/_/g, ' ')) + '</span>' : '';
-      h += '<article class="public-progress-entry">'
+      const proofTitle = entry.publicCaption || ('Day ' + entry.dayNumber + ' proof');
+      const proofSummary = entry.taskSummary.length
+        ? entry.taskSummary.map(item => item.title).join(' - ')
+        : evidence;
+      h += '<article class="public-progress-entry proof-first-progress-card" data-proof-state="submitted">'
         + '<div class="progress-author">' + (entry.authorPhotoURL ? '<img src="' + esc(entry.authorPhotoURL) + '" alt=""/>' : '<span></span>')
-        + '<div><b>' + esc(entry.authorName) + '</b><small>Day ' + esc(entry.dayNumber) + ' completed' + (dateText(entry.publishedAt) ? ' - ' + esc(dateText(entry.publishedAt)) : '') + '</small></div></div>'
-        + (entry.publicCaption ? '<p class="progress-caption">' + esc(entry.publicCaption) + '</p>' : '')
-        + '<div class="progress-metrics"><span>' + esc(entry.requiredCompletedCount) + '/' + esc(entry.requiredTotalCount) + ' required</span><span>' + esc(entry.optionalCompletedCount) + '/' + esc(entry.optionalTotalCount) + ' optional</span><span>' + esc(evidence) + '</span>' + score + '</div>';
+        + '<div><b>' + esc(entry.authorName) + '</b><small>Day ' + esc(entry.dayNumber) + ' - ' + esc(record.path?.title || record.path?.goal || 'Path') + (dateText(entry.publishedAt) ? ' - ' + esc(dateText(entry.publishedAt)) : '') + '</small></div></div>'
+        + '<h4>' + esc(proofTitle) + '</h4>'
+        + '<p class="progress-caption proof-card-specimen">' + esc(proofSummary) + '</p>'
+        + '<div class="progress-metrics proof-card-meta"><span>Proof submitted</span><span>' + esc((entry.completionTier || 'completed').replace(/_/g, ' ')) + '</span><span>' + esc(entry.requiredCompletedCount) + '/' + esc(entry.requiredTotalCount) + ' required</span><span>' + esc(entry.optionalCompletedCount) + '/' + esc(entry.optionalTotalCount) + ' optional</span><span>' + esc(evidence) + '</span>' + score + '</div>';
       if(entry.taskSummary.length){
         h += '<div class="progress-tasks">' + entry.taskSummary.map(item => '<em>' + esc(item.title) + '</em>').join('') + '</div>';
       }
@@ -2886,7 +2893,7 @@ async function reactToPublicEntry(record, entryId){
   const key = interactionKey(record.id, entryId);
   if(progressInteractionBusyKey) return;
   if(!store.currentUser){
-    progressInteractionErrors[key] = 'Sign in to cheer this progress.';
+    progressInteractionErrors[key] = 'Sign in to respect this progress.';
     openAuthModal('signup');
     renderPathPreview(record);
     return;
@@ -3094,7 +3101,7 @@ function renderPathPreview(record){
   document.querySelectorAll('.progress-signin').forEach(btn => {
     btn.onclick = () => {
       const key = interactionKey(record.id, btn.dataset.entryId);
-      progressInteractionErrors[key] = 'Sign in to cheer this progress.';
+      progressInteractionErrors[key] = 'Sign in to respect this progress.';
       openAuthModal('signup');
       renderPathPreview(record);
     };
@@ -3590,8 +3597,8 @@ function roadmapHTML(id, def){
   const today = localDateString();
   const totalDays = getMaxRoadmapDay(def, enrollment);
   const activeDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate, today) : 1;
-  let h = '<div class="panel card roadmap-foundation">'
-    + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Daily journey</h3></div>'
+  let h = '<div class="panel card roadmap-foundation proof-studio-roadmap">'
+    + '<div class="road-head"><div><div class="chip">Roadmap</div><h3>Proof journey</h3></div>'
     + '<div class="road-stats"><span>Streak ' + esc(enrollment?.streak || 0) + '</span><span>Freezes ' + esc(enrollment?.freezeCount ?? 1) + '</span></div></div>';
   if(enrollment?.syncPending){
     h += '<div class="sync-banner offline"><span>Started locally &mdash; waiting to sync</span></div>';
@@ -3611,9 +3618,14 @@ function roadmapHTML(id, def){
     const open = canOpenDay(day, status);
     const date = enrollment?.startDate ? dateForJourneyDay(enrollment.startDate, day) : null;
     const taskCount = tasksReady ? getTasksForDay(def, day).length : 0;
-    h += '<button type="button" class="road-day ' + status + (day === activeDay ? ' today' : '') + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled') + '>'
-      + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' · ' + esc(date.slice(5)) : '') + '</small>'
-      + '<em>' + (tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks') + '</em></button>';
+    const log = logs[day] || logs[String(day)] || {};
+    const tier = log.completionTier || log.tier || '';
+    const proofSubmitted = Number(log.evidenceCount || 0) > 0 || (log.verifiedTaskIds || []).length > 0;
+    h += '<button type="button" class="road-day proof-roadmap-node proof-roadmap-' + status + ' ' + status + (day === activeDay ? ' today' : '') + '" data-roadmap-state="' + esc(status) + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled aria-disabled="true"') + '>'
+      + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' - ' + esc(date.slice(5)) : '') + '</small>'
+      + '<em>' + (tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks') + '</em>'
+      + '<strong>' + esc(status === 'active' ? "Open today's session" : statusLabel(status)) + '</strong>'
+      + '<span class="proof-roadmap-node-meta">' + (tier ? '<span>' + esc(String(tier).replace(/_/g, ' ')) + '</span>' : '') + (proofSubmitted ? '<span>Proof submitted</span>' : '') + '</span></button>';
   }
   h += '</div></div>';
   return h;
@@ -4578,6 +4590,10 @@ export function renderPlan(){
 export function renderToday(){
   const def = curDef(), cs = curState();
   const ep = effPlan();
+  if(!def || !cs || !ep.length){
+    $('content').innerHTML = '<div class="today-grid lpt-shell lpt-today-screen proof-studio-today"><div class="lpt-core-column"><section class="panel card proof-studio-today-hero is-empty"><span class="proof-studio-kicker">Today</span><h2>No active path</h2><p>Create or join a path to start today.</p></section></div></div>';
+    return;
+  }
   let wkNum = cs.meta.startDate ? currentWeekFromStart() : store.currentWeek;
   let wk = weekObj(wkNum); if(!wk){ wk = ep[0]; wkNum = wk ? wk.w : 1; }
   const q = quarters()[wk.q] || { name:'Custom' };
@@ -4587,30 +4603,37 @@ export function renderToday(){
   const bid = 'w' + wk.w + '.' + dayDef.k, tid = bid + '.t';
   const streak = computeStreak(), wp = weekProg(wk), wpct = wp.total ? Math.round(wp.done/wp.total*100) : 0;
   const dayNames = { mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday', sun:'Sunday' };
-  let h = '<div class="today-grid lpt-shell lpt-today-screen"><div class="lpt-core-column">';
+  const todayDate = localDateString();
+  const proofSummary = dayDef.ship
+    ? 'Shipping day: save or publish one proof piece when finished.'
+    : 'No required proof today; save a note if useful.';
+  let h = '<div class="today-grid lpt-shell lpt-today-screen proof-studio-today"><div class="lpt-core-column">';
   // left: today's session
-  h += '<div class="panel card today-main lpt-today-card">';
-  h += '<div class="goal-line">' + esc(pathGoal(store.state.current)) + '</div>';
+  h += '<div class="panel card today-main lpt-today-card proof-studio-today-hero">';
+  h += '<div class="goal-line proof-studio-context"><span>' + esc(pathTitle(store.state.current)) + '</span><b>' + esc(dayNames[tk] || 'Today') + ' - Week ' + tdPos + ' of ' + tdTotal + ' - ' + esc(todayDate) + '</b></div>';
+  h += '<div class="proof-studio-kicker">Today&apos;s proof</div>';
   h += '<div class="today-kicker">' + esc(dayNames[tk] || 'Today') + ' · Week ' + tdPos + ' of ' + tdTotal + '</div>';
-  h += '<div class="lpt-session-header"><div><span>Today</span><h2>Continue your daily loop</h2><p>One clear session, one next action.</p></div></div>';
+  h += '<div class="lpt-session-header"><div><span>Today</span><h2>' + esc(dayLabel(wk, dayDef)) + '</h2><p>One focused daily action before the rest of the interface.</p></div></div>';
   if(!cs.meta.startDate) h += '<div class="hint" style="margin:10px 0">Set a <b>start date</b> in the header to lock your weekly schedule. Showing Week 1 for now.</div>';
-  h += '<div class="today-task ' + (P()[bid] ? 'done' : '') + '"><input type="checkbox" class="ck" data-id="' + bid + '" ' + (P()[bid] ? 'checked' : '') + '/>'
+  h += '<div class="today-task proof-studio-task-preview ' + (P()[bid] ? 'done' : '') + '"><input type="checkbox" class="ck" data-id="' + bid + '" ' + (P()[bid] ? 'checked' : '') + '/>'
     + '<div><div class="tt-title">' + esc(dayLabel(wk, dayDef)) + '</div><div class="tt-sub">' + esc(dayDef.s) + '</div></div></div>';
   h += '<label class="taste today-taste"><input type="checkbox" class="ck sm ox" data-id="' + tid + '" ' + (P()[tid] ? 'checked' : '') + '/> Taste 15m (a quick rep, even on a busy day)</label>';
   if(dayDef.ship) h += '<div class="ship-note">★ Shipping day. Finish and publish one piece. Shipping is the skill.</div>';
+  h += '<div class="proof-studio-proof-summary"><b>Proof needed</b><span>' + esc(proofSummary) + '</span></div>';
   h += '<div class="lad-strip-today"><div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">Always-on ladders</div>';
   ladders().forEach(l => { h += ladderRowHTML(l); });
   h += '</div>';
-  h += '<div class="today-actions lpt-primary-action-bar"><button class="btn gold lpt-button lpt-button-primary" id="openWeek">Continue Today</button><button class="btn lpt-button lpt-button-secondary" id="openRoadmapFromToday">View roadmap</button></div>';
+  h += '<div class="today-actions lpt-primary-action-bar"><button class="btn gold lpt-button lpt-button-primary" id="openWeek">Continue day</button><button class="btn lpt-button lpt-button-secondary" id="openRoadmapFromToday">View roadmap</button></div>';
   h += '</div></div>';
   // right: momentum
-  h += '<div class="panel card today-side lpt-today-metrics">';
+  h += '<aside class="panel card today-side lpt-today-metrics proof-studio-right-rail" aria-label="Real progress summary">';
+  h += '<div class="chip">Your consistency</div>';
   h += '<div class="stat-big"><div class="sb-num">' + streak + '</div><div class="sb-lab">day streak</div></div>';
   h += '<div class="stat-row"><span>This week</span><b>' + wpct + '%</b></div><div class="progress-bar"><div style="width:' + wpct + '%"></div></div>';
   const tot = allTotals(), tpct = tot.total ? Math.round(tot.done/tot.total*100) : 0;
-  h += '<div class="stat-row" style="margin-top:14px"><span>Whole path</span><b>' + tpct + '%</b></div><div class="progress-bar"><div style="width:' + tpct + '%"></div></div>';
-  h += '<div class="muted" style="font-size:12px;margin-top:16px;line-height:1.5">Tick any task to extend your streak. Consistency is the engine: a short rep every day beats a long block once a week.</div>';
-  h += '</div></div>';
+  h += '<div class="stat-row" style="margin-top:14px"><span>Path trust</span><b>' + (tot.total ? tpct + '%' : 'Not enough data yet') + '</b></div><div class="progress-bar"><div style="width:' + tpct + '%"></div></div>';
+  h += '<div class="muted" style="font-size:12px;margin-top:16px;line-height:1.5">Every number here is proof-backed from your local progress. No rankings or follower counts are estimated.</div>';
+  h += '</aside></div>';
   $('content').innerHTML = h;
   wireChecks();
   const ow = $('openWeek'); if(ow) ow.onclick = () => { store.currentWeek = wk.w; curState().meta.lastWeek = wk.w; store.nav.switchTab('week'); };

@@ -869,6 +869,56 @@
   .lpt-progress-meter-fill{transition:none}
 }
 
+/* ---- Phase 6.9.2 Proof Studio direction ---- */
+.proof-studio-today{align-items:start}
+.proof-studio-today-hero,.lpt-proof-studio-card{
+  border-color:rgba(216,178,76,.28);
+  background:
+    linear-gradient(145deg,rgba(216,178,76,.12),rgba(85,199,122,.045) 42%,rgba(31,25,21,.98)),
+    var(--panel);
+  box-shadow:0 18px 48px rgba(0,0,0,.28);
+}
+.proof-studio-context{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--sand);font-size:12px}
+.proof-studio-context span{color:var(--cream);font-weight:800}
+.proof-studio-context b{color:var(--gold-soft);font-size:11px;text-transform:uppercase;letter-spacing:.1em}
+.proof-studio-kicker{color:var(--green);font-size:11px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin:10px 0 6px}
+.proof-studio-task-preview{border-color:rgba(216,178,76,.26);background:rgba(239,231,216,.04)}
+.proof-studio-task-preview li{margin-left:18px;color:var(--sand);line-height:1.55}
+.proof-studio-proof-summary{margin:13px 0;padding:12px;border:1px solid rgba(85,199,122,.32);border-radius:12px;background:rgba(85,199,122,.08);display:grid;gap:4px}
+.proof-studio-proof-summary b{color:var(--green);font-size:11px;text-transform:uppercase;letter-spacing:.12em}
+.proof-studio-proof-summary span{color:var(--sand);font-size:13px}
+.proof-studio-right-rail{align-self:start;position:sticky;top:104px}
+
+.proof-roadmap-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.proof-roadmap-node{position:relative;text-align:left;display:grid;gap:5px;border-radius:12px;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+.proof-roadmap-node:hover:not(:disabled),.proof-roadmap-node:focus-visible{transform:translateY(-2px);border-color:var(--gold)}
+.proof-roadmap-node strong{color:var(--gold-soft);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.proof-roadmap-node-meta{display:flex;gap:6px;flex-wrap:wrap;min-height:0}
+.proof-roadmap-node-meta span{border:1px solid rgba(85,199,122,.34);border-radius:999px;color:var(--green);background:rgba(85,199,122,.08);padding:3px 7px;font-size:10.5px;font-weight:800}
+.proof-roadmap-active,.road-day.active{border-color:var(--gold)!important;background:linear-gradient(120deg,rgba(216,178,76,.16),rgba(239,231,216,.045))!important;box-shadow:0 0 0 1px rgba(216,178,76,.32) inset}
+.proof-roadmap-completed,.road-day.completed{border-color:rgba(85,199,122,.38)!important;background:rgba(85,199,122,.07)!important}
+.proof-roadmap-locked,.road-day.locked{opacity:.58;filter:saturate(.75)}
+
+.proof-first-progress-card{border-color:rgba(85,199,122,.28);background:linear-gradient(180deg,rgba(85,199,122,.07),rgba(239,231,216,.025));transition:transform .16s ease,border-color .16s ease}
+.proof-first-progress-card:hover,.proof-first-progress-card:focus-within{transform:translateY(-2px);border-color:rgba(216,178,76,.45)}
+.proof-first-progress-card h3,.proof-first-progress-card h4{margin:0;color:var(--cream);font-family:'Fraunces',serif;font-size:17px}
+.proof-card-context{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--sand-dim);font-size:12px}
+.proof-card-context b{color:var(--cream)}
+.proof-card-specimen{font-size:15px;color:var(--cream);line-height:1.55}
+.proof-card-meta span:first-child{border-color:rgba(85,199,122,.42);color:var(--green);background:rgba(85,199,122,.08)}
+.proof-action-row .btn:active,.progress-cheer:active,.lpt-button:active,.btn:active{transform:translateY(1px) scale(.99)}
+.proof-metric-card{border:1px solid var(--line2);border-radius:12px;background:rgba(239,231,216,.035);padding:14px;min-width:180px}
+.proof-metric-card span{display:block;color:var(--sand-dim);font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.proof-metric-card b{display:block;color:var(--cream);font-size:22px;margin:4px 0}
+.proof-metric-card small{color:var(--sand);font-size:12px}
+.proof-metric-card.is-empty b{color:var(--sand)}
+.lpt-gallery-note{color:var(--sand-dim);font-size:12px;margin:0 0 10px}
+
+@media(max-width:900px){
+  .proof-studio-right-rail{display:none}
+  .proof-roadmap-gallery{grid-template-columns:1fr}
+}
+
 /* ---- undo toast (J1) ---- */
 .undo-toast{
   position:fixed; left:50%; bottom:24px; transform:translate(-50%,18px);

@@ -321,8 +321,8 @@ test('public page rendering source includes join/share states and sanitized prog
   assert.match(source, /The source path remains owned by/);
   assert.match(source, /includes creator constraints/);
   assert.match(source, /Recent public progress/);
-  assert.match(source, /Sanitized learner updates/);
-  assert.match(source, /Cheer/);
+  assert.match(source, /Proof-first learner updates/);
+  assert.match(source, /Respect/);
   assert.match(source, /Add a comment/);
   assert.match(source, /Active this week/);
   assert.match(source, /Proof submitted/);

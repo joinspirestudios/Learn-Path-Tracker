@@ -27,6 +27,10 @@ The core promise:
 
 ## Behavioral design principles
 
+Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
+
+Proof Studio copy prefers Today's proof, Continue day, Start today, Proof needed, Proof submitted, Proof verified, Respect, Comment, Report, Path trust, Your consistency, Every number here is proof-backed and Not enough data yet. It avoids Like, Kudos, XP, Gems, Lives, Leaderboard, Pass mark, 65% needed and fake verified claims.
+
 ### Cue → Routine → Reward model
 
 | Principle | Product mechanic | Status |
@@ -79,6 +83,8 @@ Use this framework to evaluate Learn Path Tracker's own flows and compare agains
 **Duolingo-style daily practice flow** — conceptually useful for: cue/routine/reward loop, streak continuity, session brevity, immediate feedback. Do not copy: mascot, hearts/lives, gems/shop economy, childish UI, league leaderboards.
 
 **Strava-style activity proof flow** — conceptually useful for: proof capture as core action, activity feed as social proof, honest metrics. Do not copy: social pressure mechanics, premium feature gating of basic analytics.
+
+Supplied HTML screen samples may be used structurally only. Do not copy their cold blue palette, do not rename the product, and do not add fake metrics.
 
 ## Core flow audit
 

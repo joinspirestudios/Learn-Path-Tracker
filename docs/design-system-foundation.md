@@ -42,6 +42,8 @@ All tokens live in [`src/design-tokens.js`](../src/design-tokens.js) as a pure d
 
 Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again.
 
+Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
+
 ## Color system
 
 ### Dark editorial base
@@ -66,6 +68,15 @@ The default surface is dark — not pitch black, but a deep warm-neutral field t
 3. Success/warning/danger always pair with an icon or text label
 4. Focus ring color must be visible on all surface tones
 5. Disabled state uses reduced opacity, not a separate gray palette
+6. Do not copy the supplied HTML sample palette; blue must not become the primary action or progress color
+7. Gold remains the primary progress/action accent; green marks proof, oxblood marks report/danger, and trust stays restrained
+
+### Proof Studio rules
+
+- Today is the daily action center with one Start today or Continue day action.
+- Roadmap is the visible proof journey with completed, active and locked states.
+- Public Progress is proof-first and uses Respect, Comment and Report as visible action labels.
+- Trust metrics must be real-data-only; use "Not enough data yet" instead of fake leaderboards or fake social proof.
 
 ### Accessibility notes
 

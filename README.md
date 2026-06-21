@@ -558,6 +558,10 @@ The native mobile app was not built. The full app was not redesigned. No design 
 
 Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again. The token generator remains intact and `src/generated/design-tokens.css` is regenerated from `src/design-tokens.js`.
 
+Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
+
+The Proof Studio direction keeps the warm dark production theme, rejects the supplied HTML sample palette, keeps blue out of primary action/progress roles, keeps gold as the primary progress/action accent, and avoids fake leaderboards or fake social proof. Public progress uses Respect, Comment and Report as visible action labels.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.
