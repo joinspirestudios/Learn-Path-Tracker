@@ -545,6 +545,17 @@ Phase 6.8 defines the design system foundation: the repeatable interface languag
 
 No production UI redesign was implemented. No Figma file was committed. No font files were committed. No mobile app was built. No animation library was installed. No analytics SDK was added.
 
+## Core web UI rollout (Phase 6.9)
+
+Phase 6.9 begins the incremental production web redesign rollout by wiring design tokens into CSS custom properties and applying the new core layout to Today, Daily Focus and Completion Result.
+
+- `src/design-token-css.js` and `scripts/generate-design-token-css.mjs` generate `src/generated/design-tokens.css` from the Phase 6.8 token source.
+- `src/ui/` contains plain JavaScript core UI render helpers for the daily loop.
+- The internal design-system gallery is available at `#/dev/design-system`.
+- [`docs/phase-6.9-core-ui-rollout.md`](docs/phase-6.9-core-ui-rollout.md) documents the responsive contract and rollout boundary.
+
+The native mobile app was not built. The full app was not redesigned. No design library, animation library or runtime analytics SDK was installed.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

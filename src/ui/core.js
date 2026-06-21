@@ -1,0 +1,6 @@
+export {
+  renderButton, renderCompletionResultPanel, renderDailyScoreCard, renderDailyTaskCard,
+  renderEmptyState, renderMetricPill, renderProgressMeter, renderProofUploadCard, renderToastBanner,
+} from './core-components.js';
+export { renderAppShell, renderCoreColumn, renderSessionHeader } from './core-layout.js';
+export { renderDesignSystemGallery } from './design-gallery.js';
