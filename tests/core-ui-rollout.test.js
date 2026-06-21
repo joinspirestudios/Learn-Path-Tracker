@@ -28,6 +28,13 @@ test('design gallery route is handled without path parsing or auth', () => {
   assert.match(html, /DailyTaskCard/);
   assert.match(html, /ProgressMeter/);
   assert.match(html, /CompletionResultPanel/);
+  assert.match(html, /Proof Studio Today hero/);
+  assert.match(html, /RoadmapNode states/);
+  assert.match(html, /Proof-first Public Progress/);
+  assert.match(html, /Component example/);
+  assert.match(html, /Respect/);
+  assert.match(html, /Not enough data yet/);
+  assert.doesNotMatch(html, /fetch\(|authFetch|dbLoad|localStorage/);
 });
 
 test('Daily Focus route renders centered core column and preserves controls', () => {
@@ -86,13 +93,45 @@ test('Completion Result renders score, tier, summaries and stable motion contain
   assert.match(html, /Proof submitted/);
 });
 
-test('Today source uses core column shell and Start/Continue Today entry copy', () => {
+test('Today source uses Proof Studio action center with one primary Start/Continue CTA', () => {
   const todayBlock = views.slice(views.indexOf('export function renderToday'), views.indexOf('export function editPath'));
   assert.match(todayBlock, /lpt-today-screen/);
   assert.match(todayBlock, /lpt-core-column/);
-  assert.match(todayBlock, /Continue Today/);
+  assert.match(todayBlock, /proof-studio-today-hero/);
+  assert.match(todayBlock, /Today&apos;s proof/);
+  assert.match(todayBlock, /Proof needed/);
+  assert.match(todayBlock, /Continue day/);
   assert.match(todayBlock, /View roadmap/);
+  assert.match(todayBlock, /Not enough data yet/);
+  assert.equal((todayBlock.match(/lpt-button-primary/g) || []).length, 1);
+  assert.doesNotMatch(todayBlock, /Pass mark|65% needed/);
+  assert.doesNotMatch(todayBlock, /\b1,284\b|\b9,512\b|\b18,330\b/);
   assert.doesNotMatch(todayBlock, /dashboard/i);
+});
+
+test('Roadmap source supports completed, active and locked Proof Studio states', () => {
+  const roadmapBlock = views.slice(views.indexOf('function roadmapHTML'), views.indexOf('function journeyDetailHTML'));
+  assert.match(roadmapBlock, /proof-studio-roadmap/);
+  assert.match(roadmapBlock, /Proof journey/);
+  assert.match(roadmapBlock, /data-roadmap-state/);
+  assert.match(roadmapBlock, /proof-roadmap-node/);
+  assert.match(roadmapBlock, /Open today/);
+  assert.match(roadmapBlock, /Proof submitted/);
+  assert.match(roadmapBlock, /aria-disabled="true"/);
+  assert.doesNotMatch(roadmapBlock, /evidenceUrl|downloadURL|storagePath/);
+});
+
+test('Public progress source renders proof-first cards and Respect actions', () => {
+  const progressBlock = views.slice(views.indexOf('function publicProgressTimelineHTML'), views.indexOf('function updateProgressEntry'));
+  const interactionBlock = views.slice(views.indexOf('function publicProgressInteractionsHTML'), views.indexOf('function publicProgressTimelineHTML'));
+  assert.match(progressBlock, /proof-first-progress-card/);
+  assert.match(progressBlock, /proof-card-specimen/);
+  assert.match(progressBlock, /Proof submitted/);
+  assert.match(interactionBlock, /Respect/);
+  assert.match(interactionBlock, /Comment/);
+  assert.match(interactionBlock, /Report/);
+  assert.doesNotMatch(progressBlock + interactionBlock, /Following|Leaderboard|weekly ranking/i);
+  assert.doesNotMatch(progressBlock, /evidenceUrl|downloadURL|storagePath/);
 });
 
 test('CSS imports generated tokens, maps legacy aliases and uses token-backed core classes', () => {
@@ -101,6 +140,10 @@ test('CSS imports generated tokens, maps legacy aliases and uses token-backed co
   assert.match(styles, /--gold:var\(--lpt-color-accent-progress\)/);
   assert.match(styles, /--gold-soft:#f2c75c/);
   assert.doesNotMatch(styles, /--gold-soft:#93c5fd/);
+  assert.match(styles, /proof-studio-today-hero/);
+  assert.match(styles, /proof-roadmap-node/);
+  assert.match(styles, /proof-first-progress-card/);
+  assert.match(styles, /proof-studio-right-rail\{display:none/);
   assert.match(styles, /\.lpt-core-column/);
   assert.match(styles, /\.lpt-task-card[\s\S]*--lpt-/);
   assert.match(styles, /@media\(max-width:430px\)/);

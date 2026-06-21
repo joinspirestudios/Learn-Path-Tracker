@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 
 import {
   renderButton, renderCompletionResultPanel, renderDailyScoreCard, renderDailyTaskCard,
-  renderEmptyState, renderProgressMeter,
+  renderEmptyState, renderProgressMeter, renderProofActionRow, renderProofFirstProgressCard,
+  renderProofMetricCard, renderProofStudioTodayHero, renderRoadmapNode,
 } from '../src/ui/core.js';
 
 const coreSources = [
@@ -66,6 +67,57 @@ test('renderEmptyState renders safe title, body and action', () => {
   assert.match(html, /&lt;Empty&gt;/);
   assert.match(html, /No &lt;data&gt;/);
   assert.match(html, /Start/);
+});
+
+test('Proof Studio Today hero renders one primary daily action and proof summary', () => {
+  const html = renderProofStudioTodayHero({
+    pathTitle:'Path',
+    dayContext:'Day 4',
+    title:'Practice proof',
+    tasks:['Task one', 'Task two'],
+    proofSummary:'1 task asks for proof.',
+    ctaLabel:'Continue day',
+    ctaId:'openWeek',
+    secondaryAction:renderButton({ label:'View roadmap', variant:'secondary' }),
+  });
+  assert.match(html, /proof-studio-today-hero/);
+  assert.match(html, /Today&apos;s proof/);
+  assert.match(html, /Proof needed/);
+  assert.match(html, /Continue day/);
+  assert.equal((html.match(/lpt-button-primary/g) || []).length, 1);
+  assert.doesNotMatch(html, /Pass mark|65% needed|fake/i);
+});
+
+test('Roadmap node states are text-readable and safe', () => {
+  const completed = renderRoadmapNode({ day:2, state:'completed', tier:'strong', proofSubmitted:true, taskCount:3, cta:'Completed' });
+  const active = renderRoadmapNode({ day:3, state:'active', taskCount:2, cta:"Open today's session" });
+  const locked = renderRoadmapNode({ day:4, state:'locked', taskCount:1 });
+  assert.match(completed, /data-roadmap-state="completed"/);
+  assert.match(completed, /strong/);
+  assert.match(completed, /Proof submitted/);
+  assert.match(active, /Open today&#39;s session/);
+  assert.match(locked, /disabled aria-disabled="true"/);
+  assert.doesNotMatch(completed + active + locked, /evidenceUrl|private\.example|downloadURL/);
+});
+
+test('Proof-first public progress card uses submitted or verified state deliberately', () => {
+  const submitted = renderProofFirstProgressCard({ proofState:'submitted', proofSummary:'Safe summary only.', tier:'strong' });
+  const verified = renderProofFirstProgressCard({ proofState:'verified', proofSummary:'Safe summary only.', tier:'perfect' });
+  assert.match(submitted, /Proof submitted/);
+  assert.doesNotMatch(submitted, /Proof verified/);
+  assert.match(verified, /Proof verified/);
+  assert.match(submitted, /proof-card-specimen/);
+  assert.match(submitted, /Respect/);
+  assert.match(submitted, /Comment/);
+  assert.match(submitted, /Report/);
+  assert.doesNotMatch(submitted, /Following|Leaderboard|evidenceUrl|downloadURL/);
+});
+
+test('Proof metric cards support real and empty states', () => {
+  const real = renderProofMetricCard({ title:'Path trust', value:'3 proof submitted' });
+  const empty = renderProofMetricCard({ title:'Your consistency', empty:true });
+  assert.match(real, /Every number here is proof-backed/);
+  assert.match(empty, /Not enough data yet/);
 });
 
 test('core UI modules have no Firebase, server or analytics imports', () => {

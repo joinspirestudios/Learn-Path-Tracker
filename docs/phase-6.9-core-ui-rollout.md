@@ -31,6 +31,12 @@ Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark edi
 
 The token generator remains the source of truth. The hotfix updates `src/design-tokens.js`, regenerates `src/generated/design-tokens.css`, strengthens the legacy aliases in `src/styles.css`, and adds pure contrast tests without changing app behavior.
 
+## Phase 6.9.2 Proof Studio Direction
+
+Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
+
+This direction rejects the supplied HTML sample palette, keeps blue out of primary action/progress roles, keeps gold as the primary progress/action accent, and avoids fake leaderboards, fake social proof, followers, gems, hearts and shop economy. Public progress uses Respect as the visible reaction label while the stored reaction model remains unchanged.
+
 ## Core UI Helpers
 
 The new pure render helpers live under `src/ui/`:
@@ -44,7 +50,7 @@ These helpers are plain JavaScript string renderers. They do not import Firebase
 
 ## Today
 
-Today is lightly redesigned as the entry point into the daily loop. It keeps the existing local path behavior and streak/progress mechanics while adding the centered core column, a clearer "Continue Today" action and a secondary roadmap action.
+Today is organized as the Proof Studio daily action center. It keeps the existing local path behavior and streak/progress mechanics while adding active path context, day/date context, Today's proof, a proof requirement summary, a single primary "Continue day" action and a secondary roadmap action.
 
 ## Daily Focus
 

@@ -128,3 +128,102 @@ export function renderEmptyState({ title = '', body = '', action = '' } = {}){
 export function renderToastBanner({ message = '', variant = 'info' } = {}){
   return '<div class="lpt-toast-banner lpt-toast-' + esc(variant) + '" role="' + (variant === 'error' ? 'alert' : 'status') + '">' + esc(message) + '</div>';
 }
+
+export function renderProofStudioTodayHero({
+  pathTitle = 'Active path',
+  dayContext = 'Today',
+  title = "Today's proof",
+  tasks = [],
+  proofSummary = 'Proof needed when a task asks for it.',
+  ctaLabel = 'Continue day',
+  ctaId = '',
+  secondaryAction = '',
+  empty = false,
+} = {}){
+  if(empty){
+    return '<section class="proof-studio-today-hero lpt-proof-studio-card is-empty">'
+      + '<span class="proof-studio-kicker">Today</span>'
+      + '<h2>No active path</h2>'
+      + '<p>Create or join a path to start today.</p>'
+      + '</section>';
+  }
+  const preview = (tasks || []).slice(0, 4);
+  return '<section class="proof-studio-today-hero lpt-proof-studio-card">'
+    + '<div class="proof-studio-context"><span>' + esc(pathTitle) + '</span><b>' + esc(dayContext) + '</b></div>'
+    + '<span class="proof-studio-kicker">Today&apos;s proof</span>'
+    + '<h2>' + esc(title) + '</h2>'
+    + (preview.length ? '<ul class="proof-studio-task-preview">' + preview.map(task => '<li>' + esc(task) + '</li>').join('') + '</ul>' : '<p class="muted">No task preview is available yet.</p>')
+    + '<div class="proof-studio-proof-summary"><b>Proof needed</b><span>' + esc(proofSummary) + '</span></div>'
+    + '<div class="today-actions lpt-primary-action-bar">'
+    + renderButton({ label:ctaLabel, variant:'primary', id:ctaId })
+    + secondaryAction
+    + '</div>'
+    + '</section>';
+}
+
+export function renderRoadmapNode({
+  day = 1,
+  state = 'locked',
+  title = '',
+  date = '',
+  taskCount = 0,
+  tier = '',
+  proofSubmitted = false,
+  cta = '',
+  disabled = false,
+} = {}){
+  const allowedStates = ['completed', 'active', 'locked', 'missed', 'frozen', 'passed', 'strong', 'perfect'];
+  const safeState = allowedStates.includes(state) ? state : 'locked';
+  const label = safeState === 'active' ? 'Active day'
+    : safeState === 'locked' ? 'Locked'
+      : safeState === 'completed' ? 'Completed'
+        : safeState;
+  return '<button type="button" class="proof-roadmap-node proof-roadmap-' + esc(safeState) + '" data-roadmap-state="' + esc(safeState) + '" data-road-day="' + esc(day) + '" ' + (disabled || safeState === 'locked' ? 'disabled aria-disabled="true"' : '') + '>'
+    + '<span class="proof-roadmap-node-day">Day ' + esc(day) + '</span>'
+    + '<b>' + esc(title || label) + '</b>'
+    + '<small>' + esc(date || label) + '</small>'
+    + '<em>' + esc(taskCount ? taskCount + ' task' + (taskCount === 1 ? '' : 's') : (safeState === 'locked' ? 'Unlocks later' : 'No tasks yet')) + '</em>'
+    + '<span class="proof-roadmap-node-meta">' + (tier ? '<span>' + esc(tier) + '</span>' : '') + (proofSubmitted ? '<span>Proof submitted</span>' : '') + '</span>'
+    + (cta ? '<strong>' + esc(cta) + '</strong>' : '')
+    + '</button>';
+}
+
+export function renderProofActionRow({ respected = false, respectCount = 0, commentCount = 0, reportLabel = 'Report' } = {}){
+  return '<div class="proof-action-row" aria-label="Proof actions">'
+    + '<button class="btn progress-cheer" type="button" aria-pressed="' + (respected ? 'true' : 'false') + '">' + esc(respected ? 'Respected' : 'Respect') + '</button>'
+    + '<span aria-label="' + esc(respectCount + ' respects') + '">' + esc(respectCount) + ' respect' + (Number(respectCount) === 1 ? '' : 's') + '</span>'
+    + '<button class="btn subtle" type="button">Comment</button>'
+    + '<span aria-label="' + esc(commentCount + ' comments') + '">' + esc(commentCount) + ' comment' + (Number(commentCount) === 1 ? '' : 's') + '</span>'
+    + '<button class="link-btn" type="button">' + esc(reportLabel) + '</button>'
+    + '</div>';
+}
+
+export function renderProofFirstProgressCard({
+  authorName = 'Learner',
+  pathTitle = 'Path',
+  dayNumber = 1,
+  proofTitle = "Today's proof",
+  proofSummary = 'Proof summary is shown here.',
+  proofState = 'submitted',
+  tier = 'passed',
+  metadata = [],
+  actions = '',
+} = {}){
+  const safeState = proofState === 'verified' ? 'verified' : 'submitted';
+  return '<article class="proof-first-progress-card lpt-proof-studio-card" data-proof-state="' + esc(safeState) + '">'
+    + '<div class="proof-card-context"><b>' + esc(authorName) + '</b><span>Day ' + esc(dayNumber) + ' - ' + esc(pathTitle) + '</span></div>'
+    + '<h3>' + esc(proofTitle) + '</h3>'
+    + '<p class="proof-card-specimen">' + esc(proofSummary) + '</p>'
+    + '<div class="proof-card-meta"><span>' + esc(safeState === 'verified' ? 'Proof verified' : 'Proof submitted') + '</span><span>' + esc(String(tier || 'passed').replace(/_/g, ' ')) + '</span>'
+    + (metadata || []).map(item => '<span>' + esc(item) + '</span>').join('') + '</div>'
+    + (actions || renderProofActionRow())
+    + '</article>';
+}
+
+export function renderProofMetricCard({ title = '', value = '', body = '', empty = false } = {}){
+  return '<article class="proof-metric-card ' + (empty ? 'is-empty' : 'has-data') + '">'
+    + '<span>' + esc(title) + '</span>'
+    + '<b>' + esc(empty ? 'Not enough data yet' : value) + '</b>'
+    + '<small>' + esc(body || 'Every number here is proof-backed') + '</small>'
+    + '</article>';
+}

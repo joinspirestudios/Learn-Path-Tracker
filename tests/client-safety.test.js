@@ -301,7 +301,7 @@ test('public progress interaction UI escapes comments and uses protected API hel
   const interactionBlock = viewSource.slice(viewSource.indexOf('function publicProgressInteractionsHTML'), viewSource.indexOf('function publicProgressTimelineHTML'));
   assert.match(interactionBlock, /esc\(comment\.body\)/);
   assert.match(interactionBlock, /aria-pressed/);
-  assert.match(interactionBlock, /Sign in to cheer or comment/);
+  assert.match(interactionBlock, /Sign in to respect or comment/);
   assert.match(viewSource, /reactToProgress\(record\.id, entryId/);
   assert.match(viewSource, /commentOnProgress\(record\.id, entryId, body\)/);
   assert.match(viewSource, /hideProgressComment\(record\.id, entryId, commentId\)/);
