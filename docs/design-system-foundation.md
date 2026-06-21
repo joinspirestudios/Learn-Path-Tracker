@@ -44,6 +44,8 @@ Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark edi
 
 Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
 
+Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
+
 ## Color system
 
 ### Dark editorial base
@@ -77,6 +79,7 @@ The default surface is dark — not pitch black, but a deep warm-neutral field t
 - Roadmap is the visible proof journey with completed, active and locked states.
 - Public Progress is proof-first and uses Respect, Comment and Report as visible action labels.
 - Trust metrics must be real-data-only; use "Not enough data yet" instead of fake leaderboards or fake social proof.
+- Cards, Discovery controls and proof journey nodes use token-backed spacing and radius values so long content wraps without overlap.
 
 ### Accessibility notes
 

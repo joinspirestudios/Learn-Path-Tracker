@@ -37,6 +37,12 @@ Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily ac
 
 This direction rejects the supplied HTML sample palette, keeps blue out of primary action/progress roles, keeps gold as the primary progress/action accent, and avoids fake leaderboards, fake social proof, followers, gems, hearts and shop economy. Public progress uses Respect as the visible reaction label while the stored reaction model remains unchanged.
 
+## Phase 6.9.3 UI Polish
+
+Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
+
+The polish pass keeps existing Discovery behavior, public path access, roadmap state logic, and proof-first copy discipline intact while making long titles, creator metadata, tags, completed proof markers, missed or frozen days, and consistency empty states easier to scan.
+
 ## Core UI Helpers
 
 The new pure render helpers live under `src/ui/`:

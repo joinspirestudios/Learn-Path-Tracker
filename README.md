@@ -560,6 +560,8 @@ Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark edi
 
 Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily action center, roadmap as proof journey, public progress as proof-first cards, and trust metrics as real-data-only.
 
+Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
+
 The Proof Studio direction keeps the warm dark production theme, rejects the supplied HTML sample palette, keeps blue out of primary action/progress roles, keeps gold as the primary progress/action accent, and avoids fake leaderboards or fake social proof. Public progress uses Respect, Comment and Report as visible action labels.
 
 ## Deferred work

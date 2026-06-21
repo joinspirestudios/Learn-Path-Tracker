@@ -3612,7 +3612,7 @@ function roadmapHTML(id, def){
       + (canStart ? 'Set today as Day 1 and begin tracking daily progress.' : 'Add or load at least one Day 1 task before starting this path.')
       + '</p></div><button class="btn gold" id="startJourney" ' + (starting || !canStart ? 'disabled' : '') + '>' + (starting ? 'Starting...' : 'Start this path') + '</button></div>';
   }
-  h += '<div class="road-days vertical">';
+  h += '<div class="road-days vertical proof-journey-spine">';
   for(let day = 1; day <= totalDays; day++){
     const status = getDayStatus(day, enrollment, logs, today);
     const open = canOpenDay(day, status);
@@ -3621,7 +3621,7 @@ function roadmapHTML(id, def){
     const log = logs[day] || logs[String(day)] || {};
     const tier = log.completionTier || log.tier || '';
     const proofSubmitted = Number(log.evidenceCount || 0) > 0 || (log.verifiedTaskIds || []).length > 0;
-    h += '<button type="button" class="road-day proof-roadmap-node proof-roadmap-' + status + ' ' + status + (day === activeDay ? ' today' : '') + '" data-roadmap-state="' + esc(status) + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled aria-disabled="true"') + '>'
+    h += '<button type="button" class="road-day proof-roadmap-node proof-journey-node proof-roadmap-' + status + ' ' + status + (day === activeDay ? ' today' : '') + '" data-roadmap-state="' + esc(status) + '" data-road-day="' + day + '" ' + (open ? '' : 'disabled aria-disabled="true"') + '>'
       + '<span>Day ' + day + '</span><small>' + esc(statusLabel(status)) + (date ? ' - ' + esc(date.slice(5)) : '') + '</small>'
       + '<em>' + (tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks') + '</em>'
       + '<strong>' + esc(status === 'active' ? "Open today's session" : statusLabel(status)) + '</strong>'
@@ -4626,11 +4626,15 @@ export function renderToday(){
   h += '<div class="today-actions lpt-primary-action-bar"><button class="btn gold lpt-button lpt-button-primary" id="openWeek">Continue day</button><button class="btn lpt-button lpt-button-secondary" id="openRoadmapFromToday">View roadmap</button></div>';
   h += '</div></div>';
   // right: momentum
-  h += '<aside class="panel card today-side lpt-today-metrics proof-studio-right-rail" aria-label="Real progress summary">';
-  h += '<div class="chip">Your consistency</div>';
-  h += '<div class="stat-big"><div class="sb-num">' + streak + '</div><div class="sb-lab">day streak</div></div>';
-  h += '<div class="stat-row"><span>This week</span><b>' + wpct + '%</b></div><div class="progress-bar"><div style="width:' + wpct + '%"></div></div>';
   const tot = allTotals(), tpct = tot.total ? Math.round(tot.done/tot.total*100) : 0;
+  const completedValues = Math.max(0, Number(tot.done || 0));
+  const hasConsistencyData = Boolean(streak || completedValues);
+  h += '<aside class="panel card today-side lpt-today-metrics proof-studio-right-rail" aria-label="Real progress summary">';
+  h += '<article class="proof-consistency-card ' + (hasConsistencyData ? 'has-data' : 'is-empty') + '">'
+    + '<span>Your consistency</span>'
+    + '<b>' + esc(hasConsistencyData ? (streak + ' day streak') : 'Not enough data yet') + '</b>'
+    + '<p>' + esc(hasConsistencyData ? (completedValues + ' completed progress value' + (completedValues === 1 ? '' : 's') + ' from real local progress.') : 'Complete a few sessions to see your consistency map.') + '</p></article>';
+  h += '<div class="stat-row"><span>This week</span><b>' + wpct + '%</b></div><div class="progress-bar"><div style="width:' + wpct + '%"></div></div>';
   h += '<div class="stat-row" style="margin-top:14px"><span>Path trust</span><b>' + (tot.total ? tpct + '%' : 'Not enough data yet') + '</b></div><div class="progress-bar"><div style="width:' + tpct + '%"></div></div>';
   h += '<div class="muted" style="font-size:12px;margin-top:16px;line-height:1.5">Every number here is proof-backed from your local progress. No rankings or follower counts are estimated.</div>';
   h += '</aside></div>';
