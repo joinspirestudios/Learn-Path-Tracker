@@ -276,9 +276,13 @@ Phase 5.5 does not add voice commands, emotion analysis, evidence analysis, Gemi
 
 ## Guided Daily Session
 
-Opening an active journey day now starts with Today's Agenda instead of the old long-scroll task and proof form. The agenda shows required task count, optional task count, evidence-required count, estimated effort when task durations exist, a concise task preview, and saved progress when the session is being resumed.
+Opening an active journey day now starts with Daily Session Focus Mode instead of the old long-scroll task and proof form. The focused view shows one task at a time, while Overview mode shows required task count, optional task count, evidence-required count, estimated effort when task durations exist, a full task scan and saved progress when the session is being resumed.
 
 If any task requires proof, the next step is an evidence preparation summary. It lists the tasks that need proof and the supported proof style already stored on the task model. Users can start the session without gathering every proof item first.
+
+Phase 6.4 adds Daily Session Focus Mode: a one-task-at-a-time daily practice flow with a visible score, pass threshold, completion tier, proof status, calm feedback after task actions and a completion result state for passed, strong and perfect days. Overview mode remains available for users who want to scan the full day before jumping back into a specific task.
+
+Focus Mode uses the Phase 6.1 scoring engine. It does not weaken proof requirements: evidence-required tasks count only when verified, optional skipped tasks do not add score, and anchor/core tasks can still block completion even when the score is high enough. Complete Day recomputes the score from canonical tasks, day logs and evidence before saving completion metadata.
 
 The active session shows one task at a time with progress, title, description, criteria, estimate when available, required/optional status, resource link, evidence state, and focused actions. Required tasks without evidence can be marked done or left as `Not done yet`. Required tasks with evidence must use the existing evidence submission system before they become complete. Optional tasks can be marked done, skipped, or left for later.
 
@@ -293,6 +297,8 @@ Required progress is calculated as resolved required tasks divided by total requ
 Day completion still uses the existing journey completion flow for status, streak, missed-day recovery, freeze handling, and next-day availability. The guided session only prepares the day log for that canonical completion write.
 
 Completed days open as a concise summary with required task count, optional completion/skips, evidence count, and existing evidence history. Phase 5.3 does not analyse evidence or adapt future roadmap days. It creates the structured daily-session and evidence foundation for later adaptive-planning phases.
+
+Native mobile app packaging, push notifications, adaptive replanning, Gemini evidence intelligence, full UI redesign, leaderboards and any hearts/gems/shop-style game economy remain deferred.
 
 ## Responsive behavior
 

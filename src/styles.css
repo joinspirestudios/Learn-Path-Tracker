@@ -374,7 +374,18 @@
 .evidence-note{color:var(--gold-soft)!important}
 .daily-session{display:block;margin-top:10px}
 .daily-session-save{min-height:18px;margin-bottom:8px;color:var(--sand-dim);font-size:12px;text-align:right}
+.daily-focus-shell{display:grid;gap:12px}
+.daily-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+.daily-focus-head h3{font-family:'Fraunces',serif;color:var(--cream);font-size:22px;line-height:1.15;margin:8px 0 0}
+.daily-mode-switch{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.daily-mode-switch .btn{min-height:40px}
+.focus-scoreboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px}
+.focus-scoreboard div{border:1px solid var(--line2);border-radius:10px;background:rgba(10,15,14,.3);padding:10px 12px}
+.focus-scoreboard span{display:block;color:var(--sand-dim);font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:800}
+.focus-scoreboard b{display:block;color:var(--cream);font-size:18px;margin-top:3px;text-transform:capitalize}
+.daily-feedback{border:1px solid rgba(201,162,75,.28);border-radius:10px;background:rgba(201,162,75,.08);color:var(--gold-soft);font-size:13px;font-weight:700;line-height:1.45;padding:10px 12px}
 .daily-session-panel{border:1px solid var(--line2);border-radius:8px;background:linear-gradient(180deg,rgba(239,231,216,.045),var(--ink2));padding:16px}
+.daily-result-panel{border-color:rgba(201,162,75,.34);background:linear-gradient(180deg,rgba(201,162,75,.09),var(--ink2))}
 .daily-session-panel h3{font-family:'Fraunces',serif;font-size:22px;line-height:1.15;color:var(--cream);margin:8px 0}
 .daily-session-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:9px;margin:12px 0}
 .daily-session-stats div{border:1px solid var(--line2);border-radius:8px;background:rgba(10,15,14,.28);padding:9px 10px}
@@ -389,6 +400,7 @@
 .daily-agenda-list li,.daily-session-list li{margin:4px 0;font-size:13px}
 .daily-session-list li span{display:block;color:var(--sand-dim);font-size:12px}
 .daily-session-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px}
+.daily-focus-nav{justify-content:space-between}
 .daily-session-topline{display:flex;justify-content:space-between;gap:12px;color:var(--sand-dim);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
 .daily-task-copy{color:var(--sand);font-size:14px;line-height:1.5;margin:8px 0 12px}
 .daily-task-meta{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
@@ -401,7 +413,9 @@
 .proof-pill.pending{border-color:rgba(179,41,60,.45);color:#e8b9bf}
 .proof-pill.required{border-color:rgba(239,231,216,.22);color:var(--sand)}
 .history-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
-.history-task{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line2);padding:8px 0}
+.history-task{display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-bottom:1px solid var(--line2);padding:8px 0;background:transparent;color:inherit;font-family:inherit;text-align:left;width:100%}
+.history-task.daily-session-action{cursor:pointer}
+.history-task.daily-session-action:hover b{text-decoration:underline}
 .history-task b{font-size:13.5px;color:var(--cream)}
 .history-task span{font-size:12px;color:var(--sand-dim)}
 .history-task.done span{color:var(--green)}
@@ -763,6 +777,10 @@
   .daily-session-panel h3{font-size:20px}
   .daily-session-actions{align-items:stretch}
   .daily-session-actions .btn{flex:1 1 150px;justify-content:center;min-height:44px}
+  .daily-focus-head{align-items:stretch;flex-direction:column}
+  .daily-mode-switch .btn{flex:1 1 120px;justify-content:center}
+  .focus-scoreboard{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .daily-focus-nav{justify-content:stretch}
   .sticky-actions{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(22,28,26,.86),var(--ink));border-top:1px solid var(--line2);padding:10px 0 0;z-index:3}
   .schedule-edit{grid-template-columns:1fr}
   .row-edit,.row-edit.res,.ai-edit-row{grid-template-columns:1fr!important}

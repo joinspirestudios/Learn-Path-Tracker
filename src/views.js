@@ -64,7 +64,7 @@ import {
 } from './journey.js';
 import {
   canCompleteDailySession, completionScoreMetadata, dailyCompletionScore,
-  isOptionalTask, nextUnresolvedTaskId, resumeTaskId,
+  focusFeedbackForAction, isOptionalTask, nextUnresolvedTaskId, normalizeDailyFocusState, resumeTaskId,
   sessionTaskStates, taskNeedsEvidence,
 } from './daily-session-model.js';
 import { dailySessionHTML } from './views/daily-session.js';
@@ -3366,6 +3366,20 @@ function dailySessionNextPhase(dayTasks, nextTaskId, log, evidenceSubmissions, i
   return canCompleteDailySession(dayTasks, log, evidenceSubmissions, { intensity }) ? 'completion-check' : 'partial-summary';
 }
 
+function normalizeDailyFocusFor(id, day, dayTasks, log, evidence, patch = {}){
+  store.dailyFocus = normalizeDailyFocusState({
+    ...(store.dailyFocus || {}),
+    ...patch,
+  }, {
+    pathId:id,
+    dayNumber:day,
+    tasks:dayTasks,
+    dayLog:log,
+    evidenceSubmissions:evidence,
+  });
+  return store.dailyFocus;
+}
+
 async function saveDailySessionLog(enrollment, day, dayTasks, patch){
   const existing = dayLogFor(enrollment, day);
   dailySessionSaveState = 'saving';
@@ -3405,6 +3419,36 @@ async function setDailySessionView(id, def, phase, taskId = null){
   const dayTasks = getTasksForDay(def, day);
   const existing = dayLogFor(enrollment, day);
   const evidence = cachedEvidenceFor(enrollment.id, day);
+  if(phase === 'focus' || phase === 'overview'){
+    normalizeDailyFocusFor(id, day, dayTasks, existing, evidence, {
+      mode:phase === 'overview' ? 'overview' : 'focus',
+      feedback:null,
+      lastActionAt:Date.now(),
+    });
+    renderPlan();
+    return;
+  }
+  if(phase === 'focus-task'){
+    normalizeDailyFocusFor(id, day, dayTasks, existing, evidence, {
+      mode:'focus',
+      taskIndex:Number(taskId || 0),
+      feedback:null,
+      lastActionAt:Date.now(),
+    });
+    renderPlan();
+    return;
+  }
+  if(phase === 'focus-prev' || phase === 'focus-next'){
+    const current = normalizeDailyFocusFor(id, day, dayTasks, existing, evidence);
+    normalizeDailyFocusFor(id, day, dayTasks, existing, evidence, {
+      mode:'focus',
+      taskIndex:Number(current.taskIndex || 0) + (phase === 'focus-next' ? 1 : -1),
+      feedback:null,
+      lastActionAt:Date.now(),
+    });
+    renderPlan();
+    return;
+  }
   let nextTaskId = taskId || existing?.lastActiveTaskId || resumeTaskId(dayTasks, existing, evidence);
   if(phase === 'start-session' || phase === 'task'){
     nextTaskId = resumeTaskId(dayTasks, existing, evidence);
@@ -3418,6 +3462,13 @@ async function setDailySessionView(id, def, phase, taskId = null){
     nextTaskId = resumeTaskId(dayTasks, existing, evidence);
     phase = nextTaskId ? 'task' : 'completion-check';
   }
+  const nextIndex = nextTaskId ? sessionTaskStates(dayTasks, existing, evidence).findIndex(item => item.id === nextTaskId) : Number(store.dailyFocus?.taskIndex || 0);
+  normalizeDailyFocusFor(id, day, dayTasks, existing, evidence, {
+    mode:'focus',
+    taskIndex:nextIndex >= 0 ? nextIndex : Number(store.dailyFocus?.taskIndex || 0),
+    feedback:phase === 'task-evidence' ? 'This task needs proof before it can count.' : null,
+    lastActionAt:Date.now(),
+  });
   evidenceFormTaskId = phase === 'task-evidence' ? nextTaskId : null;
   await saveDailySessionLog(enrollment, day, dayTasks, {
     sessionStartedAt: existing?.sessionStartedAt || (phase === 'agenda' ? null : new Date()),
@@ -3471,6 +3522,9 @@ async function markDailySessionTask(id, def, taskId, mode){
     ? nextUnresolvedTaskId(dayTasks, baseLog, evidence, taskId)
     : resumeTaskId(dayTasks, { ...baseLog, lastActiveTaskId:null }, evidence);
   const phase = dailySessionNextPhase(dayTasks, nextTaskId, baseLog, evidence, def.intensity);
+  const nextIndex = nextTaskId
+    ? sessionTaskStates(dayTasks, baseLog, evidence).findIndex(candidate => candidate.id === nextTaskId)
+    : Number(store.dailyFocus?.taskIndex || 0);
   await saveDailySessionLog(enrollment, day, dayTasks, {
     ...baseLog,
     sessionStartedAt: existing?.sessionStartedAt || new Date(),
@@ -3478,6 +3532,12 @@ async function markDailySessionTask(id, def, taskId, mode){
     lastActiveTaskId: nextTaskId,
   });
   if(token !== dailySessionActionToken) return;
+  normalizeDailyFocusFor(id, day, dayTasks, baseLog, evidence, {
+    mode:'focus',
+    taskIndex:nextIndex >= 0 ? nextIndex : Number(store.dailyFocus?.taskIndex || 0),
+    feedback:focusFeedbackForAction(mode, dailyCompletionScore(dayTasks, baseLog, evidence, { intensity:def.intensity || def.aiBrief?.intensity }), item),
+    lastActionAt:Date.now(),
+  });
   evidenceFormTaskId = null;
 }
 
@@ -3554,6 +3614,8 @@ function journeyDetailHTML(id, def){
   const date = dateForJourneyDay(enrollment.startDate, day);
   const log = dayLogFor(enrollment, day) || makeDayLog(day, { date, status, totalTaskCount: getTasksForDay(def, day).length });
   const dayTasks = getTasksForDay(def, day);
+  const dayEvidence = cachedEvidenceFor(enrollment.id, day);
+  const focusState = normalizeDailyFocusFor(id, day, dayTasks, log, dayEvidence);
   const completed = new Set(log.completedTaskIds || []);
   const verified = new Set(log.verifiedTaskIds || []);
   const completeCount = dayTasks.filter(task => taskIsDone(task, log)).length;
@@ -3564,6 +3626,20 @@ function journeyDetailHTML(id, def){
   if(status === 'locked'){
     h += '<p class="muted">This day unlocks later.</p>';
   } else if(status === 'completed' || status === 'frozen' || status === 'missed'){
+    if(status === 'completed'){
+      h += dailySessionHTML({
+        pathId:id,
+        dayNumber:day,
+        date,
+        tasks:dayTasks,
+        dayLog:log,
+        evidenceSubmissions:dayEvidence,
+        saveState:dailySessionSaveState,
+        error:dailySessionError,
+        intensity:def.intensity || def.aiBrief?.intensity || 'balanced',
+        focusState,
+      });
+    }
     h += '<div class="history-list">';
     if(dayTasks.length){
       dayTasks.forEach(task => {
@@ -3613,6 +3689,7 @@ function journeyDetailHTML(id, def){
       saveState:dailySessionSaveState,
       error:dailySessionError,
       intensity:def.intensity || def.aiBrief?.intensity || 'balanced',
+      focusState,
     });
     if(status === 'active' && !canCompleteDay(day, enrollment, today)) h += '<div class="hint">This day is not eligible for completion today.</div>';
   }
@@ -3732,6 +3809,9 @@ async function submitEvidenceForTask(id, def, taskId){
     const evidence = cachedEvidenceFor(enrollment.id, day);
     const nextTaskId = resumeTaskId(dayTasks, { ...nextBase, lastActiveTaskId:null }, evidence);
     const phase = dailySessionNextPhase(dayTasks, nextTaskId, nextBase, evidence, def.intensity);
+    const nextIndex = nextTaskId
+      ? sessionTaskStates(dayTasks, nextBase, evidence).findIndex(candidate => candidate.id === nextTaskId)
+      : Number(store.dailyFocus?.taskIndex || 0);
     await dbSaveDayLog(enrollment.id, makeDayLog(day, {
       ...nextBase,
       dayNumber: day,
@@ -3744,6 +3824,12 @@ async function submitEvidenceForTask(id, def, taskId){
       lastActiveTaskId: nextTaskId,
       sessionViewState: phase,
     }));
+    normalizeDailyFocusFor(id, day, dayTasks, nextBase, evidence, {
+      mode:'focus',
+      taskIndex:nextIndex >= 0 ? nextIndex : Number(store.dailyFocus?.taskIndex || 0),
+      feedback:focusFeedbackForAction('proof-saved', dailyCompletionScore(dayTasks, nextBase, evidence, { intensity:def.intensity || def.aiBrief?.intensity }), { task, state:{ needsEvidence:true, completed:true } }),
+      lastActionAt:Date.now(),
+    });
     evidenceFormTaskId = null;
     evidenceProofType = 'url';
     flash('Proof submitted');
@@ -4046,6 +4132,11 @@ function wireJourneyControls(id, def){
         if(action === 'agenda') await setDailySessionView(id, def, 'agenda');
         else if(action === 'evidence-preparation') await setDailySessionView(id, def, 'evidence-preparation');
         else if(action === 'start-session') await setDailySessionView(id, def, 'start-session');
+        else if(action === 'focus-mode') await setDailySessionView(id, def, 'focus');
+        else if(action === 'overview-mode') await setDailySessionView(id, def, 'overview');
+        else if(action === 'focus-prev') await setDailySessionView(id, def, 'focus-prev');
+        else if(action === 'focus-next') await setDailySessionView(id, def, 'focus-next');
+        else if(action === 'focus-task') await setDailySessionView(id, def, 'focus-task', btn.dataset.taskIndex);
         else if(action === 'task-evidence') await setDailySessionView(id, def, 'task-evidence', taskId);
         else if(action === 'review') await setDailySessionView(id, def, 'partial-summary');
         else if(action === 'finish-pending') await setDailySessionView(id, def, 'finish-pending');

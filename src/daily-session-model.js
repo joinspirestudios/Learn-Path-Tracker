@@ -92,16 +92,18 @@ export function taskState(task, dayLog = {}, evidenceSubmissions = [], index = 0
   const completed = taskIsCompleted(task, dayLog, evidenceSubmissions, index);
   const skipped = taskIsOptionalSkipped(task, dayLog, index);
   const pending = taskIsPending(task, dayLog, index);
+  const evidenceCount = taskEvidenceSubmissions(evidenceSubmissions, id).length;
   return {
     id,
     required:isRequiredTask(task),
     optional:isOptionalTask(task),
     needsEvidence:taskNeedsEvidence(task),
+    anchor:isAnchorTask(task),
     completed,
     skipped,
     pending,
     resolved:completed || skipped,
-    evidenceCount:taskEvidenceSubmissions(evidenceSubmissions, id).length,
+    evidenceCount,
   };
 }
 
@@ -323,6 +325,83 @@ export function completionTierCopy(score = {}){
   if(tier === 'attempted') return 'You showed up today. This is recorded, but you need a little more progress to complete the day.';
   if(tier === 'in_progress') return 'Good start. Keep going until the day has enough meaningful work.';
   return 'Ready when you are.';
+}
+
+export function focusModeDefaults(overrides = {}){
+  return {
+    pathId:'',
+    dayNumber:null,
+    taskIndex:0,
+    mode:'focus',
+    feedback:null,
+    lastActionAt:0,
+    ...overrides,
+  };
+}
+
+export function recommendedFocusTaskIndex(tasks = [], dayLog = {}, evidenceSubmissions = []){
+  const states = sessionTaskStates(tasks, dayLog, evidenceSubmissions);
+  if(!states.length) return 0;
+  const priorities = [
+    item => item.state.anchor && !item.state.resolved,
+    item => item.state.required && !item.state.resolved,
+    item => item.state.needsEvidence && !item.state.completed,
+    item => item.state.optional && !item.state.resolved,
+  ];
+  for(const predicate of priorities){
+    const index = states.findIndex(predicate);
+    if(index >= 0) return index;
+  }
+  return states.length;
+}
+
+export function normalizeDailyFocusState(value = {}, context = {}){
+  const taskCount = sessionTaskStates(context.tasks || [], context.dayLog || {}, context.evidenceSubmissions || []).length;
+  const sameTarget = value?.pathId === context.pathId && Number(value?.dayNumber) === Number(context.dayNumber);
+  const recommended = recommendedFocusTaskIndex(context.tasks || [], context.dayLog || {}, context.evidenceSubmissions || []);
+  const rawIndex = sameTarget ? Number(value?.taskIndex) : recommended;
+  const maxIndex = Math.max(0, taskCount);
+  const taskIndex = Number.isFinite(rawIndex)
+    ? Math.min(maxIndex, Math.max(0, Math.floor(rawIndex)))
+    : recommended;
+  return focusModeDefaults({
+    pathId:String(context.pathId || value?.pathId || ''),
+    dayNumber:context.dayNumber == null ? (value?.dayNumber ?? null) : Number(context.dayNumber),
+    taskIndex,
+    mode:value?.mode === 'overview' ? 'overview' : 'focus',
+    feedback:typeof value?.feedback === 'string' ? value.feedback.slice(0, 240) : null,
+    lastActionAt:Number.isFinite(Number(value?.lastActionAt)) ? Number(value.lastActionAt) : 0,
+  });
+}
+
+export function currentFocusTask(tasks = [], dayLog = {}, evidenceSubmissions = [], focusState = {}){
+  const states = sessionTaskStates(tasks, dayLog, evidenceSubmissions);
+  if(!states.length) return null;
+  const index = Math.min(states.length - 1, Math.max(0, Math.floor(Number(focusState?.taskIndex || 0))));
+  return { ...states[index], focusIndex:index, total:states.length };
+}
+
+export function taskFocusStatus(item = {}, score = {}){
+  const state = item.state || {};
+  if(state.skipped) return 'skipped optional';
+  if(state.completed && state.needsEvidence) return 'proof saved';
+  if(state.completed) return 'completed';
+  if(state.needsEvidence) return state.evidenceCount ? 'proof needed' : 'proof needed';
+  if(state.pending) return 'in progress';
+  if(state.anchor && score.tier === 'blocked_anchor') return 'blocked';
+  return 'not started';
+}
+
+export function focusFeedbackForAction(action, score = {}, item = {}){
+  if(score.tier === 'blocked_anchor') return 'Your score is high enough, but a core task is still unfinished.';
+  if(action === 'proof-needed') return 'This task needs proof before it can count.';
+  if(action === 'proof-saved') return 'Proof saved. This task now counts.';
+  if(action === 'skip-optional') return 'Optional task skipped. It will not add to your score.';
+  if(action === 'not-done') return 'Saved for later. This task is still waiting for meaningful work.';
+  if(score.canComplete) return 'You have done enough meaningful work to complete today.';
+  if(action === 'done') return 'Task counted toward today\'s score.';
+  if(item?.state?.needsEvidence && !item?.state?.completed) return 'This task needs proof before it can count.';
+  return encouragementForProgress(score.score);
 }
 
 export function saveStateLabel(saveState){

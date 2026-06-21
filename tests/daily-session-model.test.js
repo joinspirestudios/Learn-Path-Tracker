@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import {
   agendaSummary, canCompleteDailySession, deriveDailySessionState,
   completionScoreMetadata, completionTierCopy, dailyCompletionScore,
-  encouragementForProgress, evidenceSummary, nextUnresolvedTaskId,
-  orderedSessionTasks, pendingTaskIds, resumeTaskId, sessionProgress,
+  currentFocusTask, encouragementForProgress, evidenceSummary, focusFeedbackForAction,
+  nextUnresolvedTaskId, normalizeDailyFocusState, orderedSessionTasks,
+  pendingTaskIds, recommendedFocusTaskIndex, resumeTaskId, sessionProgress,
   sessionTaskStates, taskEvidenceLabel,
 } from '../src/daily-session-model.js';
 import { dailySessionHTML } from '../src/views/daily-session.js';
@@ -167,9 +168,10 @@ test('daily session UI shows score, thresholds, tier copy and completion button 
     intensity:'balanced',
     dayLog:{ dayNumber:1, sessionViewState:'completion-check', completedTaskIds:['read'], verifiedTaskIds:['proof'] },
   });
-  assert.match(passHtml, /Score/);
-  assert.match(passHtml, /Pass score/);
-  assert.match(passHtml, /Day passed/);
+  assert.match(passHtml, /Focus mode/);
+  assert.match(passHtml, /Today&apos;s score/);
+  assert.match(passHtml, /Pass mark/);
+  assert.match(passHtml, /Day status/);
   assert.match(passHtml, /Complete Day - 67%/);
   assert.doesNotMatch(passHtml, /Everything required is documented/);
 
@@ -188,8 +190,148 @@ test('daily session UI shows score, thresholds, tier copy and completion button 
     intensity:'balanced',
     dayLog:{ dayNumber:1, sessionViewState:'completion-check', completedTaskIds:['b', 'c'] },
   });
-  assert.match(blockedHtml, /One core task is still unfinished/);
+  assert.match(blockedHtml, /core task is still unfinished/);
   assert.match(blockedHtml, /Complete core task first/);
+});
+
+test('focus mode state defaults safely and normalizes invalid task indexes', () => {
+  const focus = normalizeDailyFocusState({
+    pathId:'old',
+    dayNumber:9,
+    taskIndex:99,
+    mode:'not-real',
+    feedback:'x'.repeat(300),
+  }, {
+    pathId:'p1',
+    dayNumber:1,
+    tasks,
+    dayLog:{ completedTaskIds:['read'], verifiedTaskIds:['proof'] },
+    evidenceSubmissions:[],
+  });
+  assert.equal(focus.pathId, 'p1');
+  assert.equal(focus.dayNumber, 1);
+  assert.equal(focus.mode, 'focus');
+  assert.equal(focus.taskIndex, 2);
+  assert.equal(focus.feedback.length, 240);
+
+  const clamped = normalizeDailyFocusState({ pathId:'p1', dayNumber:1, taskIndex:999, mode:'overview' }, {
+    pathId:'p1',
+    dayNumber:1,
+    tasks,
+    dayLog:{},
+    evidenceSubmissions:[],
+  });
+  assert.equal(clamped.taskIndex, tasks.length);
+  assert.equal(clamped.mode, 'overview');
+});
+
+test('focus task selection prioritizes unfinished core, required, evidence, then optional work', () => {
+  const focusTasks = [
+    { id:'optional', title:'Optional', required:false, order:0 },
+    { id:'core', title:'Core', required:true, anchor:true, order:1 },
+    { id:'required', title:'Required', required:true, order:2 },
+    { id:'proof', title:'Proof', required:false, evidenceRequired:true, order:3 },
+  ];
+  assert.equal(recommendedFocusTaskIndex(focusTasks, {}), 0);
+  assert.equal(currentFocusTask(focusTasks, {}, [], normalizeDailyFocusState({}, {
+    pathId:'p1', dayNumber:1, tasks:focusTasks, dayLog:{}, evidenceSubmissions:[],
+  })).id, 'core');
+
+  const coreDone = { completedTaskIds:['core'] };
+  assert.equal(currentFocusTask(focusTasks, coreDone, [], normalizeDailyFocusState({}, {
+    pathId:'p1', dayNumber:1, tasks:focusTasks, dayLog:coreDone, evidenceSubmissions:[],
+  })).id, 'required');
+
+  const requiredDone = { completedTaskIds:['core', 'required'] };
+  assert.equal(currentFocusTask(focusTasks, requiredDone, [], normalizeDailyFocusState({}, {
+    pathId:'p1', dayNumber:1, tasks:focusTasks, dayLog:requiredDone, evidenceSubmissions:[],
+  })).id, 'proof');
+
+  const allDone = { completedTaskIds:['core', 'required', 'optional'], verifiedTaskIds:['proof'] };
+  assert.equal(recommendedFocusTaskIndex(focusTasks, allDone, [{ taskId:'proof' }]), focusTasks.length);
+});
+
+test('focus mode renders one task, badges, navigation, feedback and overview switch', () => {
+  const html = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks:[{ id:'core', title:'Core task', required:true, anchor:true, evidenceRequired:true }],
+    dayLog:{ dayNumber:1 },
+    focusState:{ pathId:'p1', dayNumber:1, taskIndex:0, mode:'focus', feedback:'Task counted toward today\'s score.' },
+  });
+  assert.match(html, /Guided proof-of-growth session/);
+  assert.match(html, /Task 1 of 1/);
+  assert.match(html, /Core task/);
+  assert.match(html, /Proof required/);
+  assert.match(html, /Add proof/);
+  assert.match(html, /Overview/);
+  assert.match(html, /Task counted toward today&#39;s score/);
+  assert.doesNotMatch(html.match(/daily-task-card[\s\S]*?<\/section>/)?.[0] || '', /Review notes/);
+});
+
+test('overview mode still renders the task list and can jump back to focus', () => {
+  const html = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks,
+    dayLog:{ dayNumber:1 },
+    focusState:{ pathId:'p1', dayNumber:1, taskIndex:0, mode:'overview' },
+  });
+  assert.match(html, /Overview mode/);
+  assert.match(html, /Full day scan/);
+  assert.match(html, /data-session-action="focus-task"/);
+  assert.match(html, /Read 10 pages/);
+  assert.match(html, /Upload workout proof/);
+});
+
+test('focus feedback copy covers proof, optional, threshold and anchor states', () => {
+  assert.match(focusFeedbackForAction('done', dailyCompletionScore(tasks, {}, [])), /Task counted/);
+  assert.match(focusFeedbackForAction('proof-needed', dailyCompletionScore(tasks, {}, [])), /needs proof/);
+  assert.match(focusFeedbackForAction('proof-saved', dailyCompletionScore(tasks, { completedTaskIds:['read'], verifiedTaskIds:['proof'] }, [])), /Proof saved/);
+  assert.match(focusFeedbackForAction('skip-optional', dailyCompletionScore(tasks, {}, [])), /will not add/);
+  assert.match(focusFeedbackForAction('done', dailyCompletionScore(tasks, { completedTaskIds:['read'], verifiedTaskIds:['proof'] }, [])), /done enough/);
+  const blocked = dailyCompletionScore([{ id:'a', anchor:true }, { id:'b' }, { id:'c' }], { completedTaskIds:['b', 'c'] }, []);
+  assert.match(focusFeedbackForAction('done', blocked), /core task/);
+});
+
+test('completion result screen distinguishes passed, strong, perfect, and incomplete attempts', () => {
+  const passed = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks,
+    dayLog:{ dayNumber:1, status:'completed', completedTaskIds:['read'], verifiedTaskIds:['proof'] },
+  });
+  assert.match(passed, /Result/);
+  assert.match(passed, /Day passed/);
+  assert.match(passed, /67%/);
+  assert.match(passed, /65%/);
+  assert.doesNotMatch(passed, /https:\/\/private/);
+
+  const strong = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks:[{ id:'a' }, { id:'b' }, { id:'c' }, { id:'d' }, { id:'e' }],
+    intensity:'soft',
+    dayLog:{ dayNumber:1, status:'completed', completedTaskIds:['a', 'b', 'c', 'd'] },
+  });
+  assert.match(strong, /Strong day/);
+
+  const perfect = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks:[{ id:'a' }, { id:'b' }],
+    dayLog:{ dayNumber:1, status:'completed', completedTaskIds:['a', 'b'] },
+  });
+  assert.match(perfect, /Perfect day/);
+
+  const low = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks,
+    dayLog:{ dayNumber:1, completedTaskIds:['read'] },
+  });
+  assert.doesNotMatch(low, /Result/);
+  assert.doesNotMatch(low, /id="completeDay"/);
 });
 
 test('completed legacy day derives complete phase instead of restarting the session', () => {

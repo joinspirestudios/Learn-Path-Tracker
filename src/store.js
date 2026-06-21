@@ -106,6 +106,7 @@ export const store = {
   catalogue:       [],     // every render entry, each carries .skill
   platformPaths:   {},     // cloud platform paths, normalized into userPaths for rendering
   publicProgress:  {},     // sanitized public timeline entries keyed by path id
+  dailyFocus:      { pathId:'', dayNumber:null, taskIndex:0, mode:'focus', feedback:null, lastActionAt:0 },
   discovery:       { query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' },
   discoveryPage:   { ...DEFAULT_DISCOVERY_PAGE, loadedPublicIds:[] },
   enrollments:     {},     // current user's per-path enrollment progress
