@@ -511,6 +511,10 @@ Phase 6.5 defines the mobile-native direction using a one-brain/two-skins archit
 
 No mobile app was built in this phase. See [`docs/mobile-core-loop-and-architecture.md`](docs/mobile-core-loop-and-architecture.md) for the full mobile architecture, screen map, API contract map, auth strategy, offline strategy and push notification plan.
 
+## Behavioral UX and retention strategy (Phase 6.6)
+
+Phase 6.6 defines the behavioral UX, retention model, analytics event taxonomy, motion/interaction direction and redesign specification. No analytics SDK was added. No redesign was implemented. No mobile app was built. See [`docs/behavioral-ux-retention-redesign-spec.md`](docs/behavioral-ux-retention-redesign-spec.md) for the full specification.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.
