@@ -31,7 +31,7 @@ The goal is not to look like Duolingo. The goal is to match the intentionality a
 
 ## Token philosophy
 
-Tokens are semantic, not decorative. A color is not `blue-500`; it is `accent.progress`. A spacing value is not `16`; it is `spacing.xl`. This means:
+Tokens are semantic, not decorative. A color is not a raw palette swatch; it is `accent.progress`. A spacing value is not `16`; it is `spacing.xl`. This means:
 
 - Tokens describe purpose, not appearance
 - Swapping a token value updates the entire product
@@ -40,11 +40,13 @@ Tokens are semantic, not decorative. A color is not `blue-500`; it is `accent.pr
 
 All tokens live in [`src/design-tokens.js`](../src/design-tokens.js) as a pure data module with no DOM, Firebase or runtime dependencies. Phase 6.9 adds [`src/design-token-css.js`](../src/design-token-css.js) and `scripts/generate-design-token-css.mjs` to generate token-backed CSS custom properties for the web rollout.
 
+Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again.
+
 ## Color system
 
 ### Dark editorial base
 
-The default surface is dark — not pitch black, but a deep warm-neutral gray that feels editorial and premium. Text is high-contrast off-white. Accents are deliberate and sparse.
+The default surface is dark — not pitch black, but a deep warm-neutral field that feels editorial and premium. Text is high-contrast cream with a warm sand hierarchy. Gold is the primary progress/action accent; proof and success use green, danger uses oxblood/red, and trust stays restrained.
 
 ### Semantic color groups
 
@@ -67,10 +69,10 @@ The default surface is dark — not pitch black, but a deep warm-neutral gray th
 
 ### Accessibility notes
 
-- `text.primary` on `surface.canvas`: 13.6:1 (exceeds AAA)
-- `text.secondary` on `surface.canvas`: 6.2:1 (exceeds AA)
-- `text.muted` on `surface.canvas`: 4.0:1 (meets AA for large text)
-- All accent colors target 4.5:1 minimum on canvas
+- `text.primary` on `surface.canvas`: above 18:1
+- `text.secondary` on `surface.canvas`: above 11:1
+- `text.muted` on `surface.canvas`: above 7:1
+- Primary progress/action gold remains readable on the warm canvas and supports inverse button text
 - Color is never the only means of conveying information
 
 ## Typography system

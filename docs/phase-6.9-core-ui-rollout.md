@@ -25,6 +25,12 @@ The redesign does not turn the daily loop into a dashboard. One task, one action
 
 `scripts/generate-design-token-css.mjs` writes the deterministic output to `src/generated/design-tokens.css`. `src/styles.css` imports that generated file first, then maps legacy aliases such as `--ink`, `--panel`, `--cream`, `--sand` and `--gold` to token variables so unreworked screens continue to render during the rollout.
 
+## Phase 6.9.1 Contrast Hotfix
+
+Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again.
+
+The token generator remains the source of truth. The hotfix updates `src/design-tokens.js`, regenerates `src/generated/design-tokens.css`, strengthens the legacy aliases in `src/styles.css`, and adds pure contrast tests without changing app behavior.
+
 ## Core UI Helpers
 
 The new pure render helpers live under `src/ui/`:
