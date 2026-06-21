@@ -8,6 +8,8 @@ import commentProgressHandler from '../api/comment-progress.js';
 import hideProgressCommentHandler from '../api/hide-progress-comment.js';
 import publishProgressHandler from '../api/publish-progress.js';
 import reactProgressHandler from '../api/react-progress.js';
+import reportPathHandler from '../api/report-path.js';
+import reportProgressCommentHandler from '../api/report-progress-comment.js';
 import syncPathMetricsHandler from '../api/sync-path-metrics.js';
 import transcribeVoiceHandler from '../api/transcribe-voice.js';
 import unpublishProgressHandler from '../api/unpublish-progress.js';
@@ -44,6 +46,8 @@ test('protected API modules import and reject unauthenticated requests with stru
     ['react-progress', reactProgressHandler, unauthenticatedRequest()],
     ['comment-progress', commentProgressHandler, unauthenticatedRequest()],
     ['hide-progress-comment', hideProgressCommentHandler, unauthenticatedRequest()],
+    ['report-path', reportPathHandler, unauthenticatedRequest()],
+    ['report-progress-comment', reportProgressCommentHandler, unauthenticatedRequest()],
     ['sync-path-metrics', syncPathMetricsHandler, unauthenticatedRequest()],
     ['transcribe-voice', transcribeVoiceHandler, unauthenticatedRequest('audio/webm')],
   ];

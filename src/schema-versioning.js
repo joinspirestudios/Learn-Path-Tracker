@@ -10,6 +10,7 @@ export const CURRENT_SCHEMA_VERSIONS = {
   publicProgressComment: 1,
   publicProgressReaction: 1,
   discoveryPagination: 1,
+  moderationReport: 1,
   rateLimit: 1,
 };
 

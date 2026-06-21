@@ -265,7 +265,11 @@ test('discover UI uses public metadata controls and preview-first cards', () => 
   const loadBlock = dbSource.slice(dbSource.indexOf('async function loadPlatformRecordFromDoc'), dbSource.indexOf('export async function dbLoadPlatformPath'));
   const discoveryQueryBlock = dbSource.slice(dbSource.indexOf('function discoveryQuery'), dbSource.indexOf('async function loadPublicDiscoveryPage'));
   const platformSummariesBlock = dbSource.slice(dbSource.indexOf('async function loadPublicDiscoveryPage'), dbSource.indexOf('export async function dbSavePlatformPath'));
-  assert.match(controlsSource, /Search paths by goal, topic, creator or category/);
+  assert.match(controlsSource, /discovery-toolbar/);
+  assert.match(controlsSource, /discovery-search-shell/);
+  assert.match(controlsSource, /Search by goal, creator or category/);
+  assert.match(controlsSource, /discovery-filter-chips/);
+  assert.doesNotMatch(controlsSource, /discovery-filter-row/);
   assert.match(controlsSource, /data-discovery-field="category"/);
   assert.match(controlsSource, /data-discovery-field="duration"/);
   assert.match(controlsSource, /data-discovery-field="intensity"/);
@@ -301,9 +305,14 @@ test('public progress interaction UI escapes comments and uses protected API hel
   assert.match(viewSource, /reactToProgress\(record\.id, entryId/);
   assert.match(viewSource, /commentOnProgress\(record\.id, entryId, body\)/);
   assert.match(viewSource, /hideProgressComment\(record\.id, entryId, commentId\)/);
+  assert.match(viewSource, /reportProgressComment\(record\.id, entryId, commentId, reason, note\)/);
+  assert.match(interactionBlock, /progress-comment-report/);
+  assert.match(interactionBlock, /aria-label="Report comment by/);
   assert.match(apiSource, /interactionRequest\('\/api\/react-progress'/);
   assert.match(apiSource, /interactionRequest\('\/api\/comment-progress'/);
   assert.match(apiSource, /interactionRequest\('\/api\/hide-progress-comment'/);
+  assert.match(apiSource, /reportRequest\('\/api\/report-progress-comment'/);
+  assert.match(apiSource, /reportRequest\('\/api\/report-path'/);
 });
 
 test('client metrics sync uses protected API and isolates optional failures', () => {

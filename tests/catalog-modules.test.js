@@ -111,11 +111,19 @@ test('public discovery excludes private and unlisted paths while controls render
   assert.deepEqual(publicDiscoveryPaths(store).map(item => item.id), ['public']);
   const controls = discoveryControlsHTML(publicDiscoveryPaths(store), { query:'draw', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' });
   assert.match(controls, /id="discoveryQuery"/);
+  assert.match(controls, /discovery-toolbar/);
+  assert.match(controls, /discovery-search-shell/);
+  assert.match(controls, /discovery-filter-chips/);
+  assert.match(controls, /aria-label="Search public paths"/);
+  assert.match(controls, /aria-label="Sort public paths"/);
+  assert.match(controls, /id="clearDiscoveryFilters"/);
   assert.match(controls, /data-discovery-field="category"/);
   assert.match(controls, /data-discovery-field="duration"/);
   assert.match(controls, /data-discovery-field="intensity"/);
   assert.match(controls, /data-discovery-field="proof"/);
   assert.match(controls, /data-discovery-field="sort"/);
+  assert.doesNotMatch(controls, /panel card/);
+  assert.doesNotMatch(controls, /discovery-filter-row/);
 });
 
 test('renderCatalogView composes discovery, curated sections, and workspace cards', () => {

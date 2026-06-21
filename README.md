@@ -139,6 +139,8 @@ Phase 5.11 adds search, filters, sort options and curated discovery sections for
 
 Discover uses public path metadata and aggregate trust metrics only. It does not expose private enrollments, day logs, submissions, participantStats, members lists, private evidence, raw proof URLs, private reflections or full task/section content to public viewers. Discovery cards use real stored metrics only; fake numbers, placeholder activity and stale active-this-week badges are not displayed.
 
+Phase 6.3 compacts Discover into a slimmer toolbar with a prominent search field, reachable sort control, chip-style filters and a clear-filters action. Search, category, duration, intensity, proof/activity filters, sorting, pagination, curated sections and preview-first access behavior are preserved while reducing the old form-like control block.
+
 Public discovery is preview-first. Signed-out users and signed-in users who have not joined a public path see the preview page and must join before opening the full roadmap or starting the path. Joined users and owners can open the full path through the existing access model.
 
 Personalized recommendations, trending algorithms, global feeds, followers, notifications, public media proof display, Gemini evidence intelligence, research, citations, adaptive planning and paid promotion remain deferred.
@@ -187,6 +189,19 @@ Users can remove their own comments. Path owners can hide comments on their path
 
 Private day logs, private evidence, private reflections and raw proof URLs remain private. Public progress entries continue to expose only sanitized proof summaries such as counts and evidence type labels.
 
+### Moderation reports
+
+Phase 6.3 adds basic moderation report infrastructure for public paths and public progress comments:
+
+- `POST /api/report-path`
+- `POST /api/report-progress-comment`
+
+Report routes require Firebase Authentication, use private no-store responses, return request IDs, run through the Firestore-backed rate limiter and create server-managed `moderationReports/{reportId}` documents. Browser clients cannot directly read or write moderation reports through Firestore Rules.
+
+Reports store a bounded reason, a trimmed optional note and only a minimal public snapshot such as the public path title or a short visible public comment snippet. They do not store Firebase ID tokens, emails, provider tokens, private day logs, private evidence, raw evidence URLs, private reflections, participantStats or uploaded proof files.
+
+Reporting does not automatically hide paths or comments, does not remove content from discovery and does not mutate `visibleCommentCount`. Comment authors and path owners keep the existing hide controls. A full moderation dashboard, admin roles, automated moderation, public progress entry reports, notifications, followers, global feed, adaptive planning and Gemini/evidence intelligence remain deferred.
+
 ### Joinable paths
 
 When a user joins a path, the source path remains owned by the creator. The joiner receives their own membership, enrollment, day logs and evidence records, and does not receive editor permissions or an editable cloned copy of the source path.
@@ -226,6 +241,7 @@ Phase 6.2 centralizes persisted document schema versions in `src/schema-versioni
 | `publicProgressComment` | 1 |
 | `publicProgressReaction` | 1 |
 | `discoveryPagination` | 1 |
+| `moderationReport` | 1 |
 | `rateLimit` | 1 |
 
 Legacy documents without `schemaVersion` are normalized safely in memory as legacy version `0`. Malformed schema versions also normalize safely. New writes attach the current `schemaVersion`, while explicitly newer versions are not downgraded. Bulk production migrations remain deferred until needed and must be bounded, authenticated, rate-limited and tested before launch.

@@ -28,7 +28,8 @@ import {
 import { openAuthModal } from './auth.js';
 import {
   authFetch, commentOnProgress, hideProgressComment, joinPath,
-  publishProgress, reactToProgress, syncPathMetrics, unpublishProgress,
+  publishProgress, reactToProgress, reportPath, reportProgressComment,
+  syncPathMetrics, unpublishProgress,
 } from './api.js';
 import { errorFromAIPayload, parseAIResponse, SERVER_FUNCTION_FAILED_MESSAGE } from './ai-response.js';
 import { AI_GENERATE_TIMEOUT_MS, AI_INTERPRET_TIMEOUT_MS, VOICE_TRANSCRIBE_TIMEOUT_MS } from './ai-timeouts.js';
@@ -95,6 +96,7 @@ import {
 import {
   canPublishCompletedDay, evidenceTypeLabel, normalizePublicComment, normalizePublicProgressEntry, publicProgressEntryId,
 } from './public-progress.js';
+import { REPORT_REASONS, reportTargetLabel } from './moderation.js';
 import {
   bindCatalogEvents, canOpenFullPlatformPath, platformAccessRecordFromState, renderCatalogView,
 } from './views/catalog/index.js';
@@ -123,6 +125,10 @@ let publicProgressError = '';
 let progressInteractionBusyKey = null;
 let progressCommentDrafts = {};
 let progressInteractionErrors = {};
+let reportPanelKey = '';
+let reportBusyKey = '';
+let reportDrafts = {};
+let reportMessages = {};
 let pendingRouteRetrying = false;
 
 function abortAIRequest(kind = null, builder = aiBuilder){
@@ -2720,6 +2726,40 @@ function interactionKey(pathId, entryId, suffix = ''){
   return pathId + ':' + entryId + (suffix ? ':' + suffix : '');
 }
 
+function pathReportKey(pathId){
+  return 'path:' + pathId;
+}
+
+function commentReportKey(pathId, entryId, commentId){
+  return 'comment:' + pathId + ':' + entryId + ':' + commentId;
+}
+
+function reportReasonOptionsHTML(selected = 'spam'){
+  return REPORT_REASONS.map(reason => {
+    const label = reason === 'spam' ? 'Spam'
+      : reason === 'harassment' ? 'Harassment'
+        : reason === 'unsafe' ? 'Unsafe content'
+          : reason === 'misleading' ? 'Misleading'
+            : 'Other';
+    return '<option value="' + esc(reason) + '" ' + (reason === selected ? 'selected' : '') + '>' + esc(label) + '</option>';
+  }).join('');
+}
+
+function reportFormHTML(key, targetType, options = {}){
+  const draft = reportDrafts[key] || {};
+  const targetLabel = options.label || reportTargetLabel(targetType);
+  const busy = reportBusyKey === key;
+  const message = reportMessages[key] || '';
+  const reasonId = 'report-reason-' + key.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const noteId = 'report-note-' + key.replace(/[^a-zA-Z0-9_-]/g, '-');
+  return '<form class="report-form" data-report-key="' + esc(key) + '" data-report-target="' + esc(targetType) + '" ' + (options.entryId ? 'data-entry-id="' + esc(options.entryId) + '" ' : '') + (options.commentId ? 'data-comment-id="' + esc(options.commentId) + '" ' : '') + '>'
+    + '<label for="' + esc(reasonId) + '">Reason for reporting this ' + esc(targetLabel.toLowerCase()) + '<select id="' + esc(reasonId) + '" name="reason" aria-label="Report reason">' + reportReasonOptionsHTML(draft.reason || 'spam') + '</select></label>'
+    + '<label for="' + esc(noteId) + '">Optional note<textarea id="' + esc(noteId) + '" name="note" maxlength="500" placeholder="Add short context for moderators">' + esc(draft.note || '') + '</textarea></label>'
+    + '<div class="report-actions"><button class="btn" type="submit" ' + (busy ? 'disabled' : '') + '>' + (busy ? 'Sending...' : 'Submit report') + '</button><button class="link-btn report-cancel" type="button" data-report-key="' + esc(key) + '">Cancel</button></div>'
+    + (message ? '<p class="' + (message.includes('received') ? 'form-success' : 'form-error') + '" role="status">' + esc(message) + '</p>' : '')
+    + '</form>';
+}
+
 function publicProgressInteractionsHTML(record, entry){
   const key = interactionKey(record.id, entry.id);
   const busy = progressInteractionBusyKey === key;
@@ -2753,10 +2793,18 @@ function publicProgressInteractionsHTML(record, entry){
     h += '<div class="progress-comments" aria-label="Visible comments">';
     entry.comments.forEach(comment => {
       const canHide = !!(user && (comment.userId === user.uid || owner));
+      const commentKey = commentReportKey(record.id, entry.id, comment.id);
+      const reporting = reportPanelKey === commentKey;
+      const reportMessage = reportMessages[commentKey] || '';
       h += '<article class="progress-comment">'
         + '<div><b>' + esc(comment.authorName) + '</b><small>' + esc(dateText(comment.createdAt) || '') + '</small></div>'
         + '<p>' + esc(comment.body) + '</p>'
+        + '<div class="progress-comment-actions">'
         + (canHide ? '<button class="link-btn progress-comment-hide" type="button" data-entry-id="' + esc(entry.id) + '" data-comment-id="' + esc(comment.id) + '">Hide comment</button>' : '')
+        + '<button class="link-btn progress-comment-report" type="button" data-entry-id="' + esc(entry.id) + '" data-comment-id="' + esc(comment.id) + '" aria-label="Report comment by ' + esc(comment.authorName) + '">Report</button>'
+        + '</div>'
+        + (reporting && user ? reportFormHTML(commentKey, 'publicProgressComment', { label:'Comment', entryId:entry.id, commentId:comment.id }) : '')
+        + (!reporting && reportMessage ? '<p class="' + (reportMessage.includes('received') ? 'form-success' : 'form-error') + '" role="status">' + esc(reportMessage) + '</p>' : '')
         + '</article>';
     });
     h += '</div>';
@@ -2894,6 +2942,58 @@ async function hidePublicProgressComment(record, entryId, commentId){
   }
 }
 
+async function submitPublicPathReport(record, reason, note){
+  const key = pathReportKey(record.id);
+  if(reportBusyKey) return;
+  if(!store.currentUser){
+    reportMessages[key] = 'Sign in to report this path.';
+    openAuthModal('signup');
+    renderPathPreview(record);
+    return;
+  }
+  reportBusyKey = key;
+  reportMessages[key] = '';
+  reportDrafts[key] = { reason, note };
+  renderPathPreview(record);
+  try{
+    await reportPath(record.id, reason, note);
+    reportDrafts[key] = {};
+    reportPanelKey = '';
+    reportMessages[key] = 'Report received. Thank you for helping keep public paths safe.';
+  }catch(error){
+    reportMessages[key] = error.message || 'Could not report this path.';
+  }finally{
+    reportBusyKey = '';
+    renderPathPreview(record);
+  }
+}
+
+async function submitPublicCommentReport(record, entryId, commentId, reason, note){
+  const key = commentReportKey(record.id, entryId, commentId);
+  if(reportBusyKey) return;
+  if(!store.currentUser){
+    reportMessages[key] = 'Sign in to report this comment.';
+    openAuthModal('signup');
+    renderPathPreview(record);
+    return;
+  }
+  reportBusyKey = key;
+  reportMessages[key] = '';
+  reportDrafts[key] = { reason, note };
+  renderPathPreview(record);
+  try{
+    await reportProgressComment(record.id, entryId, commentId, reason, note);
+    reportDrafts[key] = {};
+    reportPanelKey = '';
+    reportMessages[key] = 'Report received. The comment remains visible unless a moderator or owner hides it.';
+  }catch(error){
+    reportMessages[key] = error.message || 'Could not report this comment.';
+  }finally{
+    reportBusyKey = '';
+    renderPathPreview(record);
+  }
+}
+
 function renderPathPreview(record){
   const path = record.path;
   const coverImage = safeExternalUrl(path.coverImage);
@@ -2938,6 +3038,11 @@ function renderPathPreview(record){
   }
   h += '</div>'
     + (shareLinkMessage ? '<div class="share-fallback" role="status"><label>Share link<input readonly value="' + esc(shareLinkMessage === 'copied' ? shareLink : shareLinkMessage) + '"></label></div>' : '')
+    + '<div class="public-path-report" aria-live="polite">'
+    + '<button class="link-btn" id="reportPathBtn" type="button" aria-label="Report this public path">Report path</button>'
+    + (reportPanelKey === pathReportKey(record.id) && store.currentUser ? reportFormHTML(pathReportKey(record.id), 'path', { label:'Path' }) : '')
+    + (reportMessages[pathReportKey(record.id)] && reportPanelKey !== pathReportKey(record.id) ? '<p class="' + (reportMessages[pathReportKey(record.id)].includes('received') ? 'form-success' : 'form-error') + '" role="status">' + esc(reportMessages[pathReportKey(record.id)]) + '</p>' : '')
+    + '</div>'
     + '</div></section>'
     + publicPathTrustStatsHTML(stats, path)
     + '<section class="public-path-grid">'
@@ -2988,6 +3093,51 @@ function renderPathPreview(record){
   });
   document.querySelectorAll('.progress-comment-hide').forEach(btn => {
     btn.onclick = () => hidePublicProgressComment(record, btn.dataset.entryId, btn.dataset.commentId);
+  });
+  document.querySelectorAll('.progress-comment-report').forEach(btn => {
+    btn.onclick = () => {
+      const key = commentReportKey(record.id, btn.dataset.entryId, btn.dataset.commentId);
+      if(!store.currentUser){
+        reportMessages[key] = 'Sign in to report this comment.';
+        openAuthModal('signup');
+      }else{
+        reportPanelKey = reportPanelKey === key ? '' : key;
+        reportMessages[key] = '';
+      }
+      renderPathPreview(record);
+    };
+  });
+  document.querySelectorAll('.report-form').forEach(form => {
+    form.onsubmit = event => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const reason = String(data.get('reason') || 'spam');
+      const note = String(data.get('note') || '');
+      const key = form.dataset.reportKey;
+      reportDrafts[key] = { reason, note };
+      if(form.dataset.reportTarget === 'publicProgressComment'){
+        submitPublicCommentReport(record, form.dataset.entryId, form.dataset.commentId, reason, note);
+      }else{
+        submitPublicPathReport(record, reason, note);
+      }
+    };
+    form.querySelectorAll('select[name="reason"], textarea[name="note"]').forEach(field => {
+      field.oninput = () => {
+        const key = form.dataset.reportKey;
+        const data = new FormData(form);
+        reportDrafts[key] = {
+          reason:String(data.get('reason') || 'spam'),
+          note:String(data.get('note') || ''),
+        };
+      };
+    });
+  });
+  document.querySelectorAll('.report-cancel').forEach(btn => {
+    btn.onclick = () => {
+      reportPanelKey = '';
+      reportDrafts[btn.dataset.reportKey] = {};
+      renderPathPreview(record);
+    };
   });
 }
 

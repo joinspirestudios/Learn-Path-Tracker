@@ -59,6 +59,18 @@ function interactionMessage(status, payload = {}, action = 'update this interact
   return payload?.message || 'Could not update this progress interaction.';
 }
 
+function reportMessage(status, payload = {}, target = 'content'){
+  const code = payload?.code || payload?.error || '';
+  const label = target === 'comment' ? 'comment' : 'path';
+  if(status === 401 || code === 'unauthorized') return `Sign in to report this ${label}.`;
+  if(status === 403 || ['path_not_public', 'forbidden'].includes(code)) return `This ${label} is not available for reporting.`;
+  if(status === 404 || ['path_not_found', 'progress_not_found', 'comment_not_found'].includes(code)) return `This ${label} could not be found.`;
+  if(status === 400 || ['invalid_request', 'invalid_report_reason'].includes(code)) return payload?.message || 'Choose a supported report reason.';
+  if(status === 429 || code === 'rate_limited') return 'Too many reports. Try again later.';
+  if(status >= 500) return `Could not report this ${label} right now. Try again.`;
+  return payload?.message || `Could not report this ${label}.`;
+}
+
 function metricsMessage(status, payload = {}){
   const code = payload?.code || payload?.error || '';
   if(status === 401 || code === 'unauthorized') return 'Sign in again to sync path metrics.';
@@ -150,6 +162,33 @@ export async function commentOnProgress(pathId, entryId, body){
 
 export async function hideProgressComment(pathId, entryId, commentId){
   return interactionRequest('/api/hide-progress-comment', { pathId, entryId, commentId }, 'hide');
+}
+
+async function reportRequest(url, body, target){
+  const response = await authFetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body:JSON.stringify(body),
+  });
+  let payload = null;
+  try{ payload = await response.json(); }
+  catch(error){ payload = {}; }
+  if(!response.ok || !payload?.ok){
+    const error = new Error(reportMessage(response.status, payload, target));
+    error.code = payload?.code || payload?.error || `${target}_report_failed`;
+    error.status = response.status;
+    error.retryAfterSeconds = payload?.retryAfterSeconds || null;
+    throw error;
+  }
+  return payload;
+}
+
+export async function reportPath(pathId, reason, note = ''){
+  return reportRequest('/api/report-path', { pathId, reason, note }, 'path');
+}
+
+export async function reportProgressComment(pathId, entryId, commentId, reason, note = ''){
+  return reportRequest('/api/report-progress-comment', { pathId, entryId, commentId, reason, note }, 'comment');
 }
 
 export async function syncPathMetrics(pathId, event, dayNumber = null){

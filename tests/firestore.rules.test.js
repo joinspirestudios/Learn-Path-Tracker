@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -448,5 +449,29 @@ describe('server-only operational data', () => {
     await assertFails(getDoc(ref));
     await assertFails(setDoc(ref, { uid:userA, routeKey:'generate', hourlyCount:1 }));
     await assertFails(getDoc(doc(unauthenticated, '_internalRateLimits', 'user-a_generate')));
+  });
+
+  test('denies client reads and writes to moderation report documents', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const adminDb = context.firestore();
+      await setDoc(doc(adminDb, 'moderationReports', 'report-1'), {
+        id:'report-1',
+        targetType:'path',
+        pathId,
+        reporterUid:userA,
+        status:'open',
+      });
+    });
+
+    const authenticated = testEnv.authenticatedContext(userA).firestore();
+    const unauthenticated = testEnv.unauthenticatedContext().firestore();
+    const ref = doc(authenticated, 'moderationReports', 'report-1');
+    const newRef = doc(authenticated, 'moderationReports', 'report-2');
+
+    await assertFails(getDoc(ref));
+    await assertFails(getDoc(doc(unauthenticated, 'moderationReports', 'report-1')));
+    await assertFails(setDoc(newRef, { id:'report-2', targetType:'path', pathId, reporterUid:userA }));
+    await assertFails(updateDoc(ref, { status:'reviewed' }));
+    await assertFails(deleteDoc(ref));
   });
 });

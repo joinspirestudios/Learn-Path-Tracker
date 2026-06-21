@@ -106,6 +106,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Server-created moderation reports. Clients report through protected
+    // API routes; browser reads and writes stay disabled.
+    match /moderationReports/{reportId} {
+      allow read, write: if false;
+    }
+
     // Private user state and render logs.
     // Current code writes under:
     // users/{uid}/state/main
