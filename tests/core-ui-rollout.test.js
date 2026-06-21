@@ -138,8 +138,10 @@ test('CSS imports generated tokens, maps legacy aliases and uses token-backed co
   assert.match(styles, /@import '\.\/generated\/design-tokens\.css'/);
   assert.match(styles, /--ink:var\(--lpt-color-surface-canvas\)/);
   assert.match(styles, /--gold:var\(--lpt-color-accent-progress\)/);
-  assert.match(styles, /--gold-soft:#f2c75c/);
-  assert.doesNotMatch(styles, /--gold-soft:#93c5fd/);
+  assert.match(styles, /--gold-soft:var\(--lpt-color-border-focus\)/);
+  assert.match(styles, /--aurora-on-indigo:#fff/);
+  assert.match(styles, /--aurora-glow:var\(--lpt-effect-lead-glow\)/);
+  assert.doesNotMatch(styles, /--gold-soft:#f2c75c/);
   assert.match(styles, /proof-studio-today-hero/);
   assert.match(styles, /proof-roadmap-node/);
   assert.match(styles, /proof-first-progress-card/);
@@ -150,6 +152,10 @@ test('CSS imports generated tokens, maps legacy aliases and uses token-backed co
   assert.match(styles, /@media\(max-width:390px\)/);
   assert.match(styles, /@media\(max-width:360px\)/);
   assert.match(styles, /prefers-reduced-motion:reduce/);
+  assert.match(styles, /\.btn\.gold\{[^}]*color:var\(--aurora-on-indigo\)/);
+  assert.match(styles, /\.lpt-button-primary\{[^}]*color:#fff!important/);
+  assert.match(styles, /\.lpt-button-spinner/);
+  assert.match(styles, /\.progress-cheer:active/);
 });
 
 test('source guards prevent forbidden Phase 6.9 assets and dependencies', () => {

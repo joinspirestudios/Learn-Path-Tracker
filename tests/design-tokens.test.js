@@ -11,6 +11,7 @@ import {
   SPACING_TOKENS,
   RADIUS_TOKENS,
   ELEVATION_TOKENS,
+  EFFECT_TOKENS,
   MOTION_TOKENS,
   STATE_TOKENS,
   ACCESSIBILITY_TOKENS,
@@ -26,6 +27,7 @@ test('DESIGN_TOKENS exists and aggregates all token groups', () => {
   assert.ok(DESIGN_TOKENS.spacing);
   assert.ok(DESIGN_TOKENS.radius);
   assert.ok(DESIGN_TOKENS.elevation);
+  assert.ok(DESIGN_TOKENS.effect);
   assert.ok(DESIGN_TOKENS.motion);
   assert.ok(DESIGN_TOKENS.state);
   assert.ok(DESIGN_TOKENS.accessibility);
@@ -54,22 +56,27 @@ test('COLOR_TOKENS accent includes progress, proof, warning, success, danger and
   assert.ok(COLOR_TOKENS.accent.trust);
 });
 
-test('COLOR_TOKENS use the warm editorial Phase 6.9.1 palette', () => {
-  assert.equal(COLOR_TOKENS.surface.canvas.value, '#0d0b0a');
-  assert.equal(COLOR_TOKENS.surface.panel.value, '#15110f');
-  assert.equal(COLOR_TOKENS.text.primary.value, '#fff7e8');
-  assert.equal(COLOR_TOKENS.text.secondary.value, '#d8c7aa');
-  assert.equal(COLOR_TOKENS.text.muted.value, '#b69f7f');
-  assert.equal(COLOR_TOKENS.accent.progress.value, '#d8b24c');
+test('COLOR_TOKENS use the Aurora neutral-violet palette', () => {
+  assert.equal(COLOR_TOKENS.surface.canvas.value, '#15131C');
+  assert.equal(COLOR_TOKENS.surface.panel.value, '#1E1B26');
+  assert.equal(COLOR_TOKENS.surface.raised.value, '#27232F');
+  assert.equal(COLOR_TOKENS.text.primary.value, '#F2EFF7');
+  assert.equal(COLOR_TOKENS.text.secondary.value, '#ABA3B8');
+  assert.equal(COLOR_TOKENS.text.muted.value, '#958CA5');
+  assert.equal(COLOR_TOKENS.accent.progress.value, '#6D5DF6');
   assert.notEqual(COLOR_TOKENS.accent.progress.value, '#3b82f6');
 });
 
-test('COLOR_TOKENS preserve gold as the primary progress/action accent', () => {
+test('COLOR_TOKENS preserve indigo as the single primary progress/action accent', () => {
   const progress = hexToRgb(COLOR_TOKENS.accent.progress.value);
-  assert.ok(progress.r > progress.b * 1.8);
-  assert.ok(progress.g > progress.b);
+  assert.ok(progress.b > progress.r);
+  assert.ok(progress.r > 80);
+  assert.notEqual(COLOR_TOKENS.accent.progress.value.toLowerCase(), '#d8b24c');
   assert.ok(contrastRatio(COLOR_TOKENS.accent.progress.value, COLOR_TOKENS.surface.canvas.value) >= 3);
-  assert.ok(contrastRatio(COLOR_TOKENS.text.inverse.value, COLOR_TOKENS.accent.progress.value) >= 4.5);
+  assert.ok(contrastRatio('#FFFFFF', COLOR_TOKENS.accent.progress.value) >= 4.5);
+  assert.equal(COLOR_TOKENS.tier.strong.value, '#2ED06E');
+  assert.equal(COLOR_TOKENS.tier.perfect.value, '#B15CF6');
+  assert.ok(contrastRatio(COLOR_TOKENS.text.inverse.value, COLOR_TOKENS.tier.perfect.value) >= 4.5);
 });
 
 test('COLOR_TOKENS text hierarchy clears readable contrast floors', () => {
@@ -154,6 +161,13 @@ test('ELEVATION_TOKENS include flat, raised, floating and overlay', () => {
   assert.ok(ELEVATION_TOKENS.raised);
   assert.ok(ELEVATION_TOKENS.floating);
   assert.ok(ELEVATION_TOKENS.overlay);
+});
+
+test('EFFECT_TOKENS include Aurora lead glow and ambient surface treatment', () => {
+  assert.ok(EFFECT_TOKENS.leadGlow);
+  assert.ok(EFFECT_TOKENS.ambient);
+  assert.match(EFFECT_TOKENS.leadGlow.value, /109,\s*93,\s*246/);
+  assert.match(EFFECT_TOKENS.ambient.value, /radial-gradient/);
 });
 
 test('each elevation token has value and usage', () => {

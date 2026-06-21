@@ -43,6 +43,12 @@ Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving
 
 The polish pass keeps existing Discovery behavior, public path access, roadmap state logic, and proof-first copy discipline intact while making long titles, creator metadata, tags, completed proof markers, missed or frozen days, and consistency empty states easier to scan.
 
+## Phase 6.9.4 Aurora Direction
+
+Phase 6.9.4 replaces the gold Proof Studio skin with the Aurora visual direction (indigo lead, green = proof, purple = peak, deep neutral-violet base), adds a consistent UX interaction/behavior system, and hardens the design system for radius, hierarchy, alignment and contrast. Proof Studio product integrity (real data only, no leaderboard, no following, no fake proof) is unchanged.
+
+Aurora uses indigo for primary actions, progress, active roadmap state and streak continuity. Green is reserved for proof states and Strong tier. Purple is reserved for Perfect tier and peak moments. Filled accent labels use the color that passes contrast: white on indigo, dark inverse text on green and purple.
+
 ## Core UI Helpers
 
 The new pure render helpers live under `src/ui/`:

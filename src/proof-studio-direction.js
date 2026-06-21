@@ -7,7 +7,8 @@ export const PROOF_STUDIO_PRINCIPLES = [
   'visible continuity',
   'clear locked / active / complete progression',
   'no fake metrics',
-  'no cold blue primary action language',
+  'one lead color (indigo) for action, progress and active state',
+  'green means proof only; purple means peak only',
   'no mascot/gems/hearts/shop economy',
 ];
 
@@ -39,10 +40,13 @@ export const PROOF_STUDIO_SCREEN_PATTERNS = {
 };
 
 export const PROOF_STUDIO_INTERACTION_PATTERNS = {
-  primaryCta:'Use one clear primary action per screen section.',
-  proofCards:'Proof cards may rise gently on hover/focus.',
-  reactions:'Respect buttons can use small press feedback without changing the data model.',
-  roadmap:'Completed, active, locked, missed and frozen states must be text-readable, not color-only.',
+  primaryCta:'Use one clear indigo primary action per screen section with visible hover, active, focus-visible, disabled and loading states.',
+  buttons:'Primary buttons use indigo fill with a passing on-fill label; secondary buttons are outlined; ghost buttons are quiet text; destructive buttons use danger.',
+  cards:'Interactive cards may lift gently on hover/focus with an indigo border; static cards do not imply clickability.',
+  proofCards:'Proof cards may reveal gently and rise on hover/focus, while preserving reduced-motion fallbacks.',
+  reactions:'Respect buttons can use small press feedback without changing the data model or fabricating counts.',
+  roadmap:'Completed, active, locked, missed and frozen states must be text-readable, not color-only; active uses indigo, proof uses green, peak uses purple.',
+  inputs:'Inputs, search and inline errors must show visible focus/error states with text, not color-only feedback.',
   motion:['button press feedback', 'card hover/focus', 'proof card reveal', 'progress meter transition', 'completion result reveal preparation'],
   reducedMotion:'Disable non-essential animation under prefers-reduced-motion.',
   mobile:'Hide desktop right rail and keep the daily action first.',
@@ -52,7 +56,8 @@ export const PROOF_STUDIO_REJECTED_PATTERNS = [
   'fake metrics',
   'leaderboard',
   'following system',
-  'cold blue primary action',
+  'more than one competing primary accent',
+  'cold slate base',
   'hearts/gems/shop economy',
   'mascot-driven progress',
   'raw evidence URLs in public progress',

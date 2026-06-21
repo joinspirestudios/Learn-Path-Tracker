@@ -8,11 +8,13 @@ import { renderAppShell, renderCoreColumn, renderSessionHeader } from './core-la
 
 export function renderDesignSystemGallery(){
   const examples = [
-    '<section><h2>Buttons</h2><div class="lpt-gallery-row">'
+    '<section><h2>Aurora Buttons</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row">'
       + renderButton({ label:'Primary action', variant:'primary' })
       + renderButton({ label:'Secondary', variant:'secondary' })
       + renderButton({ label:'Ghost', variant:'ghost' })
       + renderButton({ label:'Destructive', variant:'destructive' })
+      + renderButton({ label:'Loading', variant:'primary', loading:true })
+      + renderButton({ label:'Disabled', variant:'secondary', disabled:true })
       + '</div></section>',
     '<section><h2>ProgressMeter</h2>' + renderProgressMeter({ value:68, label:'Gallery progress' }) + '</section>',
     '<section><h2>DailyScoreCard</h2>' + renderDailyScoreCard({ score:68, tier:'passed', copy:'Documented work is moving.' }) + '</section>',
@@ -42,10 +44,14 @@ export function renderDesignSystemGallery(){
       + '<div class="lpt-card-actions sc-cta">View &rarr;</div></button></section>',
     '<section><h2>Compact discovery toolbar</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
       + '<div class="discovery-controls discovery-toolbar lpt-discovery-toolbar"><div class="discovery-mainline"><div class="discovery-search-shell lpt-search-primary"><input type="search" aria-label="Search public paths" placeholder="Search by goal, creator or category"/><button class="btn subtle discovery-clear-action" type="button">Clear</button></div><label class="discovery-sort-control"><span>Sort</span><select><option>Recommended</option></select></label><button class="btn subtle discovery-clear-action" type="button">Clear filters</button></div><div class="discovery-filter-chips"><label class="discovery-filter-chip"><span>Category</span><select><option>All</option></select></label><label class="discovery-filter-chip"><span>Proof</span><select><option>All</option></select></label></div></div></section>',
+    '<section><h2>Aurora tier chips</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row"><span class="lpt-result-tier lpt-completion-passed">Passed</span><span class="lpt-result-tier lpt-completion-strong">Strong</span><span class="lpt-result-tier lpt-completion-perfect">Perfect</span></div></section>',
     '<section><h2>RoadmapNode states</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="proof-roadmap-gallery">'
       + renderRoadmapNode({ day:10, state:'completed', title:'Completed', date:'Jun 19', taskCount:3, tier:'strong', proofSubmitted:true })
       + renderRoadmapNode({ day:11, state:'active', title:'Active day', date:'Jun 20', taskCount:4, cta:"Open today's session" })
       + renderRoadmapNode({ day:12, state:'locked', title:'Locked', date:'Jun 21', taskCount:2 })
+      + renderRoadmapNode({ day:13, state:'missed', title:'Missed', date:'Jun 22', taskCount:2 })
+      + renderRoadmapNode({ day:14, state:'frozen', title:'Frozen', date:'Jun 23', taskCount:2 })
+      + renderRoadmapNode({ day:15, state:'perfect', title:'Perfect', date:'Jun 24', taskCount:4, tier:'perfect', proofSubmitted:true })
       + '</div></section>',
     '<section><h2>Proof-first Public Progress</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
       + renderProofFirstProgressCard({

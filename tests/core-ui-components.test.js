@@ -20,6 +20,8 @@ test('renderButton supports variants and escapes labels', () => {
   assert.match(renderButton({ label:'More', variant:'secondary' }), /lpt-button-secondary/);
   assert.match(renderButton({ label:'Quiet', variant:'ghost' }), /lpt-button-ghost/);
   assert.match(renderButton({ label:'Delete', variant:'destructive' }), /lpt-button-destructive/);
+  assert.match(renderButton({ label:'Loading', variant:'primary', loading:true }), /lpt-button-spinner/);
+  assert.match(renderButton({ label:'Disabled', disabled:true }), /aria-disabled="true"/);
   assert.match(renderButton({ label:'<script>' }), /&lt;script&gt;/);
 });
 

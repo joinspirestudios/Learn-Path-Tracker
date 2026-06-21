@@ -18,6 +18,7 @@ test('designTokensToCssRoot emits deterministic :root CSS variables', () => {
   assert.match(css, /--lpt-color-accent-progress/);
   assert.match(css, /--lpt-space-xl/);
   assert.match(css, /--lpt-radius-card/);
+  assert.match(css, /--lpt-effect-lead-glow/);
   assert.match(css, /--lpt-motion-duration-base/);
   assert.equal(css, designTokensToCssRoot());
 });
@@ -27,6 +28,7 @@ test('token path helpers flatten readable names and theme objects', () => {
   assert.equal(tokenPathToCssVariable(['spacing', 'xl']), '--lpt-space-xl');
   assert.ok(flattenDesignTokens().some(entry => entry.path.join('.') === 'color.surface.canvas'));
   assert.ok(designTokensToCssVariables().some(entry => entry.name === '--lpt-color-accent-progress'));
+  assert.ok(designTokensToCssVariables().some(entry => entry.name === '--lpt-effect-lead-glow'));
 });
 
 test('generated CSS file exists and matches generator output', () => {
@@ -35,12 +37,15 @@ test('generated CSS file exists and matches generator output', () => {
   assert.equal(generatedCss, expected);
 });
 
-test('generated CSS includes the warm Phase 6.9.1 palette and no blue progress token', () => {
-  assert.match(generatedCss, /--lpt-color-surface-canvas: #0d0b0a;/);
-  assert.match(generatedCss, /--lpt-color-text-primary: #fff7e8;/);
-  assert.match(generatedCss, /--lpt-color-text-secondary: #d8c7aa;/);
-  assert.match(generatedCss, /--lpt-color-text-muted: #b69f7f;/);
-  assert.match(generatedCss, /--lpt-color-accent-progress: #d8b24c;/);
+test('generated CSS includes the Aurora palette and effect tokens', () => {
+  assert.match(generatedCss, /--lpt-color-surface-canvas: #15131C;/);
+  assert.match(generatedCss, /--lpt-color-text-primary: #F2EFF7;/);
+  assert.match(generatedCss, /--lpt-color-text-secondary: #ABA3B8;/);
+  assert.match(generatedCss, /--lpt-color-text-muted: #958CA5;/);
+  assert.match(generatedCss, /--lpt-color-accent-progress: #6D5DF6;/);
+  assert.match(generatedCss, /--lpt-color-tier-perfect: #B15CF6;/);
+  assert.match(generatedCss, /--lpt-effect-lead-glow: 0 8px 24px rgba\(109, 93, 246, 0\.42\);/);
+  assert.doesNotMatch(generatedCss, /--lpt-color-accent-progress: #d8b24c;/);
   assert.doesNotMatch(generatedCss, /--lpt-color-accent-progress: #3b82f6;/);
   assert.doesNotMatch(generatedCss, /--lpt-color-tier-passed: #3b82f6;/);
 });

@@ -19,30 +19,40 @@ function assertAtLeast(actual, expected, label){
 
 test('contrast helpers parse hex, calculate luminance and evaluate thresholds', () => {
   assert.deepEqual(hexToRgb('#fff'), { r:255, g:255, b:255 });
-  assert.deepEqual(hexToRgb('#0d0b0a'), { r:13, g:11, b:10 });
+  assert.deepEqual(hexToRgb('#15131C'), { r:21, g:19, b:28 });
   assert.equal(relativeLuminance('#000000'), 0);
   assert.equal(contrastRatio('#000000', '#ffffff'), 21);
-  assert.equal(meetsContrast('#fff7e8', '#0d0b0a', 7), true);
+  assert.equal(meetsContrast('#F2EFF7', '#15131C', 7), true);
 });
 
-test('warm text tokens meet the Phase 6.9.1 contrast floors', () => {
-  for(const surface of [colors.surface.canvas, colors.surface.panel]){
+test('Aurora text tokens meet readable contrast floors', () => {
+  for(const surface of [colors.surface.canvas, colors.surface.panel, colors.surface.raised]){
     assertAtLeast(ratio(colors.text.primary, surface), 7, 'primary on ' + surface.value);
     assertAtLeast(ratio(colors.text.secondary, surface), 4.5, 'secondary on ' + surface.value);
-    assertAtLeast(ratio(colors.text.muted, surface), 3, 'muted on ' + surface.value);
+    assertAtLeast(ratio(colors.text.muted, surface), 4.5, 'muted on ' + surface.value);
   }
 });
 
-test('progress accent is gold, not blue, and supports readable labels', () => {
+test('progress accent is indigo and supports readable labels', () => {
   const progress = hexToRgb(colors.accent.progress.value);
-  assert.ok(progress.r > progress.b * 1.8, 'progress red channel should dominate blue');
-  assert.ok(progress.g > progress.b, 'progress green channel should exceed blue');
+  assert.equal(colors.accent.progress.value, '#6D5DF6');
+  assert.ok(progress.b > progress.r, 'progress blue channel should lead in Aurora indigo');
   assertAtLeast(ratio(colors.accent.progress, colors.surface.canvas), 3, 'progress on canvas');
-  assertAtLeast(ratio(colors.accent.progress, colors.text.inverse), 4.5, 'inverse text on progress');
-  assert.notEqual(colors.accent.progress.value.toLowerCase(), '#3b82f6');
+  assertAtLeast(ratio(colors.accent.progress, colors.surface.panel), 3, 'progress on panel');
+  assertAtLeast(contrastRatio('#FFFFFF', colors.accent.progress.value), 4.5, 'white label on indigo progress fill');
+  assert.ok(contrastRatio(colors.text.primary.value, colors.accent.progress.value) < 4.5, 'near-white primary is not accepted as normal text on indigo fill');
+  assert.notEqual(colors.accent.progress.value.toLowerCase(), '#d8b24c');
 });
 
-test('status and tier colors have usable contrast on warm surfaces', () => {
+test('Aurora filled accent labels are mathematically guarded', () => {
+  assertAtLeast(contrastRatio('#FFFFFF', colors.accent.progress.value), 4.5, 'white on indigo primary');
+  assert.ok(contrastRatio(colors.text.primary.value, colors.accent.trust.value) < 4.5, 'near-white primary must not be used for normal text on purple');
+  assert.ok(contrastRatio('#FFFFFF', colors.accent.trust.value) < 4.5, 'white must not be used for normal text on purple');
+  assertAtLeast(contrastRatio(colors.text.inverse.value, colors.accent.trust.value), 4.5, 'dark inverse on purple peak');
+  assertAtLeast(contrastRatio(colors.text.inverse.value, colors.accent.proof.value), 4.5, 'dark inverse on green proof');
+});
+
+test('status and tier colors have usable contrast on Aurora surfaces', () => {
   for(const token of [
     colors.accent.danger,
     colors.accent.proof,
@@ -55,6 +65,8 @@ test('status and tier colors have usable contrast on warm surfaces', () => {
     assertAtLeast(ratio(token, colors.surface.canvas), 3, token.value + ' on canvas');
     assertAtLeast(ratio(token, colors.surface.panel), 3, token.value + ' on panel');
   }
+  assert.equal(colors.tier.strong.value, '#2ED06E');
+  assert.equal(colors.tier.perfect.value, '#B15CF6');
 });
 
 test('design contrast module has no DOM, Firebase, analytics, server or env imports', () => {

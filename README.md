@@ -562,7 +562,9 @@ Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily ac
 
 Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
 
-The Proof Studio direction keeps the warm dark production theme, rejects the supplied HTML sample palette, keeps blue out of primary action/progress roles, keeps gold as the primary progress/action accent, and avoids fake leaderboards or fake social proof. Public progress uses Respect, Comment and Report as visible action labels.
+Phase 6.9.4 replaces the gold Proof Studio skin with the Aurora visual direction (indigo lead, green = proof, purple = peak, deep neutral-violet base), adds a consistent UX interaction/behavior system, and hardens the design system for radius, hierarchy, alignment and contrast. Proof Studio product integrity (real data only, no leaderboard, no following, no fake proof) is unchanged.
+
+The Proof Studio direction keeps proof-first product integrity while Aurora owns the visual skin: indigo is the primary action/progress color, green is proof-only, purple is peak-only, and filled accent labels use the mathematically verified on-fill text color rather than relying on token names.
 
 ## Deferred work
 
