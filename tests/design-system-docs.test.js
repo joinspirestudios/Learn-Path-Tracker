@@ -15,9 +15,10 @@ test('design system foundation doc mentions proof-backed growth', () => {
   assert.match(doc, /proof.backed/i);
 });
 
-test('design system foundation doc mentions dark editorial', () => {
+test('design system foundation doc mentions Aurora neutral-violet base', () => {
   const doc = readFileSync(resolve(root, 'docs/design-system-foundation.md'), 'utf8');
-  assert.match(doc, /dark.*editorial/i);
+  assert.match(doc, /Aurora base/i);
+  assert.match(doc, /neutral-violet/i);
 });
 
 test('design system foundation doc mentions semantic tokens', () => {

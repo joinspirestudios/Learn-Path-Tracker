@@ -1,41 +1,41 @@
 export const COLOR_TOKENS = {
   surface: {
-    canvas: { value: '#0d0b0a', purpose: 'App background, deepest layer', usage: 'html/body background', a11y: 'Warm dark base for all contrast calculations' },
-    panel: { value: '#15110f', purpose: 'Card and section backgrounds', usage: 'Cards, sidebars, content panels', a11y: 'Must maintain 4.5:1 contrast with text.primary' },
-    raised: { value: '#1f1915', purpose: 'Elevated surface above panel', usage: 'Modals, dropdowns, floating panels', a11y: 'Must maintain visible separation from canvas and panel' },
-    input: { value: '#211b17', purpose: 'Input field background', usage: 'Text inputs, selects, search bars', a11y: 'Must maintain 4.5:1 contrast with text.primary' },
+    canvas: { value: '#15131C', purpose: 'App background, deepest layer', usage: 'html/body background', a11y: 'Deep neutral-violet Aurora base, warm-tinted and not cold slate' },
+    panel: { value: '#1E1B26', purpose: 'Card and section backgrounds', usage: 'Cards, sidebars, content panels', a11y: 'Must maintain 4.5:1 contrast with readable text tokens' },
+    raised: { value: '#27232F', purpose: 'Elevated surface above panel', usage: 'Modals, dropdowns, floating panels', a11y: 'Must maintain visible separation from canvas and readable muted labels' },
+    input: { value: '#221E2B', purpose: 'Input field background', usage: 'Text inputs, selects, search bars', a11y: 'Must maintain 4.5:1 contrast with readable text tokens' },
     overlay: { value: 'rgba(0, 0, 0, 0.72)', purpose: 'Modal/overlay backdrop', usage: 'Behind modals and dialogs', a11y: 'Dims content to focus attention on foreground' },
   },
   text: {
-    primary: { value: '#fff7e8', purpose: 'Primary readable text', usage: 'Body copy, headings, labels', a11y: '18:1+ on warm canvas and panel' },
-    secondary: { value: '#d8c7aa', purpose: 'Supporting text, descriptions', usage: 'Metadata, helper text, timestamps', a11y: '11:1+ on warm canvas and panel' },
-    muted: { value: '#b69f7f', purpose: 'De-emphasized but readable text', usage: 'Placeholders, disabled labels, footnotes', a11y: '7:1+ on warm canvas and panel' },
-    inverse: { value: '#130f0b', purpose: 'Text on light/accent backgrounds', usage: 'Button labels on accent fills', a11y: 'Readable on gold, success and tier accent fills' },
+    primary: { value: '#F2EFF7', purpose: 'Primary readable text', usage: 'Body copy, headings, labels on dark surfaces', a11y: 'High contrast on Aurora canvas and panel; not assumed safe on every accent fill' },
+    secondary: { value: '#ABA3B8', purpose: 'Supporting text, descriptions', usage: 'Metadata, helper text, timestamps', a11y: 'Readable on Aurora canvas, panel and raised surfaces' },
+    muted: { value: '#958CA5', purpose: 'De-emphasized but readable text', usage: 'Placeholders, disabled labels, footnotes, compact metadata', a11y: 'Raised from the initial Aurora muted value so small labels remain above 4.5:1 on raised surfaces' },
+    inverse: { value: '#11140E', purpose: 'Dark text on green and purple accent backgrounds', usage: 'Labels on proof, success and peak fills', a11y: 'Passes contrast on green proof and purple peak fills' },
   },
   border: {
-    subtle: { value: 'rgba(255, 247, 232, 0.16)', purpose: 'Gentle dividers between sections', usage: 'Card borders, horizontal rules', a11y: 'Decorative, not sole differentiator' },
-    strong: { value: 'rgba(216, 178, 76, 0.42)', purpose: 'Prominent borders for active elements', usage: 'Selected cards, active inputs', a11y: 'Visible warm separation against dark surfaces' },
-    focus: { value: '#f0c96a', purpose: 'Focus indicator border', usage: 'Keyboard focus rings', a11y: 'Must be visible on all warm surface tones' },
+    subtle: { value: 'rgba(242, 239, 247, 0.10)', purpose: 'Gentle dividers between sections', usage: 'Card borders, horizontal rules', a11y: 'Decorative, not sole differentiator' },
+    strong: { value: 'rgba(109, 93, 246, 0.42)', purpose: 'Prominent borders for active elements', usage: 'Selected cards, active inputs', a11y: 'Visible indigo separation against Aurora surfaces' },
+    focus: { value: '#9485FF', purpose: 'Focus indicator border', usage: 'Keyboard focus rings', a11y: 'Must be visible on all Aurora surface tones' },
   },
   accent: {
-    progress: { value: '#d8b24c', purpose: 'Progress, continuity, active journey', usage: 'Progress bars, primary actions, active states, streaks', a11y: 'Gold primary accent with 9:1+ contrast on canvas' },
-    proof: { value: '#55c77a', purpose: 'Proof submitted, evidence verified', usage: 'Proof badges, verified indicators', a11y: '9:1+ on canvas; do not rely on color alone' },
-    warning: { value: '#f0b84a', purpose: 'Caution, streak at risk, attention', usage: 'Streak warnings, approaching limits', a11y: '9:1+ on canvas; pair with icon or text' },
-    success: { value: '#66d28a', purpose: 'Completion, passed threshold, positive', usage: 'Day passed, task done, publish success', a11y: '10:1+ on canvas' },
-    danger: { value: '#d94a5d', purpose: 'Error, destructive action, report', usage: 'Delete, report, error messages', a11y: '4.5:1+ on warm panel and canvas' },
-    trust: { value: '#b991ff', purpose: 'Public trust, community, social proof', usage: 'Trust metrics, joined count, public badges', a11y: 'Readable restrained trust accent on dark surfaces' },
+    progress: { value: '#6D5DF6', purpose: 'Lead Aurora action, progress, continuity and active journey', usage: 'Progress bars, primary actions, active states, streaks', a11y: 'Use pure white labels on filled indigo for normal text contrast' },
+    proof: { value: '#2ED06E', purpose: 'Proof submitted, evidence verified and Strong tier only', usage: 'Proof badges, verified indicators, Strong tier', a11y: 'Use text.inverse on green fills; do not rely on color alone' },
+    warning: { value: '#F0B84A', purpose: 'Caution, streak at risk, attention', usage: 'Streak warnings, approaching limits', a11y: 'Pair with icon or text' },
+    success: { value: '#2ED06E', purpose: 'Completion and positive proof-family success', usage: 'Day passed, task done, publish success', a11y: 'Use text.inverse on green fills' },
+    danger: { value: '#FB5B5B', purpose: 'Error, destructive action, report', usage: 'Delete, report, error messages', a11y: 'Pair with text/icon; readable on Aurora surfaces' },
+    trust: { value: '#B15CF6', purpose: 'Peak, Perfect tier and rare public trust emphasis', usage: 'Perfect tier, peak chips, trust punctuation', a11y: 'Use text.inverse on purple fills for normal text contrast' },
   },
   state: {
-    focus: { value: '#f0c96a', purpose: 'Focus ring color', usage: 'Keyboard and programmatic focus', a11y: 'Warm ring visible against all dark surfaces' },
-    disabled: { value: '#6f6252', purpose: 'Disabled elements', usage: 'Disabled buttons, locked controls', a11y: 'Dim but still understandable on dark surfaces' },
-    loading: { value: '#b69f7f', purpose: 'Loading/skeleton state', usage: 'Skeleton loaders, loading indicators', a11y: 'Animated elements must respect reduced-motion' },
-    hover: { value: 'rgba(216, 178, 76, 0.12)', purpose: 'Hover highlight overlay', usage: 'Card hover, button hover', a11y: 'Warm but subtle; do not rely on hover for essential state' },
-    pressed: { value: 'rgba(216, 178, 76, 0.18)', purpose: 'Active press feedback', usage: 'Button pressed, tap feedback', a11y: 'Brief visual feedback only' },
+    focus: { value: '#9485FF', purpose: 'Focus ring color', usage: 'Keyboard and programmatic focus', a11y: 'Indigo ring visible against all Aurora surfaces' },
+    disabled: { value: '#958CA5', purpose: 'Disabled elements', usage: 'Disabled buttons, locked controls', a11y: 'Dim but readable on Aurora surfaces' },
+    loading: { value: '#958CA5', purpose: 'Loading/skeleton state', usage: 'Skeleton loaders, loading indicators', a11y: 'Animated elements must respect reduced-motion' },
+    hover: { value: 'rgba(109, 93, 246, 0.12)', purpose: 'Hover highlight overlay', usage: 'Card hover, button hover', a11y: 'Indigo but subtle; do not rely on hover for essential state' },
+    pressed: { value: 'rgba(109, 93, 246, 0.20)', purpose: 'Active press feedback', usage: 'Button pressed, tap feedback', a11y: 'Brief visual feedback only' },
   },
   tier: {
-    passed: { value: '#d8b24c', purpose: 'Passed completion tier', usage: 'Score display, tier badge', a11y: 'Pair with text label' },
-    strong: { value: '#66d28a', purpose: 'Strong completion tier', usage: 'Score display, tier badge', a11y: 'Pair with text label' },
-    perfect: { value: '#f2c75c', purpose: 'Perfect completion tier', usage: 'Score display, tier badge', a11y: 'Pair with text label' },
+    passed: { value: '#ABA3B8', purpose: 'Passed completion tier', usage: 'Score display, neutral tier badge', a11y: 'Pair with text label' },
+    strong: { value: '#2ED06E', purpose: 'Strong completion tier', usage: 'Score display, proof-family tier badge', a11y: 'Pair with text label; use text.inverse on filled chips' },
+    perfect: { value: '#B15CF6', purpose: 'Perfect completion tier', usage: 'Score display, purple peak tier badge', a11y: 'Pair with text label; use text.inverse on filled chips' },
   },
 };
 
@@ -82,7 +82,12 @@ export const ELEVATION_TOKENS = {
   raised: { value: '0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2)', usage: 'Cards, panels above canvas' },
   floating: { value: '0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3)', usage: 'Dropdowns, popovers, floating actions' },
   overlay: { value: '0 8px 24px rgba(0, 0, 0, 0.5)', usage: 'Modals, dialogs, overlays' },
-  focusRing: { value: '0 0 0 2px #f0c96a', usage: 'Keyboard focus indicator, outset ring' },
+  focusRing: { value: '0 0 0 2px #9485FF', usage: 'Keyboard focus indicator, outset ring' },
+};
+
+export const EFFECT_TOKENS = {
+  leadGlow: { value: '0 8px 24px rgba(109, 93, 246, 0.42)', usage: 'Primary CTA, active roadmap node, brand mark' },
+  ambient: { value: 'radial-gradient(circle at 16% 12%, rgba(109, 93, 246, 0.18), transparent 30%), radial-gradient(circle at 86% 4%, rgba(177, 92, 246, 0.12), transparent 28%)', usage: 'Optional shell background so the Aurora dark surface feels alive without decoration overload' },
 };
 
 export const MOTION_TOKENS = {
@@ -135,6 +140,7 @@ export const DESIGN_TOKENS = {
   spacing: SPACING_TOKENS,
   radius: RADIUS_TOKENS,
   elevation: ELEVATION_TOKENS,
+  effect: EFFECT_TOKENS,
   motion: MOTION_TOKENS,
   state: STATE_TOKENS,
   accessibility: ACCESSIBILITY_TOKENS,

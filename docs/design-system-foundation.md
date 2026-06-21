@@ -46,11 +46,13 @@ Phase 6.9.2 establishes the Proof Studio visual direction: Today as the daily ac
 
 Phase 6.9.3 polishes the production UI rollout by fixing card overlap, improving spacing and radius consistency, simplifying Discovery search/filter controls, removing stray numbering, and refining the roadmap into a proof journey.
 
+Phase 6.9.4 replaces the gold Proof Studio skin with the Aurora visual direction (indigo lead, green = proof, purple = peak, deep neutral-violet base), adds a consistent UX interaction/behavior system, and hardens the design system for radius, hierarchy, alignment and contrast. Proof Studio product integrity (real data only, no leaderboard, no following, no fake proof) is unchanged.
+
 ## Color system
 
-### Dark editorial base
+### Aurora base
 
-The default surface is dark — not pitch black, but a deep warm-neutral field that feels editorial and premium. Text is high-contrast cream with a warm sand hierarchy. Gold is the primary progress/action accent; proof and success use green, danger uses oxblood/red, and trust stays restrained.
+The default surface is dark, deep neutral-violet and warm-tinted rather than cold slate. Text is high-contrast near-white with readable lavender-gray hierarchy. Indigo is the single lead color for primary action, progress, active state and streak continuity. Green means proof and Strong tier. Purple means Perfect tier and peak moments.
 
 ### Semantic color groups
 
@@ -70,8 +72,9 @@ The default surface is dark — not pitch black, but a deep warm-neutral field t
 3. Success/warning/danger always pair with an icon or text label
 4. Focus ring color must be visible on all surface tones
 5. Disabled state uses reduced opacity, not a separate gray palette
-6. Do not copy the supplied HTML sample palette; blue must not become the primary action or progress color
-7. Gold remains the primary progress/action accent; green marks proof, oxblood marks report/danger, and trust stays restrained
+6. Do not copy the supplied HTML sample palette; Aurora uses a warm neutral-violet base, not cold slate
+7. Indigo remains the single primary progress/action accent; green marks proof and Strong, purple marks Perfect/peak, danger marks report/error
+8. Filled accent labels must pass contrast mathematically: white on indigo, dark inverse text on green and purple
 
 ### Proof Studio rules
 
@@ -80,14 +83,29 @@ The default surface is dark — not pitch black, but a deep warm-neutral field t
 - Public Progress is proof-first and uses Respect, Comment and Report as visible action labels.
 - Trust metrics must be real-data-only; use "Not enough data yet" instead of fake leaderboards or fake social proof.
 - Cards, Discovery controls and proof journey nodes use token-backed spacing and radius values so long content wraps without overlap.
+- Aurora is visual skin only; Proof Studio integrity rules remain unchanged.
 
 ### Accessibility notes
 
-- `text.primary` on `surface.canvas`: above 18:1
-- `text.secondary` on `surface.canvas`: above 11:1
-- `text.muted` on `surface.canvas`: above 7:1
-- Primary progress/action gold remains readable on the warm canvas and supports inverse button text
+- `text.primary` on `surface.canvas`: above 14:1
+- `text.secondary` on `surface.canvas`: above 7:1
+- `text.muted` on `surface.raised`: above 4.5:1
+- Primary progress/action indigo remains readable on Aurora surfaces and uses pure white for filled button labels
+- Purple/Perfect filled chips use dark inverse text because near-white and white do not pass normal text contrast on `#B15CF6`
+- Muted text is raised to `#958CA5` so small labels and empty states stay readable on raised surfaces
 - Color is never the only means of conveying information
+
+## Interaction System
+
+- Primary buttons: indigo fill, white label, Aurora lead glow, hover lift, active press scale, visible focus ring, disabled without glow.
+- Secondary buttons: outlined raised surface, hover state overlay, visible focus ring.
+- Ghost buttons: transparent rest state, subtle hover overlay, visible focus ring.
+- Destructive buttons: danger fill with text/icon copy, never color-only.
+- Interactive cards: subtle hover/focus lift with indigo border and soft glow. Static cards do not imply clickability.
+- Roadmap active node: indigo ring/glow and clear action. Locked nodes are dimmed, unavailable and do not expose session CTAs.
+- Reactions: Respect can show press feedback and real counts only.
+- Inputs/search: focus ring is visible; errors are inline with text and not toast-only.
+- Reduced motion: non-essential animation is disabled under `prefers-reduced-motion: reduce`.
 
 ## Typography system
 
