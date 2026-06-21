@@ -59,7 +59,7 @@ if(root.overrides && (JSON.stringify(root.overrides).includes('jwks-rsa') || JSO
   fail('Remove package-lock overrides affecting jwks-rsa or jose.');
 }
 
-for(const route of ['api/interpret-goal.js', 'api/generate-path.js', 'api/transcribe-voice.js']){
+for(const route of ['server/api-handlers/interpret-goal.js', 'server/api-handlers/generate-path.js', 'server/api-handlers/transcribe-voice.js']){
   const source = readFileSync(new URL('../' + route, import.meta.url), 'utf8');
   if(source.includes('firebase-tools')){
     fail(`${route} must not import firebase-tools.`);

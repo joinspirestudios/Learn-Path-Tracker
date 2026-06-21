@@ -1,41 +1,69 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/interpret-goal.js": {
-      "maxDuration": 120
-    },
-    "api/generate-path.js": {
+    "api/ai.js": {
       "maxDuration": 240
     },
-    "api/transcribe-voice.js": {
+    "api/voice.js": {
       "maxDuration": 90
     },
-    "api/deepgram-token.js": {
-      "maxDuration": 15
-    },
-    "api/join-path.js": {
-      "maxDuration": 15
-    },
-    "api/publish-progress.js": {
-      "maxDuration": 15
-    },
-    "api/unpublish-progress.js": {
-      "maxDuration": 15
-    },
-    "api/react-progress.js": {
-      "maxDuration": 15
-    },
-    "api/comment-progress.js": {
-      "maxDuration": 15
-    },
-    "api/hide-progress-comment.js": {
-      "maxDuration": 15
-    },
-    "api/sync-path-metrics.js": {
+    "api/community.js": {
       "maxDuration": 15
     }
   },
   "rewrites": [
+    {
+      "source": "/api/generate-path",
+      "destination": "/api/ai?route=generate-path"
+    },
+    {
+      "source": "/api/interpret-goal",
+      "destination": "/api/ai?route=interpret-goal"
+    },
+    {
+      "source": "/api/deepgram-token",
+      "destination": "/api/voice?route=deepgram-token"
+    },
+    {
+      "source": "/api/transcribe-voice",
+      "destination": "/api/voice?route=transcribe-voice"
+    },
+    {
+      "source": "/api/join-path",
+      "destination": "/api/community?route=join-path"
+    },
+    {
+      "source": "/api/publish-progress",
+      "destination": "/api/community?route=publish-progress"
+    },
+    {
+      "source": "/api/unpublish-progress",
+      "destination": "/api/community?route=unpublish-progress"
+    },
+    {
+      "source": "/api/react-progress",
+      "destination": "/api/community?route=react-progress"
+    },
+    {
+      "source": "/api/comment-progress",
+      "destination": "/api/community?route=comment-progress"
+    },
+    {
+      "source": "/api/hide-progress-comment",
+      "destination": "/api/community?route=hide-progress-comment"
+    },
+    {
+      "source": "/api/report-path",
+      "destination": "/api/community?route=report-path"
+    },
+    {
+      "source": "/api/report-progress-comment",
+      "destination": "/api/community?route=report-progress-comment"
+    },
+    {
+      "source": "/api/sync-path-metrics",
+      "destination": "/api/community?route=sync-path-metrics"
+    },
     {
       "source": "/__/auth/:path*",
       "destination": "https://learn-path-tracker.firebaseapp.com/__/auth/:path*"

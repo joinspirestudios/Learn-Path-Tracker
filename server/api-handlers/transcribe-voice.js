@@ -1,10 +1,10 @@
-import { createRouteLogger, elapsedMs, requestBodyBytes } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { contentType } from './_lib/http.js';
-import { runProviderRequest } from './_lib/provider.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
-import { MAX_VOICE_UPLOAD_BYTES } from '../src/voice-input-model.js';
+import { createRouteLogger, elapsedMs, requestBodyBytes } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { contentType } from '../../api/_lib/http.js';
+import { runProviderRequest } from '../../api/_lib/provider.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
+import { MAX_VOICE_UPLOAD_BYTES } from '../../src/voice-input-model.js';
 
 const ACCEPTED_AUDIO_TYPES = new Set([
   'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg',

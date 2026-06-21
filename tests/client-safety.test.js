@@ -8,7 +8,7 @@ import {
 } from '../src/ai-builder-model.js';
 import { localToPlatformParts, normalizePathDoc, platformToLocalPath } from '../src/platform.js';
 import { externalLinkHTML, safeExternalUrl } from '../src/urls.js';
-import { normalizeDraft, normalizePrompt } from '../api/generate-path.js';
+import { normalizeDraft, normalizePrompt } from '../server/api-handlers/generate-path.js';
 
 test('external URL sanitizer accepts only absolute HTTP and HTTPS URLs', () => {
   assert.equal(safeExternalUrl('https://example.com/a?b=1'), 'https://example.com/a?b=1');

@@ -1,10 +1,10 @@
-import { createRouteLogger } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { boundedText, requireJsonBody } from './_lib/http.js';
-import { getAdminFirestore } from './_lib/firebase-admin.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
-import { publicProgressEntryId } from '../src/public-progress.js';
+import { createRouteLogger } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { boundedText, requireJsonBody } from '../../api/_lib/http.js';
+import { getAdminFirestore } from '../../api/_lib/firebase-admin.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
+import { publicProgressEntryId } from '../../src/public-progress.js';
 import {
   applyActiveThisWeek,
   currentUtcWeekKey,
@@ -14,7 +14,7 @@ import {
   participantWrite,
   publicProofCount,
   statsWrite,
-} from './_lib/path-trust-metrics.js';
+} from '../../api/_lib/path-trust-metrics.js';
 
 function cleanPathId(value){
   const id = boundedText(value, 'pathId', 180, { required:true });

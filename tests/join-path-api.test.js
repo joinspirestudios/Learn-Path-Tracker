@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { apiError } from '../api/_lib/errors.js';
-import { createJoinPathHandler, enrollmentIdFor } from '../api/join-path.js';
+import { createJoinPathHandler, enrollmentIdFor } from '../server/api-handlers/join-path.js';
 
 function responseRecorder(){
   return {

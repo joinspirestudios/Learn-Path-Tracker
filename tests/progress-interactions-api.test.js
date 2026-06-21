@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { apiError } from '../api/_lib/errors.js';
-import { createCommentProgressHandler } from '../api/comment-progress.js';
-import { createHideProgressCommentHandler } from '../api/hide-progress-comment.js';
-import { createReactProgressHandler } from '../api/react-progress.js';
+import { createCommentProgressHandler } from '../server/api-handlers/comment-progress.js';
+import { createHideProgressCommentHandler } from '../server/api-handlers/hide-progress-comment.js';
+import { createReactProgressHandler } from '../server/api-handlers/react-progress.js';
 
 function responseRecorder(){
   return {

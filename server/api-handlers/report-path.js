@@ -1,10 +1,10 @@
-import { createRouteLogger } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { requireJsonBody } from './_lib/http.js';
-import { getAdminFirestore } from './_lib/firebase-admin.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
-import { cleanPathId, visiblePublicPath } from './_lib/progress-interactions.js';
+import { createRouteLogger } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { requireJsonBody } from '../../api/_lib/http.js';
+import { getAdminFirestore } from '../../api/_lib/firebase-admin.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
+import { cleanPathId, visiblePublicPath } from '../../api/_lib/progress-interactions.js';
 import {
   cleanPublicTitle,
   cleanReportNote,
@@ -12,7 +12,7 @@ import {
   cleanReportUid,
   reportIdFor,
   upsertModerationReport,
-} from './_lib/moderation-reports.js';
+} from '../../api/_lib/moderation-reports.js';
 
 export function createReportPathHandler({
   authenticate = requireAuth,

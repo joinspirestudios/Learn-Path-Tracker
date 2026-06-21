@@ -1,15 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   normalizeConfirmedBrief, unacceptedMaterialAssumptions, validatePhase55Brief,
-} from '../src/ai-builder-model.js';
-import { intensityPolicySummary } from '../src/intensity-policy.js';
-import { safeExternalUrl } from '../src/urls.js';
-import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
-import { runProviderRequest } from './_lib/provider.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
+} from '../../src/ai-builder-model.js';
+import { intensityPolicySummary } from '../../src/intensity-policy.js';
+import { safeExternalUrl } from '../../src/urls.js';
+import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { boundedArray, boundedText, requireJsonBody } from '../../api/_lib/http.js';
+import { runProviderRequest } from '../../api/_lib/provider.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'];
 const INTENSITIES = ['soft', 'balanced', 'intensive'];

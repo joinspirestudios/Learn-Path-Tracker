@@ -5,9 +5,9 @@ import { apiError } from '../api/_lib/errors.js';
 import { runProviderRequest } from '../api/_lib/provider.js';
 import { enforceRateLimit } from '../api/_lib/rate-limit.js';
 import { requireAuth } from '../api/_lib/require-auth.js';
-import { createGeneratePathHandler, basicStarterDraft } from '../api/generate-path.js';
-import { createInterpretGoalHandler, normalizeBrief } from '../api/interpret-goal.js';
-import { createTranscribeVoiceHandler, MAX_AUDIO_BYTES } from '../api/transcribe-voice.js';
+import { createGeneratePathHandler, basicStarterDraft } from '../server/api-handlers/generate-path.js';
+import { createInterpretGoalHandler, normalizeBrief } from '../server/api-handlers/interpret-goal.js';
+import { createTranscribeVoiceHandler, MAX_AUDIO_BYTES } from '../server/api-handlers/transcribe-voice.js';
 import {
   briefFromPrompt, confirmBrief, mergeBriefPreservingConfirmed,
   mergeClarificationAnswers, normalizeConfirmedBrief,

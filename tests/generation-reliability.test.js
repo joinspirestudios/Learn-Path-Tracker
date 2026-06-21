@@ -5,7 +5,7 @@ import {
   buildPrompt,
   AI_SUPPORTING_TASK_LIMIT, PATH_DRAFT_TOOL, callAnthropic as callGenerateAnthropic,
   createGeneratePathHandler, normalizeDraft, normalizePrompt,
-} from '../api/generate-path.js';
+} from '../server/api-handlers/generate-path.js';
 import { confirmBrief } from '../src/ai-builder-model.js';
 
 function responseRecorder(){

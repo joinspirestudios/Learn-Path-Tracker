@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { apiError } from '../api/_lib/errors.js';
 import { currentUtcWeekKey } from '../api/_lib/path-trust-metrics.js';
-import { createSyncPathMetricsHandler } from '../api/sync-path-metrics.js';
-import { enrollmentIdFor } from '../api/join-path.js';
+import { createSyncPathMetricsHandler } from '../server/api-handlers/sync-path-metrics.js';
+import { enrollmentIdFor } from '../server/api-handlers/join-path.js';
 
 function responseRecorder(){
   return {

@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { apiError } from '../api/_lib/errors.js';
-import { enrollmentIdFor } from '../api/join-path.js';
-import { createPublishProgressHandler } from '../api/publish-progress.js';
-import { createUnpublishProgressHandler } from '../api/unpublish-progress.js';
+import { enrollmentIdFor } from '../server/api-handlers/join-path.js';
+import { createPublishProgressHandler } from '../server/api-handlers/publish-progress.js';
+import { createUnpublishProgressHandler } from '../server/api-handlers/unpublish-progress.js';
 import { publicProgressEntryId } from '../src/public-progress.js';
 
 function responseRecorder(){

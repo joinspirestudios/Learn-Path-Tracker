@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import interpretGoalHandler from '../api/interpret-goal.js';
-import generatePathHandler from '../api/generate-path.js';
-import joinPathHandler from '../api/join-path.js';
-import commentProgressHandler from '../api/comment-progress.js';
-import hideProgressCommentHandler from '../api/hide-progress-comment.js';
-import publishProgressHandler from '../api/publish-progress.js';
-import reactProgressHandler from '../api/react-progress.js';
-import reportPathHandler from '../api/report-path.js';
-import reportProgressCommentHandler from '../api/report-progress-comment.js';
-import syncPathMetricsHandler from '../api/sync-path-metrics.js';
-import transcribeVoiceHandler from '../api/transcribe-voice.js';
-import unpublishProgressHandler from '../api/unpublish-progress.js';
+import interpretGoalHandler from '../server/api-handlers/interpret-goal.js';
+import generatePathHandler from '../server/api-handlers/generate-path.js';
+import joinPathHandler from '../server/api-handlers/join-path.js';
+import commentProgressHandler from '../server/api-handlers/comment-progress.js';
+import hideProgressCommentHandler from '../server/api-handlers/hide-progress-comment.js';
+import publishProgressHandler from '../server/api-handlers/publish-progress.js';
+import reactProgressHandler from '../server/api-handlers/react-progress.js';
+import reportPathHandler from '../server/api-handlers/report-path.js';
+import reportProgressCommentHandler from '../server/api-handlers/report-progress-comment.js';
+import syncPathMetricsHandler from '../server/api-handlers/sync-path-metrics.js';
+import transcribeVoiceHandler from '../server/api-handlers/transcribe-voice.js';
+import unpublishProgressHandler from '../server/api-handlers/unpublish-progress.js';
 
 function responseRecorder(){
   return {

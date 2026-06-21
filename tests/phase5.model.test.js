@@ -19,7 +19,7 @@ import {
   resolveCreatorName, trustBadgesForStats,
 } from '../src/platform.js';
 import { TEMPLATES } from '../src/templates.js';
-import { basicStarterDraft, createGeneratePathHandler, normalizeDraft, normalizePrompt } from '../api/generate-path.js';
+import { basicStarterDraft, createGeneratePathHandler, normalizeDraft, normalizePrompt } from '../server/api-handlers/generate-path.js';
 
 test('generic AI builder defaults are neutral', () => {
   const defaults = aiPromptDefaults();

@@ -377,17 +377,18 @@ Compatibility fields `ok` and `code` are also included for the current UI. Rate-
 
 Protected success and error responses use `Cache-Control: private, no-store` and include an `X-Request-Id` header plus matching `requestId` response field. Unexpected server failures return a generic message; internal error details are logged only with the request ID and never include request bodies or credentials.
 
-`vercel.json` sets Node serverless maximum durations for the protected API routes:
+`vercel.json` keeps the public API URLs stable with rewrites while deploying three consolidated Node serverless routers for Vercel Hobby compatibility:
 
 ```text
-api/interpret-goal.js: 120 seconds
-api/generate-path.js: 240 seconds
-api/deepgram-token.js: 15 seconds
-api/transcribe-voice.js: 90 seconds
-api/join-path.js: 15 seconds
-api/publish-progress.js: 15 seconds
-api/unpublish-progress.js: 15 seconds
-api/sync-path-metrics.js: 15 seconds
+api/ai.js: 240 seconds
+  handles /api/interpret-goal and /api/generate-path
+
+api/voice.js: 90 seconds
+  handles /api/deepgram-token and /api/transcribe-voice
+  exports bodyParser:false so raw audio uploads stay streamed
+
+api/community.js: 15 seconds
+  handles join, publish/unpublish, reactions, comments, reports, and path metrics
 ```
 
 The live token route verifies Firebase Authentication, applies the voice transcription rate limit, calls Deepgram's temporary-token grant endpoint with the server-side `DEEPGRAM_API_KEY`, and returns only the temporary JWT, expiration metadata, and request ID. The permanent Deepgram key is never returned to the browser.

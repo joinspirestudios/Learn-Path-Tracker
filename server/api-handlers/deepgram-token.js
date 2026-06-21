@@ -1,8 +1,8 @@
-import { createRouteLogger, elapsedMs, requestBodyBytes } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { runProviderRequest } from './_lib/provider.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
+import { createRouteLogger, elapsedMs, requestBodyBytes } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { runProviderRequest } from '../../api/_lib/provider.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
 
 export const DEEPGRAM_TOKEN_TIMEOUT_MS = 10_000;
 export const DEEPGRAM_TOKEN_TTL_SECONDS = 30;

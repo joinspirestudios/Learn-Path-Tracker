@@ -2,13 +2,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   AI_ANSWER_TARGETS, briefFromPrompt, mergeBriefPreservingConfirmed, mergeClarificationAnswers,
   normalizeBriefAssumptions, normalizeClarifyingQuestions, normalizeConfirmedBrief,
-} from '../src/ai-builder-model.js';
-import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { boundedArray, boundedText, requireJsonBody } from './_lib/http.js';
-import { runProviderRequest } from './_lib/provider.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
+} from '../../src/ai-builder-model.js';
+import { createRouteLogger, elapsedMs, requestBodyBytes, usageFromMessage } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { boundedArray, boundedText, requireJsonBody } from '../../api/_lib/http.js';
+import { runProviderRequest } from '../../api/_lib/provider.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
 
 const PATH_TYPES = ['skill', 'habit', 'challenge', 'fitness', 'creative_project', 'business', 'academic', 'spiritual/devotional', 'content', 'custom'];
 const INTENSITIES = ['soft', 'balanced', 'intensive'];

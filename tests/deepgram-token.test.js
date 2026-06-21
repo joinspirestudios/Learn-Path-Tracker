@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { apiError } from '../api/_lib/errors.js';
-import { createDeepgramTokenHandler, DEEPGRAM_TOKEN_TIMEOUT_MS, requestDeepgramToken } from '../api/deepgram-token.js';
+import { createDeepgramTokenHandler, DEEPGRAM_TOKEN_TIMEOUT_MS, requestDeepgramToken } from '../server/api-handlers/deepgram-token.js';
 
 function responseRecorder(){
   return {

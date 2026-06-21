@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { apiError } from '../api/_lib/errors.js';
-import { createReportPathHandler } from '../api/report-path.js';
-import { createReportProgressCommentHandler } from '../api/report-progress-comment.js';
+import { createReportPathHandler } from '../server/api-handlers/report-path.js';
+import { createReportProgressCommentHandler } from '../server/api-handlers/report-progress-comment.js';
 
 function responseRecorder(){
   return {

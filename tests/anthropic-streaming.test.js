@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runProviderRequest } from '../api/_lib/provider.js';
-import { callAnthropic as callGenerateAnthropic, basicStarterDraft, normalizePrompt } from '../api/generate-path.js';
-import { callAnthropic as callInterpretAnthropic } from '../api/interpret-goal.js';
+import { callAnthropic as callGenerateAnthropic, basicStarterDraft, normalizePrompt } from '../server/api-handlers/generate-path.js';
+import { callAnthropic as callInterpretAnthropic } from '../server/api-handlers/interpret-goal.js';
 
 function streamClient(message, onCall = () => {}){
   let calls = 0;

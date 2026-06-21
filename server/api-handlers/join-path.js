@@ -1,10 +1,10 @@
-import { createRouteLogger } from './_lib/diagnostics.js';
-import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from './_lib/errors.js';
-import { boundedText, requireJsonBody } from './_lib/http.js';
-import { getAdminFirestore } from './_lib/firebase-admin.js';
-import { enforceRateLimit } from './_lib/rate-limit.js';
-import { requireAuth } from './_lib/require-auth.js';
-import { withSchemaVersion } from '../src/schema-versioning.js';
+import { createRouteLogger } from '../../api/_lib/diagnostics.js';
+import { apiError, createRequestId, sendApiError, sendPrivateJson, setPrivateNoStore } from '../../api/_lib/errors.js';
+import { boundedText, requireJsonBody } from '../../api/_lib/http.js';
+import { getAdminFirestore } from '../../api/_lib/firebase-admin.js';
+import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
+import { requireAuth } from '../../api/_lib/require-auth.js';
+import { withSchemaVersion } from '../../src/schema-versioning.js';
 import {
   applyActiveThisWeek,
   currentUtcWeekKey,
@@ -12,7 +12,7 @@ import {
   normalizeServerPathStats,
   participantWrite,
   statsWrite,
-} from './_lib/path-trust-metrics.js';
+} from '../../api/_lib/path-trust-metrics.js';
 
 const VALID_VISIBILITIES = new Set(['private', 'unlisted', 'public']);
 const VALID_MEMBER_ROLES = new Set(['owner', 'editor', 'commenter', 'viewer']);
