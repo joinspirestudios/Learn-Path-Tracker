@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   renderButton, renderCompletionResultPanel, renderDailyScoreCard, renderDailyTaskCard,
   renderEmptyState, renderProgressMeter, renderProofActionRow, renderProofFirstProgressCard,
-  renderProofMetricCard, renderProofStudioTodayHero, renderRoadmapNode,
+  renderConsistencyCard, renderProofMetricCard, renderProofStudioTodayHero, renderRoadmapNode,
 } from '../src/ui/core.js';
 
 const coreSources = [
@@ -118,6 +118,18 @@ test('Proof metric cards support real and empty states', () => {
   const empty = renderProofMetricCard({ title:'Your consistency', empty:true });
   assert.match(real, /Every number here is proof-backed/);
   assert.match(empty, /Not enough data yet/);
+});
+
+test('Consistency card documents real progress or an honest empty state', () => {
+  const real = renderConsistencyCard({ streak:5, completedDays:9 });
+  const empty = renderConsistencyCard({ empty:true });
+  assert.match(real, /proof-consistency-card has-data/);
+  assert.match(real, /5 day streak/);
+  assert.match(real, /9 completed day values from real progress/);
+  assert.match(empty, /proof-consistency-card is-empty/);
+  assert.match(empty, /Not enough data yet/);
+  assert.match(empty, /Complete a few sessions/);
+  assert.doesNotMatch(real + empty, /Following|Leaderboard|ranking|follower/i);
 });
 
 test('core UI modules have no Firebase, server or analytics imports', () => {

@@ -2,7 +2,7 @@ import {
   renderButton, renderCompletionResultPanel, renderDailyScoreCard, renderDailyTaskCard,
   renderEmptyState, renderMetricPill, renderProgressMeter, renderProofActionRow,
   renderProofFirstProgressCard, renderProofMetricCard, renderProofStudioTodayHero,
-  renderProofUploadCard, renderRoadmapNode, renderToastBanner,
+  renderProofUploadCard, renderRoadmapNode, renderToastBanner, renderConsistencyCard,
 } from './core-components.js';
 import { renderAppShell, renderCoreColumn, renderSessionHeader } from './core-layout.js';
 
@@ -31,6 +31,17 @@ export function renderDesignSystemGallery(){
         proofSummary:'1 task asks for proof before it can count.',
         ctaLabel:'Continue day',
       }) + '</section>',
+    '<section><h2>Polished public path card</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
+      + '<button class="skill-card discovery-card lpt-card-polished" type="button">'
+      + '<div class="lpt-card-header sc-header"><span class="sc-creator">By Component author</span></div>'
+      + '<div class="lpt-card-title sc-top">A long public path title that wraps without colliding with creator or tags</div>'
+      + '<div class="lpt-card-subtitle sc-tag">Creative practice</div>'
+      + '<div class="lpt-card-body sc-blurb">Proof-first cards stack metadata, title, description, tags and action regions so nothing floats over anything else.</div>'
+      + '<div class="lpt-card-tags discovery-badges"><span>Proof-backed</span><span>Component example</span></div>'
+      + '<div class="lpt-card-tags discovery-metrics"><span>3 joined</span><span>2 proof submitted</span></div>'
+      + '<div class="lpt-card-actions sc-cta">View &rarr;</div></button></section>',
+    '<section><h2>Compact discovery toolbar</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
+      + '<div class="discovery-controls discovery-toolbar lpt-discovery-toolbar"><div class="discovery-mainline"><div class="discovery-search-shell lpt-search-primary"><input type="search" aria-label="Search public paths" placeholder="Search by goal, creator or category"/><button class="btn subtle discovery-clear-action" type="button">Clear</button></div><label class="discovery-sort-control"><span>Sort</span><select><option>Recommended</option></select></label><button class="btn subtle discovery-clear-action" type="button">Clear filters</button></div><div class="discovery-filter-chips"><label class="discovery-filter-chip"><span>Category</span><select><option>All</option></select></label><label class="discovery-filter-chip"><span>Proof</span><select><option>All</option></select></label></div></div></section>',
     '<section><h2>RoadmapNode states</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="proof-roadmap-gallery">'
       + renderRoadmapNode({ day:10, state:'completed', title:'Completed', date:'Jun 19', taskCount:3, tier:'strong', proofSubmitted:true })
       + renderRoadmapNode({ day:11, state:'active', title:'Active day', date:'Jun 20', taskCount:4, cta:"Open today's session" })
@@ -50,8 +61,8 @@ export function renderDesignSystemGallery(){
     '<section><h2>Respect Comment Report row</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p>'
       + renderProofActionRow({ respectCount:2, commentCount:1 }) + '</section>',
     '<section><h2>Consistency card states</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row">'
-      + renderProofMetricCard({ title:'Your consistency', value:'7 days', body:'Real streak data only.' })
-      + renderProofMetricCard({ title:'Your consistency', empty:true, body:'Not enough data yet.' })
+      + renderConsistencyCard({ streak:7, completedDays:12 })
+      + renderConsistencyCard({ empty:true })
       + '</div></section>',
     '<section><h2>Path trust card states</h2><p class="lpt-gallery-note">Component example. Static mock values only.</p><div class="lpt-gallery-row">'
       + renderProofMetricCard({ title:'Path trust', value:'12 proof submitted', body:'Every number here is proof-backed.' })

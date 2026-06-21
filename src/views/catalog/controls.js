@@ -18,11 +18,11 @@ export function discoveryControlsHTML(paths, state){
   if(state.proof !== 'all') activeBits.push('proof/activity');
   if(state.sort !== 'recommended') activeBits.push('custom sort');
   const activeText = activeBits.length ? 'Active filters: ' + activeBits.join(', ') : 'No filters applied';
-  return '<div class="discovery-controls discovery-toolbar" aria-label="Discover public paths search and filters">'
+  return '<div class="discovery-controls discovery-toolbar lpt-discovery-toolbar" aria-label="Discover public paths search and filters">'
     + '<div class="discovery-mainline">'
-    + '<div class="discovery-search-shell"><label class="sr-only" for="discoveryQuery">Search public paths</label><input type="search" id="discoveryQuery" aria-label="Search public paths" value="' + esc(state.query) + '" placeholder="Search by goal, creator or category"/><button class="btn" id="clearDiscoverySearch" type="button" ' + (state.query ? '' : 'disabled') + '>Clear</button></div>'
+    + '<div class="discovery-search-shell lpt-search-primary"><label class="sr-only" for="discoveryQuery">Search public paths</label><input type="search" id="discoveryQuery" aria-label="Search public paths" value="' + esc(state.query) + '" placeholder="Search by goal, creator or category"/><button class="btn subtle discovery-clear-action" id="clearDiscoverySearch" type="button" ' + (state.query ? '' : 'disabled') + '>Clear</button></div>'
     + '<label class="discovery-sort-control"><span>Sort</span><select aria-label="Sort public paths" data-discovery-field="sort">' + optionListHTML(DISCOVERY_SORTS, state.sort) + '</select></label>'
-    + '<button class="btn" id="clearDiscoveryFilters" type="button" ' + (isDiscoveryDefault(state) ? 'disabled' : '') + '>Clear filters</button>'
+    + '<button class="btn subtle discovery-clear-action" id="clearDiscoveryFilters" type="button" ' + (isDiscoveryDefault(state) ? 'disabled' : '') + '>Clear filters</button>'
     + '</div>'
     + '<div class="discovery-filter-chips" aria-label="Discovery filters">'
     + '<label class="discovery-filter-chip"><span>Category</span><select aria-label="Filter by category" data-discovery-field="category">' + optionListHTML(categoryOptions, state.category) + '</select></label>'

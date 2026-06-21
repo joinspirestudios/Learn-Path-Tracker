@@ -227,3 +227,14 @@ export function renderProofMetricCard({ title = '', value = '', body = '', empty
     + '<small>' + esc(body || 'Every number here is proof-backed') + '</small>'
     + '</article>';
 }
+
+export function renderConsistencyCard({ streak = 0, completedDays = 0, empty = false } = {}){
+  const safeStreak = Math.max(0, Math.round(Number(streak) || 0));
+  const safeCompleted = Math.max(0, Math.round(Number(completedDays) || 0));
+  const isEmpty = empty || (!safeStreak && !safeCompleted);
+  return '<article class="proof-consistency-card ' + (isEmpty ? 'is-empty' : 'has-data') + '">'
+    + '<span>Your consistency</span>'
+    + '<b>' + esc(isEmpty ? 'Not enough data yet' : safeStreak + ' day streak') + '</b>'
+    + '<p>' + esc(isEmpty ? 'Complete a few sessions to see your consistency map.' : safeCompleted + ' completed day value' + (safeCompleted === 1 ? '' : 's') + ' from real progress.') + '</p>'
+    + '</article>';
+}
