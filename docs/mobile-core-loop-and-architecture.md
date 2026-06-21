@@ -26,6 +26,8 @@ These modules contain pure domain logic with no DOM dependency and can transfer 
 - `src/daily-session-model.js` — session phases, task scoring, completion checks, weighted progress
 - `src/intensity-policy.js` — intensity levels, pass/strong/perfect thresholds, completion tiers
 - `src/schema-versioning.js` — document schema versions, normalization, legacy detection
+- `src/shared-api-contracts.js` — API endpoint constants, route groups, per-endpoint contracts, shared privacy constraints
+- `src/shared-dtos.js` — privacy-safe DTO helpers for paths, progress, metrics, discovery, moderation
 - `src/public-progress.js` — public progress entry sanitization and validation
 - `src/discovery.js` — discovery state normalization, filter/sort defaults
 - `src/discovery-pagination.js` — pagination state, cursor management
@@ -38,6 +40,8 @@ These modules contain pure domain logic with no DOM dependency and can transfer 
 - `src/templates.js` — path template structure
 - `src/ai-builder-model.js` — AI brief structure and normalization
 - `src/ai-response.js` — AI response parsing and validation
+
+See also [`docs/api-contracts.md`](api-contracts.md) for the full API contract reference with per-endpoint privacy, router, and mobile use case metadata.
 
 ### Web-only skin (must be rebuilt for mobile)
 

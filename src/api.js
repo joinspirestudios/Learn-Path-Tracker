@@ -1,4 +1,5 @@
 import { fb } from './firebase.js';
+import { API_ENDPOINTS } from './shared-api-contracts.js';
 
 function authError(){
   const error = new Error('Your session has expired. Sign in again to continue.');
@@ -84,7 +85,7 @@ function metricsMessage(status, payload = {}){
 }
 
 export async function joinPath(pathId){
-  const response = await authFetch('/api/join-path', {
+  const response = await authFetch(API_ENDPOINTS.JOIN_PATH, {
     method:'POST',
     headers:{ 'Content-Type':'application/json' },
     body:JSON.stringify({ pathId }),
@@ -122,7 +123,7 @@ async function progressRequest(url, body, action){
 }
 
 export async function publishProgress(pathId, dayNumber, payload = {}){
-  return progressRequest('/api/publish-progress', {
+  return progressRequest(API_ENDPOINTS.PUBLISH_PROGRESS, {
     pathId,
     dayNumber,
     publicCaption:payload.publicCaption || payload.caption || '',
@@ -130,7 +131,7 @@ export async function publishProgress(pathId, dayNumber, payload = {}){
 }
 
 export async function unpublishProgress(pathId, dayNumber){
-  return progressRequest('/api/unpublish-progress', { pathId, dayNumber }, 'unpublish');
+  return progressRequest(API_ENDPOINTS.UNPUBLISH_PROGRESS, { pathId, dayNumber }, 'unpublish');
 }
 
 async function interactionRequest(url, body, action){
@@ -153,15 +154,15 @@ async function interactionRequest(url, body, action){
 }
 
 export async function reactToProgress(pathId, entryId, reaction){
-  return interactionRequest('/api/react-progress', { pathId, entryId, reaction }, 'react');
+  return interactionRequest(API_ENDPOINTS.REACT_PROGRESS, { pathId, entryId, reaction }, 'react');
 }
 
 export async function commentOnProgress(pathId, entryId, body){
-  return interactionRequest('/api/comment-progress', { pathId, entryId, body }, 'comment');
+  return interactionRequest(API_ENDPOINTS.COMMENT_PROGRESS, { pathId, entryId, body }, 'comment');
 }
 
 export async function hideProgressComment(pathId, entryId, commentId){
-  return interactionRequest('/api/hide-progress-comment', { pathId, entryId, commentId }, 'hide');
+  return interactionRequest(API_ENDPOINTS.HIDE_PROGRESS_COMMENT, { pathId, entryId, commentId }, 'hide');
 }
 
 async function reportRequest(url, body, target){
@@ -184,17 +185,17 @@ async function reportRequest(url, body, target){
 }
 
 export async function reportPath(pathId, reason, note = ''){
-  return reportRequest('/api/report-path', { pathId, reason, note }, 'path');
+  return reportRequest(API_ENDPOINTS.REPORT_PATH, { pathId, reason, note }, 'path');
 }
 
 export async function reportProgressComment(pathId, entryId, commentId, reason, note = ''){
-  return reportRequest('/api/report-progress-comment', { pathId, entryId, commentId, reason, note }, 'comment');
+  return reportRequest(API_ENDPOINTS.REPORT_PROGRESS_COMMENT, { pathId, entryId, commentId, reason, note }, 'comment');
 }
 
 export async function syncPathMetrics(pathId, event, dayNumber = null){
   const body = { pathId, event };
   if(dayNumber != null) body.dayNumber = dayNumber;
-  const response = await authFetch('/api/sync-path-metrics', {
+  const response = await authFetch(API_ENDPOINTS.SYNC_PATH_METRICS, {
     method:'POST',
     headers:{ 'Content-Type':'application/json' },
     body:JSON.stringify(body),

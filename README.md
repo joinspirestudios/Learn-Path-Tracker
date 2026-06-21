@@ -485,6 +485,8 @@ src/
   journey.js
   main.js
   public-progress.js
+  shared-api-contracts.js
+  shared-dtos.js
   ai-timeouts.js
   views.js
 tests/
@@ -514,6 +516,17 @@ No mobile app was built in this phase. See [`docs/mobile-core-loop-and-architect
 ## Behavioral UX and retention strategy (Phase 6.6)
 
 Phase 6.6 defines the behavioral UX, retention model, analytics event taxonomy, motion/interaction direction and redesign specification. No analytics SDK was added. No redesign was implemented. No mobile app was built. See [`docs/behavioral-ux-retention-redesign-spec.md`](docs/behavioral-ux-retention-redesign-spec.md) for the full specification.
+
+## Shared API contracts and DTOs (Phase 6.7)
+
+Phase 6.7 extracts shared API contracts and privacy-safe DTO helpers into pure data modules that both the web and future mobile skins can import without pulling in browser-specific code.
+
+- [`src/shared-api-contracts.js`](src/shared-api-contracts.js) exports `API_ENDPOINTS` (13 public URLs), `API_ROUTE_GROUPS` (ai/voice/community), `API_CONTRACTS` (per-endpoint metadata), and `SHARED_PRIVACY_CONSTRAINTS`.
+- [`src/shared-dtos.js`](src/shared-dtos.js) exports privacy-safe DTO helpers: `pathSummaryDTO`, `publicPathPreviewDTO`, `dailyFocusDTO`, `completionResultDTO`, `publicProgressDTO`, `trustMetricsDTO`, `discoveryCardDTO`, `moderationReportDTO`.
+- `src/api.js` now uses `API_ENDPOINTS` constants instead of hardcoded URL strings for all community endpoints.
+- [`docs/api-contracts.md`](docs/api-contracts.md) documents all 13 endpoints with router, purpose, auth, method, request/response, privacy, and mobile use case.
+
+No public API URLs were changed. No request/response payloads were changed. No server route handler files were changed. No mobile app was built.
 
 ## Deferred work
 

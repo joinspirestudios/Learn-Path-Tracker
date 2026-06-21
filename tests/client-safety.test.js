@@ -193,7 +193,7 @@ test('browser-side AI timeout uses operation_timeout and preserves provider_time
 test('client join helper uses authenticated route and safe user-facing errors', () => {
   const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
   const joinBlock = apiSource.slice(apiSource.indexOf('export async function joinPath'), apiSource.length);
-  assert.match(joinBlock, /authFetch\('\/api\/join-path'/);
+  assert.match(joinBlock, /authFetch\(API_ENDPOINTS\.JOIN_PATH/);
   assert.match(joinBlock, /method:'POST'/);
   assert.match(joinBlock, /JSON\.stringify\(\{ pathId \}\)/);
   assert.match(apiSource, /Sign in to join this path/);
@@ -308,17 +308,17 @@ test('public progress interaction UI escapes comments and uses protected API hel
   assert.match(viewSource, /reportProgressComment\(record\.id, entryId, commentId, reason, note\)/);
   assert.match(interactionBlock, /progress-comment-report/);
   assert.match(interactionBlock, /aria-label="Report comment by/);
-  assert.match(apiSource, /interactionRequest\('\/api\/react-progress'/);
-  assert.match(apiSource, /interactionRequest\('\/api\/comment-progress'/);
-  assert.match(apiSource, /interactionRequest\('\/api\/hide-progress-comment'/);
-  assert.match(apiSource, /reportRequest\('\/api\/report-progress-comment'/);
-  assert.match(apiSource, /reportRequest\('\/api\/report-path'/);
+  assert.match(apiSource, /interactionRequest\(API_ENDPOINTS\.REACT_PROGRESS/);
+  assert.match(apiSource, /interactionRequest\(API_ENDPOINTS\.COMMENT_PROGRESS/);
+  assert.match(apiSource, /interactionRequest\(API_ENDPOINTS\.HIDE_PROGRESS_COMMENT/);
+  assert.match(apiSource, /reportRequest\(API_ENDPOINTS\.REPORT_PROGRESS_COMMENT/);
+  assert.match(apiSource, /reportRequest\(API_ENDPOINTS\.REPORT_PATH/);
 });
 
 test('client metrics sync uses protected API and isolates optional failures', () => {
   const viewSource = fs.readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
   const apiSource = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
-  assert.match(apiSource, /authFetch\('\/api\/sync-path-metrics'/);
+  assert.match(apiSource, /authFetch\(API_ENDPOINTS\.SYNC_PATH_METRICS/);
   assert.match(apiSource, /method:'POST'/);
   assert.match(viewSource, /syncPathMetricsQuiet/);
   const quietBlock = viewSource.slice(viewSource.indexOf('async function syncPathMetricsQuiet'), viewSource.indexOf('async function publishCompletedProgress'));
