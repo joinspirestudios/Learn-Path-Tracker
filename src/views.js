@@ -42,7 +42,7 @@ import {
   isOwner, isPathParticipant, normalizePathStats, resolveCreatorName, trustBadgesForStats,
 } from './platform.js';
 import {
-  hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathPreviewHash, pathShareLink,
+  focusHash, hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathPreviewHash, pathShareLink,
 } from './routes.js';
 import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
@@ -67,7 +67,7 @@ import {
   focusFeedbackForAction, isOptionalTask, nextUnresolvedTaskId, normalizeDailyFocusState, resumeTaskId,
   sessionTaskStates, taskNeedsEvidence,
 } from './daily-session-model.js';
-import { dailySessionHTML } from './views/daily-session.js';
+import { dailySessionHTML, focusScreenHTML } from './views/daily-session.js';
 import {
   makeVoiceInputState, mapVoiceError,
   voiceIsActive, voiceTargetFromField,
@@ -130,6 +130,7 @@ let reportBusyKey = '';
 let reportDrafts = {};
 let reportMessages = {};
 let pendingRouteRetrying = false;
+let focusScreenActive = false;
 
 function abortAIRequest(kind = null, builder = aiBuilder){
   if(!builder?.requests) return;
@@ -2404,6 +2405,7 @@ function renderOpenedPath(id, options = {}){
   store.route = { kind:'path', id };
   clearPendingPathRoute(id);
   selectedJourneyDay = options.day ? (Number(options.day) || null) : null;
+  focusScreenActive = false;
   const def = (store.state.skills[id] && store.state.skills[id].meta) || {};
   store.currentWeek = def.lastWeek || 1;
   const allowedUserTabs = ['plan', 'log'];
@@ -2416,7 +2418,11 @@ function renderOpenedPath(id, options = {}){
   dbSaveState(); applyHeader();
   if(!isUserPath(id)) refreshSuggest();
   updateOverall(); store.nav.switchTab(startTab);
-  setRoute(pathHash(id, startTab, selectedJourneyDay));
+  if(options.focus && selectedJourneyDay){
+    navigateToFocus(id, selectedJourneyDay);
+  } else {
+    setRoute(pathHash(id, startTab, selectedJourneyDay));
+  }
   openingPathId = null;
   window.scrollTo({ top:0, behavior:'smooth' });
 }
@@ -2508,6 +2514,7 @@ export async function openSkill(id, options = {}){
 }
 export function goCatalog(){
   clearPendingPathRoute();
+  focusScreenActive = false;
   store.route = { kind:'catalog' };
   store.state.current = null; store.editMode = false;
   dbSaveState(); applyHeader(); renderCatalog();
@@ -3674,23 +3681,17 @@ function journeyDetailHTML(id, def){
       h += '<button class="btn" id="resetMissedDay" data-day="' + day + '">Reset streak and continue</button></div>';
     }
   } else {
-    h += dailySessionHTML({
-      pathId:id,
-      dayNumber:day,
-      date,
-      tasks:dayTasks,
-      dayLog:log,
-      evidenceSubmissions:cachedEvidenceFor(enrollment.id, day),
-      proofType:evidenceProofType,
-      evidenceTaskId:evidenceFormTaskId,
-      evidenceError,
-      evidenceBusy,
-      accepts:ACCEPTED_EVIDENCE_TYPES.join(','),
-      saveState:dailySessionSaveState,
-      error:dailySessionError,
-      intensity:def.intensity || def.aiBrief?.intensity || 'balanced',
-      focusState,
-    });
+    const score = dailyCompletionScore(dayTasks, log, dayEvidence, { intensity:def.intensity || def.aiBrief?.intensity || 'balanced' });
+    const sessionStarted = !!log.sessionStartedAt;
+    const ctaLabel = sessionStarted ? 'Continue Day ' + day : 'Start Day ' + day;
+    h += '<div class="daily-session-cta">'
+      + '<div class="daily-session-stats">'
+      + '<div><span>Progress</span><b>' + esc(score.score) + '%</b></div>'
+      + '<div><span>Day status</span><b>' + esc(score.tier === 'not_started' ? 'Not started' : score.tier.replace(/_/g, ' ')) + '</b></div>'
+      + '<div><span>Tasks</span><b>' + esc(completeCount) + '/' + esc(dayTasks.length) + '</b></div>'
+      + '</div>'
+      + '<button class="btn gold open-focus-session" type="button" data-focus-day="' + esc(day) + '">' + esc(ctaLabel) + '</button>'
+      + '</div>';
     if(status === 'active' && !canCompleteDay(day, enrollment, today)) h += '<div class="hint">This day is not eligible for completion today.</div>';
   }
   h += '</div>';
@@ -4073,7 +4074,7 @@ async function startPathJourney(id, def, triggerButton = null){
   selectedJourneyDay = 1;
   evidenceFormTaskId = null;
   evidenceProofType = 'url';
-  renderPlan();
+  navigateToFocus(id, 1);
   try{
     if(configPresent() && store.currentUser && !cloudAvailable()) throw cloudConnectionError();
     await trackOperation(
@@ -4168,6 +4169,12 @@ function wireJourneyControls(id, def){
       if(detail) detail.scrollIntoView({ behavior:'smooth', block:'start' });
     };
   });
+  $('content').querySelectorAll('.open-focus-session[data-focus-day]').forEach(btn => {
+    btn.onclick = () => {
+      const day = Number(btn.dataset.focusDay || 1);
+      navigateToFocus(id, day);
+    };
+  });
   $('content').querySelectorAll('.journey-ck').forEach(cb => {
     cb.addEventListener('change', e => updateJourneyTask(id, def, e.target.dataset.task, e.target.checked));
   });
@@ -4207,9 +4214,116 @@ function wireJourneyControls(id, def){
 }
 
 /* ============================================================ */
+/* ---------- DEDICATED FOCUS SCREEN ---- */
+/* ============================================================ */
+function navigateToFocus(id, day){
+  focusScreenActive = true;
+  selectedJourneyDay = day;
+  setRoute(focusHash(id, day));
+  renderFocusScreen();
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+function exitFocusScreen(){
+  focusScreenActive = false;
+  const id = store.state.current;
+  setRoute(pathHash(id, 'plan', selectedJourneyDay));
+  renderPlan();
+}
+
+function renderFocusScreen(){
+  const id = store.state.current;
+  const def = curUser();
+  if(!def){ exitFocusScreen(); return; }
+  if(def.platform && !canOpenFullPath(id, def)){
+    exitFocusScreen(); return;
+  }
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate){ exitFocusScreen(); return; }
+  const today = localDateString();
+  const day = selectedJourneyDay || Math.min(Number(enrollment.currentDay || 1), journeyDayForDate(enrollment.startDate, today));
+  const dayTasks = getTasksForDay(def, day);
+  const log = dayLogFor(enrollment, day) || makeDayLog(day, { date:dateForJourneyDay(enrollment.startDate, day), status:'active', totalTaskCount:dayTasks.length });
+  const dayEvidence = cachedEvidenceFor(enrollment.id, day);
+  const focusState = normalizeDailyFocusFor(id, day, dayTasks, log, dayEvidence);
+  const h = focusScreenHTML({
+    pathId:id,
+    pathTitle:pathTitle(id),
+    dayNumber:day,
+    roadmapHash:pathHash(id, 'plan', day),
+    tasks:dayTasks,
+    dayLog:log,
+    evidenceSubmissions:dayEvidence,
+    proofType:evidenceProofType,
+    evidenceTaskId:evidenceFormTaskId,
+    evidenceError,
+    evidenceBusy,
+    accepts:ACCEPTED_EVIDENCE_TYPES.join(','),
+    saveState:dailySessionSaveState,
+    error:dailySessionError,
+    intensity:def.intensity || def.aiBrief?.intensity || 'balanced',
+    focusState,
+  });
+  $('content').innerHTML = h;
+  applyHeader();
+  wireFocusScreenControls(id, def);
+}
+
+function wireFocusScreenControls(id, def){
+  const back = $('focusBackToRoadmap');
+  if(back) back.onclick = e => { e.preventDefault(); exitFocusScreen(); };
+  $('content').querySelectorAll('.daily-session-action').forEach(btn => {
+    btn.onclick = async () => {
+      const action = btn.dataset.sessionAction;
+      const taskId = btn.dataset.task || null;
+      try{
+        if(action === 'agenda') await setDailySessionView(id, def, 'agenda');
+        else if(action === 'evidence-preparation') await setDailySessionView(id, def, 'evidence-preparation');
+        else if(action === 'start-session') await setDailySessionView(id, def, 'start-session');
+        else if(action === 'focus-mode') await setDailySessionView(id, def, 'focus');
+        else if(action === 'overview-mode') await setDailySessionView(id, def, 'overview');
+        else if(action === 'focus-prev') await setDailySessionView(id, def, 'focus-prev');
+        else if(action === 'focus-next') await setDailySessionView(id, def, 'focus-next');
+        else if(action === 'focus-task') await setDailySessionView(id, def, 'focus-task', btn.dataset.taskIndex);
+        else if(action === 'task-evidence') await setDailySessionView(id, def, 'task-evidence', taskId);
+        else if(action === 'review') await setDailySessionView(id, def, 'partial-summary');
+        else if(action === 'finish-pending') await setDailySessionView(id, def, 'finish-pending');
+        else if(action === 'mark-done') await markDailySessionTask(id, def, taskId, 'done');
+        else if(action === 'not-done') await markDailySessionTask(id, def, taskId, 'not-done');
+        else if(action === 'skip-optional') await markDailySessionTask(id, def, taskId, 'skip-optional');
+        else if(action === 'reflection') await saveDailyReflection(id, def, taskId);
+      }catch(e){
+        console.warn('daily session action:', e && e.message ? e.message : e);
+      }
+    };
+  });
+  const complete = $('completeDay');
+  if(complete) complete.onclick = async () => {
+    await completeJourneyDay(id, def, Number(complete.dataset.day || 1));
+    if(focusScreenActive) renderFocusScreen();
+  };
+  const evidenceType = $('evidenceType');
+  if(evidenceType) evidenceType.onchange = () => {
+    evidenceProofType = evidenceType.value === 'file' ? 'file' : 'url';
+    evidenceError = '';
+    renderFocusScreen();
+  };
+  const cancelEvidence = $('cancelEvidence');
+  if(cancelEvidence) cancelEvidence.onclick = () => {
+    evidenceFormTaskId = null;
+    evidenceProofType = 'url';
+    evidenceError = '';
+    renderFocusScreen();
+  };
+  const submitEvidence = $('submitEvidence');
+  if(submitEvidence) submitEvidence.onclick = () => submitEvidenceForTask(id, def, submitEvidence.dataset.task);
+}
+
+/* ============================================================ */
 /* ---------- USER-CREATED PATH (Plan view + inline editor) --- */
 /* ============================================================ */
 export function renderPlan(){
+  if(focusScreenActive){ renderFocusScreen(); return; }
   const id = store.state.current, def = curUser();
   if(!def){ renderCatalog(); return; }
   if(def.platform && !canOpenFullPath(id, def)){

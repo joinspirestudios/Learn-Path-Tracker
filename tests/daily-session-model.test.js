@@ -9,7 +9,7 @@ import {
   pendingTaskIds, recommendedFocusTaskIndex, resumeTaskId, sessionProgress,
   sessionTaskStates, taskEvidenceLabel,
 } from '../src/daily-session-model.js';
-import { dailySessionHTML } from '../src/views/daily-session.js';
+import { dailySessionHTML, focusScreenHTML } from '../src/views/daily-session.js';
 
 const tasks = [
   { id:'optional-review', title:'Review notes', required:false, order:0 },
@@ -169,8 +169,8 @@ test('daily session UI shows score, thresholds, tier copy and completion button 
     dayLog:{ dayNumber:1, sessionViewState:'completion-check', completedTaskIds:['read'], verifiedTaskIds:['proof'] },
   });
   assert.match(passHtml, /Focus mode/);
-  assert.match(passHtml, /Today&apos;s score/);
-  assert.match(passHtml, /Pass mark/);
+  assert.match(passHtml, /Today&apos;s progress/);
+  assert.doesNotMatch(passHtml, /Pass mark/);
   assert.match(passHtml, /Day status/);
   assert.match(passHtml, /Complete Day - 67%/);
   assert.doesNotMatch(passHtml, /Everything required is documented/);
@@ -365,4 +365,94 @@ test('encouragement copy follows progress thresholds without overstating progres
   assert.equal(encouragementForProgress(55), 'You are making progress.');
   assert.equal(encouragementForProgress(80), 'You are nearly there.');
   assert.equal(encouragementForProgress(100), 'Today is fully documented.');
+});
+
+test('pre-completion UI does not prominently show pass mark or threshold percentage', () => {
+  const focusHtml = dailySessionHTML({
+    dayNumber:1,
+    tasks,
+    intensity:'balanced',
+    dayLog:{ dayNumber:1, completedTaskIds:['read'] },
+  });
+  assert.doesNotMatch(focusHtml, /Pass mark/);
+  assert.doesNotMatch(focusHtml, /Pass score/);
+  assert.match(focusHtml, /Today&apos;s progress/);
+
+  const agendaHtml = dailySessionHTML({
+    dayNumber:1,
+    tasks,
+    intensity:'balanced',
+    dayLog:{ dayNumber:1 },
+    focusState:{ mode:'overview' },
+  });
+  assert.doesNotMatch(agendaHtml, /Pass mark/);
+  assert.doesNotMatch(agendaHtml, /Pass score/);
+});
+
+test('passThreshold remains in scoring engine and day log metadata after completion', () => {
+  const score = dailyCompletionScore(tasks, { completedTaskIds:['read'], verifiedTaskIds:['proof'] }, [], { intensity:'balanced' });
+  assert.equal(score.passThreshold, 65);
+  const metadata = completionScoreMetadata(score);
+  assert.equal(metadata.passThreshold, 65);
+});
+
+test('result screen shows score and tier but threshold only in result context', () => {
+  const resultHtml = dailySessionHTML({
+    pathId:'p1',
+    dayNumber:1,
+    tasks,
+    dayLog:{ dayNumber:1, status:'completed', completedTaskIds:['read'], verifiedTaskIds:['proof'] },
+  });
+  assert.match(resultHtml, /Result/);
+  assert.match(resultHtml, /67%/);
+  assert.match(resultHtml, /Threshold/);
+  assert.match(resultHtml, /65%/);
+  assert.doesNotMatch(resultHtml, /Pass mark/);
+});
+
+test('threshold-reached copy appears when session is eligible for completion', () => {
+  const score = dailyCompletionScore(tasks, { completedTaskIds:['read'], verifiedTaskIds:['proof'] }, [], { intensity:'balanced' });
+  assert.equal(score.canComplete, true);
+  assert.match(focusFeedbackForAction('done', score), /done enough meaningful work/);
+});
+
+test('complete day still appears only when scoring permits', () => {
+  const canComplete = canCompleteDailySession(tasks, { completedTaskIds:['read'], verifiedTaskIds:['proof'] }, [], { intensity:'balanced' });
+  assert.equal(canComplete, true);
+  const cannotComplete = canCompleteDailySession(tasks, { completedTaskIds:['read'] }, [], { intensity:'balanced' });
+  assert.equal(cannotComplete, false);
+});
+
+test('dedicated focus screen renders back to roadmap link and path title', () => {
+  const html = focusScreenHTML({
+    pathId:'p1',
+    pathTitle:'My Learning Path',
+    dayNumber:3,
+    roadmapHash:'#/path/p1/plan/roadmap/day/3',
+    tasks:[{ id:'core', title:'Core task', required:true }],
+    dayLog:{ dayNumber:3 },
+    focusState:{ pathId:'p1', dayNumber:3, taskIndex:0, mode:'focus' },
+  });
+  assert.match(html, /daily-focus-screen/);
+  assert.match(html, /focusBackToRoadmap/);
+  assert.match(html, /Back to roadmap/);
+  assert.match(html, /My Learning Path/);
+  assert.match(html, /Day 3/);
+  assert.match(html, /Core task/);
+  assert.doesNotMatch(html, /Pass mark/);
+});
+
+test('overview mode remains available inside dedicated focus screen', () => {
+  const html = focusScreenHTML({
+    pathId:'p1',
+    pathTitle:'Test',
+    dayNumber:1,
+    roadmapHash:'#/path/p1/plan',
+    tasks,
+    dayLog:{ dayNumber:1 },
+    focusState:{ pathId:'p1', dayNumber:1, taskIndex:0, mode:'overview' },
+  });
+  assert.match(html, /Overview mode/);
+  assert.match(html, /Full day scan/);
+  assert.match(html, /focusBackToRoadmap/);
 });

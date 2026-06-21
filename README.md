@@ -282,6 +282,13 @@ If any task requires proof, the next step is an evidence preparation summary. It
 
 Phase 6.4 adds Daily Session Focus Mode: a one-task-at-a-time daily practice flow with a visible score, pass threshold, completion tier, proof status, calm feedback after task actions and a completion result state for passed, strong and perfect days. Overview mode remains available for users who want to scan the full day before jumping back into a specific task.
 
+Phase 6.4.2 refines the daily focus flow and catalog states:
+
+- Daily Focus Mode is now a dedicated route and screen (`#/path/{id}/plan/roadmap/day/{N}/focus`) instead of being embedded at the bottom of the roadmap. Start Day and Continue Day navigate to the focused screen; a back link returns to the roadmap.
+- Pass mark percentage is no longer displayed before day completion. The threshold remains internal to the scoring engine and is shown only on the result screen after a day is completed.
+- Signed-out users see a "Start your own journey" section with a sign-in prompt instead of the authenticated workspace.
+- The legacy built-in Cinematic Storytelling starter path is removed from the active catalog. `SKILLS` is now empty; template constants remain in source for reference.
+
 Focus Mode uses the Phase 6.1 scoring engine. It does not weaken proof requirements: evidence-required tasks count only when verified, optional skipped tasks do not add score, and anchor/core tasks can still block completion even when the score is high enough. Complete Day recomputes the score from canonical tasks, day logs and evidence before saving completion metadata.
 
 The active session shows one task at a time with progress, title, description, criteria, estimate when available, required/optional status, resource link, evidence state, and focused actions. Required tasks without evidence can be marked done or left as `Not done yet`. Required tasks with evidence must use the existing evidence submission system before they become complete. Optional tasks can be marked done, skipped, or left for later.

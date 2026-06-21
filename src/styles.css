@@ -424,6 +424,15 @@
 .missed-copy b{color:#e8b9bf}
 .missed-copy p{color:var(--sand);font-size:12.5px;margin-top:3px}
 .missed-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.daily-session-cta{border:1px solid var(--line2);border-radius:10px;background:linear-gradient(180deg,rgba(239,231,216,.04),var(--ink2));padding:16px;margin-top:10px}
+.daily-session-cta .btn{margin-top:14px}
+.daily-focus-screen{max-width:720px;margin:0 auto;padding:0 14px}
+.focus-screen-header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--line2)}
+.focus-back-link{color:var(--sand);font-size:13px;text-decoration:none;font-weight:700}
+.focus-back-link:hover{text-decoration:underline;color:var(--cream)}
+.focus-screen-title{display:flex;gap:12px;align-items:center;font-size:13px;color:var(--sand-dim);font-weight:600}
+.focus-screen-title span+span::before{content:'·';margin-right:12px}
+.signed-out-cta p{margin:6px 0 14px;max-width:480px}
 .week-block{margin-bottom:16px}
 .wb-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .wb-title-input{flex:1;background:var(--ink);border:1px solid var(--line2);border-radius:10px;color:var(--cream);font-family:'Fraunces',serif;font-size:17px;font-weight:600;padding:8px 12px}

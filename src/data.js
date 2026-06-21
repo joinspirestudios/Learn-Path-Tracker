@@ -171,20 +171,4 @@ export const RES_GROUPS = [
 
 
 /* ── SKILLS catalog ── add a new object here to publish another learning path. ── */
-export const SKILLS = [
-  {
-    id: 'cinematic',
-    title: 'Cinematic Storytelling \u00d7 3D',
-    tagline: 'Good \u2192 world-class in one year',
-    blurb: 'Master visual storytelling with 3D as your signature weapon - story, composition, 3D craft, motion graphics, and sound.',
-    quarters: QDEF,
-    plan: WEEKS,
-    days: DAY_TPL,
-    ladders: [
-      { key: 'comp',  title: 'Composition (AE + Blender)', cap: 'Frame everything with intent, in both tools', rungs: COMP_LADDER },
-      { key: 'sound', title: 'Sound Design', cap: 'From layered beds to a broadcast-ready emotional mix', rungs: SOUND_LADDER },
-    ],
-    drills: DRILLS,
-    resources: RES_GROUPS,
-  },
-];
+export const SKILLS = [];

@@ -28,17 +28,25 @@ export function renderCatalogView(context = {}){
   h += discoveryControlsHTML(publicPaths, discoveryState);
   h += discoverySectionsHTML(publicPaths, discoveryState, { store, canOpenFullPath });
   h += discoveryPaginationHTML(store.discoveryPage || {}, publicPaths.length, { cloudAvailable:cloudActive() });
-  h += '<div class="personal-library"><div class="discovery-section-head"><h3>Your workspace</h3><span>Private tools and drafts</span></div>';
-  h += '<div class="cat-grid">';
-  skills.forEach(skill => {
-    h += builtInPathCardHTML(skill, { pathTitle, pathGoal, totalsFor, store });
-  });
-  personalPathIds({ store, canOpenFullPath }).forEach(id => {
-    h += personalPathCardHTML(id, {
-      store, pathTitle, pathGoal, totalsFor, canOpenFullPath, pathTasksReady, cloudActive,
+  if(store.currentUser){
+    h += '<div class="personal-library"><div class="discovery-section-head"><h3>Your workspace</h3><span>Private tools and drafts</span></div>';
+    h += '<div class="cat-grid">';
+    skills.forEach(skill => {
+      h += builtInPathCardHTML(skill, { pathTitle, pathGoal, totalsFor, store });
     });
-  });
-  h += createPathCardsHTML({ store, configPresent });
-  h += '</div></div>';
+    personalPathIds({ store, canOpenFullPath }).forEach(id => {
+      h += personalPathCardHTML(id, {
+        store, pathTitle, pathGoal, totalsFor, canOpenFullPath, pathTasksReady, cloudActive,
+      });
+    });
+    h += createPathCardsHTML({ store, configPresent });
+    h += '</div></div>';
+  } else if(configPresent()){
+    h += '<div class="personal-library signed-out-cta"><div class="discovery-section-head"><h3>Start your own journey</h3></div>';
+    h += '<p class="muted">Sign in to create, save and track your own learning paths.</p>';
+    h += '<div class="cat-grid">';
+    h += createPathCardsHTML({ store, configPresent });
+    h += '</div></div>';
+  }
   return { html:h, restoring:false };
 }

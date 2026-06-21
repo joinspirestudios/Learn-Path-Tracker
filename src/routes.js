@@ -20,11 +20,12 @@ function parseParts(parts, source){
   const dayIdx = parts.indexOf('day');
   const rawDay = dayIdx >= 0 ? Number(parts[dayIdx + 1] || 0) : null;
   const day = Number.isFinite(rawDay) && rawDay > 0 ? Math.floor(rawDay) : null;
+  const focus = day ? parts.indexOf('focus') > dayIdx : false;
   return {
     kind:'path',
     id,
     preview,
-    options:{ tab, day },
+    options:{ tab, day, focus },
     source,
   };
 }
@@ -35,6 +36,12 @@ export function pathHash(id, tab = 'plan', day = null){
   let hash = '#/path/' + encodeURIComponent(cleanId) + '/' + encodeURIComponent(tab || 'plan');
   if(day != null) hash += '/roadmap/day/' + encodeURIComponent(day);
   return hash;
+}
+
+export function focusHash(id, day){
+  const cleanId = cleanPathId(id);
+  if(!cleanId || !day) return '#/discover';
+  return '#/path/' + encodeURIComponent(cleanId) + '/plan/roadmap/day/' + encodeURIComponent(day) + '/focus';
 }
 
 export function pathPreviewHash(id){
@@ -95,7 +102,7 @@ export function makePendingPathRoute(route, waitingFor = 'cloud'){
     kind:'path',
     id:route.id,
     preview:!!route.preview,
-    options:{ ...(route.options || {}) },
+    options:{ ...(route.options || {}), focus:!!(route.options?.focus) },
     source:route.source || 'hash',
     waitingFor,
     attemptedAt:Date.now(),

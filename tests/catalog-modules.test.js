@@ -7,6 +7,7 @@ import {
   platformAccessRecordFromState, publicDiscoveryPaths, publicPathCardHTML,
   renderCatalogView,
 } from '../src/views/catalog/index.js';
+import { SKILLS } from '../src/data.js';
 
 function path(id, extra = {}){
   return {
@@ -265,4 +266,48 @@ test('catalog event binder calls load-more without resetting discovery filters',
   assert.deepEqual(store.discovery, { query:'draw', category:'creative', duration:'month', intensity:'balanced', proof:'proof_backed', sort:'newest' });
   assert.equal(elements.loadMorePublicPaths.disabled, true);
   assert.equal(elements.loadMorePublicPaths.textContent, 'Loading more paths...');
+});
+
+test('signed-out catalog does not render Your workspace or Private tools and drafts', () => {
+  const store = {
+    currentUser:null,
+    cloudStatus:'connected',
+    discovery:{ query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' },
+    state:{ skills:{}, userPaths:{ public:path('public') } },
+  };
+  const result = renderCatalogView(catalogContext(store));
+  assert.doesNotMatch(result.html, /Your workspace/);
+  assert.doesNotMatch(result.html, /Private tools and drafts/);
+  assert.match(result.html, /Start your own journey/);
+  assert.match(result.html, /Sign in/);
+});
+
+test('signed-in catalog still renders Your workspace and create path cards', () => {
+  const store = {
+    currentUser:{ uid:'user1' },
+    cloudStatus:'connected',
+    discovery:{ query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' },
+    state:{ skills:{}, userPaths:{ public:path('public') } },
+  };
+  const result = renderCatalogView(catalogContext(store));
+  assert.match(result.html, /Your workspace/);
+  assert.match(result.html, /Create new path/);
+  assert.match(result.html, /Build path with AI/);
+});
+
+test('Cinematic Storytelling x 3D does not render in active catalog', () => {
+  assert.deepEqual(SKILLS, []);
+  const store = {
+    currentUser:{ uid:'user1' },
+    cloudStatus:'connected',
+    discovery:{ query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' },
+    state:{ skills:{}, userPaths:{} },
+  };
+  const result = renderCatalogView(catalogContext(store));
+  assert.doesNotMatch(result.html, /Cinematic Storytelling/);
+  assert.doesNotMatch(result.html, /world-class in one year/);
+});
+
+test('opening legacy cinematic id does not crash when SKILLS is empty', () => {
+  assert.equal(SKILLS.some(s => s.id === 'cinematic'), false);
 });
