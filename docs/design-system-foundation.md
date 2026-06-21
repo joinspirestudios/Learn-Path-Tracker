@@ -38,7 +38,7 @@ Tokens are semantic, not decorative. A color is not `blue-500`; it is `accent.pr
 - Tokens are platform-agnostic (web CSS, React Native styles, Figma variables)
 - Tokens are the single source of truth for visual decisions
 
-All tokens live in [`src/design-tokens.js`](../src/design-tokens.js) as a pure data module with no DOM, Firebase or runtime dependencies.
+All tokens live in [`src/design-tokens.js`](../src/design-tokens.js) as a pure data module with no DOM, Firebase or runtime dependencies. Phase 6.9 adds [`src/design-token-css.js`](../src/design-token-css.js) and `scripts/generate-design-token-css.mjs` to generate token-backed CSS custom properties for the web rollout.
 
 ## Color system
 
@@ -404,6 +404,10 @@ No Figma file is committed or created in this phase. This section guides future 
 - Tablet artboard: 768 × 1024
 - Mobile artboard: 390 × 844
 - Use constraints and auto-layout for responsive behavior
+
+## Phase 6.9 web rollout note
+
+Phase 6.9 begins production use of the design system on the web core loop only. The generated token CSS lives at [`src/generated/design-tokens.css`](../src/generated/design-tokens.css), and the internal visual QA gallery is reachable at `#/dev/design-system`. This is not a full app redesign, not a native mobile build and not a Figma artifact.
 
 ## What to implement later
 

@@ -100,6 +100,7 @@ import { REPORT_REASONS, reportTargetLabel } from './moderation.js';
 import {
   bindCatalogEvents, canOpenFullPlatformPath, platformAccessRecordFromState, renderCatalogView,
 } from './views/catalog/index.js';
+import { renderDesignSystemGallery } from './ui/design-gallery.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -2524,6 +2525,10 @@ export function goCatalog(){
 
 export async function handleHashRoute(){
   const hash = (location.hash || '').replace(/^#\/?/, '');
+  if(hash === 'dev/design-system' || hash === 'design-system'){
+    renderDesignSystemGalleryRoute();
+    return true;
+  }
   if(hash === 'discover' || hash === 'my-paths'){
     goCatalog();
     return true;
@@ -2532,6 +2537,16 @@ export async function handleHashRoute(){
   if(!route) return false;
   await openPathRoute(route.id, route.preview, route.options || {}, { source:route.source || 'hash' });
   return true;
+}
+
+function renderDesignSystemGalleryRoute(){
+  clearPendingPathRoute();
+  focusScreenActive = false;
+  store.route = { kind:'design-system-gallery' };
+  store.state.current = null;
+  store.editMode = false;
+  applyHeader();
+  $('content').innerHTML = renderDesignSystemGallery();
 }
 
 async function openPathRoute(id, forcePreview, options = {}, routeMeta = {}){
@@ -4572,11 +4587,12 @@ export function renderToday(){
   const bid = 'w' + wk.w + '.' + dayDef.k, tid = bid + '.t';
   const streak = computeStreak(), wp = weekProg(wk), wpct = wp.total ? Math.round(wp.done/wp.total*100) : 0;
   const dayNames = { mon:'Monday', tue:'Tuesday', wed:'Wednesday', thu:'Thursday', fri:'Friday', sat:'Saturday', sun:'Sunday' };
-  let h = '<div class="today-grid">';
+  let h = '<div class="today-grid lpt-shell lpt-today-screen"><div class="lpt-core-column">';
   // left: today's session
-  h += '<div class="panel card today-main">';
+  h += '<div class="panel card today-main lpt-today-card">';
   h += '<div class="goal-line">' + esc(pathGoal(store.state.current)) + '</div>';
   h += '<div class="today-kicker">' + esc(dayNames[tk] || 'Today') + ' · Week ' + tdPos + ' of ' + tdTotal + '</div>';
+  h += '<div class="lpt-session-header"><div><span>Today</span><h2>Continue your daily loop</h2><p>One clear session, one next action.</p></div></div>';
   if(!cs.meta.startDate) h += '<div class="hint" style="margin:10px 0">Set a <b>start date</b> in the header to lock your weekly schedule. Showing Week 1 for now.</div>';
   h += '<div class="today-task ' + (P()[bid] ? 'done' : '') + '"><input type="checkbox" class="ck" data-id="' + bid + '" ' + (P()[bid] ? 'checked' : '') + '/>'
     + '<div><div class="tt-title">' + esc(dayLabel(wk, dayDef)) + '</div><div class="tt-sub">' + esc(dayDef.s) + '</div></div></div>';
@@ -4585,10 +4601,10 @@ export function renderToday(){
   h += '<div class="lad-strip-today"><div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">Always-on ladders</div>';
   ladders().forEach(l => { h += ladderRowHTML(l); });
   h += '</div>';
-  h += '<div class="today-actions"><button class="btn" id="openWeek">Open full week →</button></div>';
-  h += '</div>';
+  h += '<div class="today-actions lpt-primary-action-bar"><button class="btn gold lpt-button lpt-button-primary" id="openWeek">Continue Today</button><button class="btn lpt-button lpt-button-secondary" id="openRoadmapFromToday">View roadmap</button></div>';
+  h += '</div></div>';
   // right: momentum
-  h += '<div class="panel card today-side">';
+  h += '<div class="panel card today-side lpt-today-metrics">';
   h += '<div class="stat-big"><div class="sb-num">' + streak + '</div><div class="sb-lab">day streak</div></div>';
   h += '<div class="stat-row"><span>This week</span><b>' + wpct + '%</b></div><div class="progress-bar"><div style="width:' + wpct + '%"></div></div>';
   const tot = allTotals(), tpct = tot.total ? Math.round(tot.done/tot.total*100) : 0;
@@ -4598,6 +4614,7 @@ export function renderToday(){
   $('content').innerHTML = h;
   wireChecks();
   const ow = $('openWeek'); if(ow) ow.onclick = () => { store.currentWeek = wk.w; curState().meta.lastWeek = wk.w; store.nav.switchTab('week'); };
+  const rm = $('openRoadmapFromToday'); if(rm) rm.onclick = () => store.nav.switchTab('week');
   $('content').querySelectorAll('input.ck').forEach(cb => cb.addEventListener('change', () => setTimeout(renderToday, 60)));
 }
 

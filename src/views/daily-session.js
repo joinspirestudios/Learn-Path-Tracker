@@ -26,13 +26,13 @@ function tierLabel(tier = ''){
 
 function scoreHeaderHTML(score, { showResult } = {}){
   const value = Math.max(0, Math.min(100, Number(score.score || 0)));
-  return '<div class="focus-scoreboard" aria-label="Daily score summary">'
-    + '<div><span>Today&apos;s progress</span><b>' + esc(value) + '%</b></div>'
+  return '<div class="focus-scoreboard lpt-score-card" aria-label="Daily score summary" data-motion-score-card>'
+    + '<div><span>Today&apos;s progress</span><b data-motion-score>' + esc(value) + '%</b></div>'
     + '<div><span>Day status</span><b>' + esc(tierLabel(score.tier)) + '</b></div>'
     + '<div><span>Core tasks</span><b>' + esc(score.anchorSatisfied ? 'Clear' : 'Blocked') + '</b></div>'
     + (showResult ? '<div><span>Threshold</span><b>' + esc(score.passThreshold) + '%</b></div>' : '')
     + '</div>'
-    + '<div class="daily-progress-row"><progress value="' + esc(value) + '" max="100" aria-label="Daily completion score, ' + esc(value) + ' percent"></progress><span>' + esc(value) + '%</span></div>';
+    + '<div class="daily-progress-row lpt-progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + esc(value) + '" aria-label="Daily completion score, ' + esc(value) + ' percent"><progress value="' + esc(value) + '" max="100"></progress><span>' + esc(value) + '%</span></div>';
 }
 
 function modeSwitchHTML(activeMode){
@@ -107,7 +107,7 @@ function taskCardHTML({ item, position, total, progress, dayNumber, evidenceForm
   const needsEvidence = item.state.needsEvidence && !item.state.completed;
   const canMarkDone = !item.state.needsEvidence || item.state.evidenceCount > 0;
   const status = taskFocusStatus(item, progress);
-  return '<section class="daily-session-panel daily-task-card" aria-labelledby="dailyTaskTitle">'
+  return '<section class="daily-session-panel daily-task-card lpt-task-card" aria-labelledby="dailyTaskTitle" data-active-task-card>'
     + '<div class="daily-session-topline"><span>Task ' + esc(position) + ' of ' + esc(total) + '</span><b>' + esc(status) + '</b></div>'
     + '<h3 id="dailyTaskTitle" tabindex="-1">' + esc(title) + '</h3>'
     + (desc ? '<p class="daily-task-copy">' + esc(desc) + '</p>' : '')
@@ -116,7 +116,7 @@ function taskCardHTML({ item, position, total, progress, dayNumber, evidenceForm
     + (resourceUrl ? '<div class="daily-resource">Resource: ' + externalLinkHTML(resourceUrl, task.resourceLabel || 'Open resource') + '</div>' : (task?.resourceUrl ? '<div class="daily-resource invalid-link">Resource link is not available</div>' : ''))
     + '<div class="daily-evidence-state"><b>' + esc(taskEvidenceLabel(task)) + '</b><span>' + (item.state.evidenceCount ? esc(item.state.evidenceCount + ' proof item saved') : esc(item.state.needsEvidence ? 'Proof required before this task can complete.' : 'No proof required.')) + '</span></div>'
     + (evidenceForm ? taskEvidenceFormHTML(evidenceForm) : '')
-    + '<div class="daily-session-actions sticky-actions">'
+    + '<div class="daily-session-actions sticky-actions lpt-task-actions lpt-primary-action-bar">'
     + (needsEvidence
       ? '<button class="btn gold daily-session-action" type="button" data-session-action="task-evidence" data-task="' + esc(item.id) + '" ' + (evidenceBusy ? 'disabled' : '') + '>Add proof</button>'
       : '<button class="btn gold daily-session-action" type="button" data-session-action="mark-done" data-task="' + esc(item.id) + '" ' + (!canMarkDone ? 'disabled' : '') + '>Mark as done</button>')
@@ -157,7 +157,7 @@ function overviewHTML({ tasks, dayLog, evidenceSubmissions, intensity, dayNumber
 function resultHTML({ tasks, dayLog, evidenceSubmissions, intensity, dayNumber }){
   const score = dailyCompletionScore(tasks, dayLog, evidenceSubmissions, { intensity });
   const progress = agendaSummary(tasks, dayLog, evidenceSubmissions);
-  return '<section class="daily-session-panel daily-result-panel" aria-labelledby="dailyResultTitle">'
+  return '<section class="daily-session-panel daily-result-panel lpt-completion-panel" aria-labelledby="dailyResultTitle" data-motion-completion-reveal>'
     + '<div class="chip">Result</div>'
     + '<h3 id="dailyResultTitle" tabindex="-1">' + esc(score.tier === 'perfect' ? 'Perfect day.' : score.tier === 'strong' ? 'Strong day.' : 'Day passed.') + '</h3>'
     + '<p class="daily-task-copy">' + esc(completionTierCopy(score)) + '</p>'
@@ -168,7 +168,7 @@ function resultHTML({ tasks, dayLog, evidenceSubmissions, intensity, dayNumber }
     + '<div><span>Required done</span><b>' + esc(score.requiredCompleted) + '/' + esc(score.requiredTotal) + '</b></div>'
     + '<div><span>Optional done</span><b>' + esc(score.optionalCompleted) + '/' + esc(score.optionalTotal) + '</b></div>'
     + '</div>'
-    + '<div class="daily-session-actions"><button class="btn daily-session-action" type="button" data-session-action="overview-mode">Review task overview</button></div>'
+    + '<div class="daily-session-actions lpt-result-actions"><button class="btn daily-session-action" type="button" data-session-action="overview-mode">Review task overview</button></div>'
     + '<p class="hint">Next step: continue the journey from the roadmap, or publish today&apos;s sanitized progress when available.</p>'
     + '</section>';
 }
@@ -186,10 +186,10 @@ function focusHTML({ pathId, dayNumber, tasks, dayLog, evidenceSubmissions, proo
     : null;
   const feedback = focus.feedback || focusFeedbackForAction('', score, item);
   const blocked = score.tier === 'blocked_anchor';
-  return '<section class="daily-focus-shell" aria-labelledby="dailyFocusTitle">'
-    + '<div class="daily-focus-head"><div><div class="chip">Focus mode</div><h3 id="dailyFocusTitle">Guided proof-of-growth session</h3></div>' + modeSwitchHTML('focus') + '</div>'
+  return '<section class="daily-focus-shell lpt-core-column" aria-labelledby="dailyFocusTitle">'
+    + '<div class="daily-focus-head lpt-session-header"><div><div class="chip">Focus mode</div><h3 id="dailyFocusTitle">Guided proof-of-growth session</h3></div>' + modeSwitchHTML('focus') + '</div>'
     + scoreHeaderHTML(score)
-    + '<div class="daily-feedback" role="status" aria-live="polite">' + esc(feedback) + '</div>'
+    + '<div class="daily-feedback lpt-toast-banner" role="status" aria-live="polite">' + esc(feedback) + '</div>'
     + taskCardHTML({
       item,
       position:item.focusIndex + 1,
@@ -199,7 +199,7 @@ function focusHTML({ pathId, dayNumber, tasks, dayLog, evidenceSubmissions, proo
       evidenceForm,
       evidenceBusy,
     })
-    + '<div class="daily-session-actions daily-focus-nav">'
+    + '<div class="daily-session-actions daily-focus-nav lpt-primary-action-bar">'
     + '<button class="btn daily-session-action" type="button" data-session-action="focus-prev" ' + (item.focusIndex <= 0 ? 'disabled' : '') + '>Previous</button>'
     + '<button class="btn daily-session-action" type="button" data-session-action="focus-next" ' + (item.focusIndex >= item.total - 1 ? 'disabled' : '') + '>Next task</button>'
     + (canComplete ? '<button class="btn gold" id="completeDay" type="button" data-day="' + esc(dayNumber || dayLog.dayNumber || 1) + '">Complete Day - ' + esc(score.score) + '%</button>' : '<button class="btn gold daily-session-action" type="button" data-session-action="finish-pending">' + esc(blocked ? 'Complete core task first' : 'Finish more work') + '</button>')
@@ -231,7 +231,7 @@ export function dailySessionHTML({
   else if(focus.mode === 'overview') body = '<div class="daily-focus-head"><div><div class="chip">Daily session</div><h3>Overview mode</h3></div>' + modeSwitchHTML('overview') + '</div>' + overviewHTML({ tasks, dayLog, evidenceSubmissions, intensity, dayNumber });
   else body = focusHTML({ pathId, dayNumber, tasks, dayLog, evidenceSubmissions, proofType, accepts, evidenceTaskId, evidenceError, evidenceBusy, intensity, focusState:focus });
   const save = saveStateLabel(saveState || session.saveState);
-  return '<div class="daily-session" id="dailySession" data-phase="' + esc(session.phase) + '" data-mode="' + esc(focus.mode) + '">'
+  return '<div class="daily-session lpt-core-column" id="dailySession" data-phase="' + esc(session.phase) + '" data-mode="' + esc(focus.mode) + '">'
     + '<div class="daily-session-save" aria-live="polite">' + esc(save) + '</div>'
     + (session.error || error ? '<div class="form-error" role="alert">' + esc(session.error || error) + '</div>' : '')
     + body
@@ -263,12 +263,12 @@ export function focusScreenHTML({
   else if(focus.mode === 'overview') body = '<div class="daily-focus-head"><div><div class="chip">Daily session</div><h3>Overview mode</h3></div>' + modeSwitchHTML('overview') + '</div>' + overviewHTML({ tasks, dayLog, evidenceSubmissions, intensity, dayNumber });
   else body = focusHTML({ pathId, dayNumber, tasks, dayLog, evidenceSubmissions, proofType, accepts, evidenceTaskId, evidenceError, evidenceBusy, intensity, focusState:focus });
   const save = saveStateLabel(saveState || session.saveState);
-  return '<div class="daily-focus-screen" id="dailyFocusScreen">'
-    + '<div class="focus-screen-header">'
+  return '<div class="daily-focus-screen lpt-shell" id="dailyFocusScreen">'
+    + '<div class="focus-screen-header lpt-session-header">'
     + '<a class="focus-back-link" href="' + esc(roadmapHash) + '" id="focusBackToRoadmap">&larr; Back to roadmap</a>'
     + '<div class="focus-screen-title"><span>' + esc(pathTitle) + '</span><span>Day ' + esc(dayNumber) + '</span></div>'
     + '</div>'
-    + '<div class="daily-session" id="dailySession" data-phase="' + esc(session.phase) + '" data-mode="' + esc(focus.mode) + '">'
+    + '<div class="daily-session lpt-core-column" id="dailySession" data-phase="' + esc(session.phase) + '" data-mode="' + esc(focus.mode) + '">'
     + '<div class="daily-session-save" aria-live="polite">' + esc(save) + '</div>'
     + (session.error || error ? '<div class="form-error" role="alert">' + esc(session.error || error) + '</div>' : '')
     + body
