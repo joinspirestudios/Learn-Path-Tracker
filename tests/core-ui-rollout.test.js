@@ -7,6 +7,7 @@ import { parsePathRoute } from '../src/routes.js';
 import { dailySessionHTML, focusScreenHTML } from '../src/views/daily-session.js';
 
 const views = readFileSync(new URL('../src/views.js', import.meta.url), 'utf8');
+const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -20,6 +21,7 @@ test('design gallery route is handled without path parsing or auth', () => {
   assert.equal(parsePathRoute({ hash:'#/dev/design-system' }), null);
   assert.match(views, /dev\/design-system/);
   assert.match(views, /design-system-gallery/);
+  assert.match(main, /dev\/design-system/);
   const html = renderDesignSystemGallery();
   assert.match(html, /Design system gallery/);
   assert.match(html, /Buttons/);
@@ -97,6 +99,8 @@ test('CSS imports generated tokens, maps legacy aliases and uses token-backed co
   assert.match(styles, /@import '\.\/generated\/design-tokens\.css'/);
   assert.match(styles, /--ink:var\(--lpt-color-surface-canvas\)/);
   assert.match(styles, /--gold:var\(--lpt-color-accent-progress\)/);
+  assert.match(styles, /--gold-soft:#f2c75c/);
+  assert.doesNotMatch(styles, /--gold-soft:#93c5fd/);
   assert.match(styles, /\.lpt-core-column/);
   assert.match(styles, /\.lpt-task-card[\s\S]*--lpt-/);
   assert.match(styles, /@media\(max-width:430px\)/);

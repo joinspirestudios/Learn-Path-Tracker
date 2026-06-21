@@ -118,6 +118,11 @@ async function loadLocalAndRender(){
 }
 
 function refreshVisibleRoute(){
+  const hash = (location.hash || '').replace(/^#\/?/, '');
+  if(hash === 'dev/design-system' || hash === 'design-system'){
+    handleHashRoute();
+    return;
+  }
   if(hasPendingPathRoute()){
     if(cloudAvailable()) retryPendingPathRoute();
     else renderPendingPathRouteState();

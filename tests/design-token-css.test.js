@@ -35,6 +35,16 @@ test('generated CSS file exists and matches generator output', () => {
   assert.equal(generatedCss, expected);
 });
 
+test('generated CSS includes the warm Phase 6.9.1 palette and no blue progress token', () => {
+  assert.match(generatedCss, /--lpt-color-surface-canvas: #0d0b0a;/);
+  assert.match(generatedCss, /--lpt-color-text-primary: #fff7e8;/);
+  assert.match(generatedCss, /--lpt-color-text-secondary: #d8c7aa;/);
+  assert.match(generatedCss, /--lpt-color-text-muted: #b69f7f;/);
+  assert.match(generatedCss, /--lpt-color-accent-progress: #d8b24c;/);
+  assert.doesNotMatch(generatedCss, /--lpt-color-accent-progress: #3b82f6;/);
+  assert.doesNotMatch(generatedCss, /--lpt-color-tier-passed: #3b82f6;/);
+});
+
 test('design token CSS module has no DOM, Firebase, analytics, server or env imports', () => {
   assert.doesNotMatch(moduleSource, /from ['"].*(firebase|analytics|server|api\/_lib|db\.js|auth\.js)/);
   assert.doesNotMatch(moduleSource, /document|window|localStorage|process\.env|import\.meta\.env/);

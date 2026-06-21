@@ -556,6 +556,8 @@ Phase 6.9 begins the incremental production web redesign rollout by wiring desig
 
 The native mobile app was not built. The full app was not redesigned. No design library, animation library or runtime analytics SDK was installed.
 
+Phase 6.9.1 corrects the first UI rollout palette by restoring the warm dark editorial color system, improving contrast, and making gold the primary progress/action accent again. The token generator remains intact and `src/generated/design-tokens.css` is regenerated from `src/design-tokens.js`.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

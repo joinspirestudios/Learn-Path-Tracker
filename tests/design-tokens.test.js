@@ -15,6 +15,7 @@ import {
   STATE_TOKENS,
   ACCESSIBILITY_TOKENS,
 } from '../src/design-tokens.js';
+import { contrastRatio, hexToRgb } from '../src/design-contrast.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,6 +52,32 @@ test('COLOR_TOKENS accent includes progress, proof, warning, success, danger and
   assert.ok(COLOR_TOKENS.accent.success);
   assert.ok(COLOR_TOKENS.accent.danger);
   assert.ok(COLOR_TOKENS.accent.trust);
+});
+
+test('COLOR_TOKENS use the warm editorial Phase 6.9.1 palette', () => {
+  assert.equal(COLOR_TOKENS.surface.canvas.value, '#0d0b0a');
+  assert.equal(COLOR_TOKENS.surface.panel.value, '#15110f');
+  assert.equal(COLOR_TOKENS.text.primary.value, '#fff7e8');
+  assert.equal(COLOR_TOKENS.text.secondary.value, '#d8c7aa');
+  assert.equal(COLOR_TOKENS.text.muted.value, '#b69f7f');
+  assert.equal(COLOR_TOKENS.accent.progress.value, '#d8b24c');
+  assert.notEqual(COLOR_TOKENS.accent.progress.value, '#3b82f6');
+});
+
+test('COLOR_TOKENS preserve gold as the primary progress/action accent', () => {
+  const progress = hexToRgb(COLOR_TOKENS.accent.progress.value);
+  assert.ok(progress.r > progress.b * 1.8);
+  assert.ok(progress.g > progress.b);
+  assert.ok(contrastRatio(COLOR_TOKENS.accent.progress.value, COLOR_TOKENS.surface.canvas.value) >= 3);
+  assert.ok(contrastRatio(COLOR_TOKENS.text.inverse.value, COLOR_TOKENS.accent.progress.value) >= 4.5);
+});
+
+test('COLOR_TOKENS text hierarchy clears readable contrast floors', () => {
+  for(const surface of [COLOR_TOKENS.surface.canvas, COLOR_TOKENS.surface.panel]){
+    assert.ok(contrastRatio(COLOR_TOKENS.text.primary.value, surface.value) >= 7);
+    assert.ok(contrastRatio(COLOR_TOKENS.text.secondary.value, surface.value) >= 4.5);
+    assert.ok(contrastRatio(COLOR_TOKENS.text.muted.value, surface.value) >= 3);
+  }
 });
 
 test('COLOR_TOKENS state includes focus, disabled, loading, hover and pressed', () => {
