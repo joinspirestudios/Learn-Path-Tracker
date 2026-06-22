@@ -147,3 +147,21 @@ Phase 6.9.11 addresses five remaining visual issues after the 6.9.10 shell host 
 ## Deferred
 
 This phase does not build the native mobile app, redesign the whole app, add a design library, add analytics tracking, add adaptive planning, add Gemini/evidence intelligence, add notifications, rename the product, or add game economy features.
+
+## Rollout after the Aurora web series
+
+The Phase 6.9.x Aurora web work is followed by the mobile series and remaining
+pre-launch web polish:
+
+- **Phase 6.10 — Expo Mobile App Foundation** (this phase): isolated `apps/mobile` scaffold.
+- **Phase 6.11 — Mobile Core Loop MVP**
+- **Phase 6.12 — Mobile Paths, Roadmap and Discovery**
+- **Phase 6.13 — Mobile Proof, Public Progress and Community**
+- **Phase 6.14 — Mobile Retention, Offline Drafts and Store Readiness**
+- **Phase 6.9.12 — Aurora Web UI Final Polish** (parked web visual feedback; see [aurora-ui-feedback-backlog.md](aurora-ui-feedback-backlog.md))
+- **Phase 7.0 — Rolling Adaptive Planning**
+- **Phase 8.0 — Evidence Intelligence**
+- **Phase 9.0 — Research and Resource Intelligence**
+- **Phase 10.0 — Launch, Growth and Distribution Systems**
+
+Remaining web UI feedback is parked in the web-polish backlog, not mixed into the mobile foundation.

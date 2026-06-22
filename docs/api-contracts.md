@@ -180,3 +180,14 @@ Shared contract definitions live in pure data modules with no DOM, Firebase, or 
 - [`src/shared-dtos.js`](../src/shared-dtos.js) — Privacy-safe DTO helpers: `pathSummaryDTO`, `publicPathPreviewDTO`, `dailyFocusDTO`, `completionResultDTO`, `publicProgressDTO`, `trustMetricsDTO`, `discoveryCardDTO`, `moderationReportDTO`
 
 These modules can be imported by both web and mobile skins without pulling in browser-specific code.
+
+## Mobile contract sync (Phase 6.10)
+
+To avoid hand-maintained divergence, the mobile skin does not duplicate these
+contracts by hand. `scripts/generate-mobile-contracts.mjs` imports from
+[`src/shared-api-contracts.js`](../src/shared-api-contracts.js) and writes
+`apps/mobile/src/shared/api-contracts.generated.js`, which re-exports
+`API_ENDPOINTS`, `API_ROUTE_GROUPS`, `API_CONTRACTS`, and
+`SHARED_PRIVACY_CONSTRAINTS`. The generated file carries a "do not edit by hand"
+header. Regenerate with `npm run generate:mobile-contracts` from the repo root.
+Generation never changes endpoint paths and never adds Vercel routes.

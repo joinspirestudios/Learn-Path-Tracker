@@ -568,6 +568,25 @@ Phase 6.9.5 repairs the rendered Aurora UI by replacing the bulky Discovery tool
 
 The Proof Studio direction keeps proof-first product integrity while Aurora owns the visual skin: indigo is the primary action/progress color, green is proof-only, purple is peak-only, and filled accent labels use the mathematically verified on-fill text color rather than relying on token names.
 
+## Mobile app foundation (Phase 6.10)
+
+Phase 6.10 starts the second skin: an isolated Expo mobile foundation under
+[`apps/mobile`](apps/mobile). It is a scaffold only — placeholder screens, the
+Aurora mobile theme, a safe API client seam, and generated API contracts. No
+mobile MVP, authentication, or real data wiring is built yet.
+
+- Web remains the production app. Mobile foundation lives in `apps/mobile`.
+- Run root tests and `npm run generate:mobile-contracts` from the repo root.
+- Run mobile commands (`npm install`, `npm run check:foundation`, `npm start`) only from `apps/mobile`.
+- Mobile dependencies (Expo, React, React Native) live only in `apps/mobile/package.json`, never in the root.
+- The mobile foundation does not import any web DOM module (`src/views.js`, `src/styles.css`, `src/header.js`, `index.html`).
+- No mobile secrets, env files, signing credentials, or `node_modules` are committed.
+
+See [`docs/mobile-app-foundation.md`](docs/mobile-app-foundation.md). Remaining
+web visual polish is parked in
+[`docs/aurora-ui-feedback-backlog.md`](docs/aurora-ui-feedback-backlog.md) for a
+later web-polish phase (6.9.12).
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

@@ -2,6 +2,13 @@
 
 Phase 6.5 planning document. No mobile app is built yet.
 
+> **Phase 6.10 update:** The isolated Expo mobile *foundation* now exists under
+> [`apps/mobile`](../apps/mobile). It is a scaffold only — placeholder screens,
+> the Aurora mobile theme, a safe API client seam, and generated API contracts.
+> No full mobile MVP, authentication, or real data wiring is built yet. See
+> [docs/mobile-app-foundation.md](mobile-app-foundation.md). The next mobile
+> milestone is **Phase 6.11 — Mobile Core Loop MVP**.
+
 ## Product intent
 
 A Duolingo/Strava-quality mobile app for proof-backed growth journeys. The native mobile experience should make the daily habit loop feel fast, focused and rewarding on a phone.
@@ -475,11 +482,16 @@ Phase 6.8 defines the design system foundation that the future mobile skin will 
 
 ## What not to build yet
 
-- No Expo project scaffold
-- No React Native screens
-- No native navigation
-- No Android/iOS project files
+As of **Phase 6.10**, the Expo scaffold, an internal tab shell, placeholder
+React Native screens, and the Aurora mobile theme now exist under `apps/mobile`.
+The following are still intentionally deferred to later mobile phases:
+
+- No native navigation library (Phase 6.11 evaluates this)
+- No Android/iOS native project files
 - No mobile build secrets or signing credentials
+- No EAS build config
+- No real authentication or data wiring
+- No proof capture, camera, or file pickers
 - No push notifications
 - No adaptive planning
 - No Gemini/evidence intelligence

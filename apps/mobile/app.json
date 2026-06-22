@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Learn Path Tracker",
+    "slug": "learn-path-tracker-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#15131C"
+      }
+    },
+    "extra": {
+      "apiBaseUrlEnv": "EXPO_PUBLIC_LEARN_PATH_API_BASE_URL"
+    }
+  }
+}

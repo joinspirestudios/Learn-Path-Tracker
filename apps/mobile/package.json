@@ -1,0 +1,19 @@
+{
+  "name": "learn-path-tracker-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "main": "App.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "check:foundation": "node ./scripts/check-foundation.mjs"
+  },
+  "dependencies": {
+    "expo": "^53.0.0",
+    "react": "^19.0.0",
+    "react-native": "^0.79.0"
+  },
+  "devDependencies": {}
+}

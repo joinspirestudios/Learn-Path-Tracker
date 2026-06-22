@@ -163,8 +163,9 @@ test('source guards prevent forbidden Phase 6.9 assets and dependencies', () => 
     assert.equal(deps[forbidden], undefined, forbidden + ' should not be installed');
   }
   const rootEntries = readdirSync(new URL('../', import.meta.url), { withFileTypes:true }).map(entry => entry.name.toLowerCase());
+  // Web app stays web-first: no root-level mobile scaffold or Expo config.
+  // (The Phase 6.10 mobile foundation is isolated under apps/mobile, not the root.)
   assert.equal(rootEntries.includes('mobile'), false);
-  assert.equal(rootEntries.includes('apps'), false);
   assert.equal(rootEntries.includes('app.json'), false);
   assert.equal(rootEntries.includes('eas.json'), false);
   assert.doesNotMatch(rootEntries.join('\n'), /\.(fig|ttf|otf|woff|woff2)$/);

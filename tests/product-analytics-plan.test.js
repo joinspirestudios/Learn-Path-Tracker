@@ -119,9 +119,9 @@ test('no Firebase Analytics SDK or gtag tracking is added to the codebase', () =
   assert.doesNotMatch(mainSource, /logEvent/);
 });
 
-test('no Expo or native mobile scaffold was added', () => {
+test('no Expo or native mobile scaffold was added at the repo root', () => {
+  // The Phase 6.10 mobile foundation is isolated under apps/mobile, not the root.
   assert.equal(existsSync(resolve(root, 'app.json')), false);
   assert.equal(existsSync(resolve(root, 'eas.json')), false);
   assert.equal(existsSync(resolve(root, 'expo')), false);
-  assert.equal(existsSync(resolve(root, 'apps', 'mobile')), false);
 });
