@@ -106,6 +106,20 @@ The internal gallery route is:
 - Mobile 360px: badges and compact rows stack to avoid overflow.
 - Reduced motion: transitions and animations collapse to instant state changes.
 
+## Phase 6.9.9 — Aurora Shell Layout and Frame System
+
+Phase 6.9.9 repairs the Aurora app display system by making the shell span the viewport, anchoring navigation and right rail regions correctly, introducing a formal radius and frame-inset system, and stabilizing daily task row/proof-required chip alignment across responsive breakpoints.
+
+- App shell spans full viewport width (no max-width / margin auto on shell)
+- Side nav anchors to the left viewport edge with full-height sticky positioning
+- Right/context rail aligns to the right side of the content system
+- Layout tokens: `shellNavWidth`, `shellRailWidth`, `contentGutter`, `topGutter`, `bottomGutter`
+- Extended radius ladder: small (4) → medium (8) → large (12) → xl (16) → panel (20) → hero (24)
+- Frame-inset tokens: `panelInset` (24px), `cardInset` (20px), `rowPaddingY/X` (14/16px)
+- Daily task rows use CSS grid with reserved status column for proof-chip alignment
+- Proof-required chips are non-interactive status indicators
+- Responsive breakpoints: mobile (≤767), tablet (768-1023), laptop (1024-1279), desktop (1280+)
+
 ## Deferred
 
 This phase does not build the native mobile app, redesign the whole app, add a design library, add analytics tracking, add adaptive planning, add Gemini/evidence intelligence, add notifications, rename the product, or add game economy features.

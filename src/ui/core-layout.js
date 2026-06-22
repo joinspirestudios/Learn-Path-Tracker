@@ -32,7 +32,8 @@ export function renderAuroraShell({
   rightRail = '',
   className = '',
 } = {}){
-  return '<main class="lpt-shell aurora-app-shell ' + esc(className) + '" data-shell-active="' + esc(active) + '">'
+  const railClass = rightRail ? ' has-right-rail' : '';
+  return '<main class="lpt-shell aurora-app-shell' + railClass + ' ' + esc(className) + '" data-shell-active="' + esc(active) + '">'
     + renderShellNav({ active })
     + '<section class="aurora-shell-content" aria-label="' + esc(title || 'Workspace') + '">'
     + body
