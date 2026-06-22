@@ -158,15 +158,22 @@ A consistent spacing scale ensures visual rhythm across all components and scree
 
 ## Radius system
 
-| Token | Value | Usage |
+| Token | Value | Role |
 | --- | --- | --- |
-| `small` | 4px | Chips, badges, small controls |
-| `medium` | 8px | Buttons, inputs, selects |
-| `large` | 12px | Cards, panels |
-| `xl` | 16px | Modals, large panels |
-| `pill` | 9999px | Fully rounded elements |
-| `card` | 12px | Standard card corners |
+| `small` | 4px | Chips, badges, tiny controls |
+| `medium` | 8px | Buttons, inputs, selects (control rung) |
+| `large` | 12px | Inner card elements, nested panels (inner rung) |
+| `xl` | 16px | Top-level cards, panels, daily focus |
+| `pill` | 9999px | Fully rounded pills, tags, progress bars |
+| `card` | 16px | Semantic alias for xl — primary card corners |
 | `modal` | 16px | Modal dialog corners |
+
+### Radius and nesting rules
+
+1. **Concentric step-down** — a child's radius must be one rung smaller than its parent: card (16) → inner (12) → control (8) → small (4).
+2. **Uniform inset** — primary cards use `--lpt-space-3xl` (24 px) padding on all four sides so nested elements sit concentrically inside the parent radius.
+3. **Uniform sibling gap** — siblings at the same nesting level share the same gap token (e.g. `--lpt-space-lg` for task rows inside a daily-focus card).
+4. **No arbitrary values** — every `border-radius` declaration must reference a `--lpt-radius-*` token. Raw pixel values are not allowed.
 
 ## Elevation / shadow system
 

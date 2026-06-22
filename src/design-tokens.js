@@ -73,7 +73,7 @@ export const RADIUS_TOKENS = {
   large: { value: '12px', usage: 'Cards, panels' },
   xl: { value: '16px', usage: 'Modals, large panels' },
   pill: { value: '9999px', usage: 'Pills, fully rounded elements' },
-  card: { value: '12px', usage: 'Standard card corners' },
+  card: { value: '16px', usage: 'Cards, panels, daily focus, rail cards (matches xl)' },
   modal: { value: '16px', usage: 'Modal dialog corners' },
 };
 

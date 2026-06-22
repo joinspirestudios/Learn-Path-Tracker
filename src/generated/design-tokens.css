@@ -93,7 +93,7 @@
   --lpt-radius-large: 12px;
   --lpt-radius-xl: 16px;
   --lpt-radius-pill: 9999px;
-  --lpt-radius-card: 12px;
+  --lpt-radius-card: 16px;
   --lpt-radius-modal: 16px;
   --lpt-elevation-flat: none;
   --lpt-elevation-raised: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
