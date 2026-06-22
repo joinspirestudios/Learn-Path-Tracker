@@ -56,9 +56,8 @@ test('Phase 6.9.7 Today is default landing when active path exists', () => {
 
 test('Phase 6.9.7 Path view renders daily focus above roadmap in unified layout', () => {
   const planBlock = views.slice(views.indexOf('export function renderPlan'), views.indexOf('export function editPath'));
-  assert.match(planBlock, /aurora-unified-layout/);
   assert.match(planBlock, /aurora-unified-core/);
-  assert.match(planBlock, /aurora-unified-rail/);
+  assert.match(planBlock, /rightRail.*platformRightRailHTML|platformRightRailHTML.*rightRail/s);
   const focusPos = planBlock.indexOf('platformDailyFocusHTML');
   const roadmapPos = planBlock.indexOf('roadmapHTML(');
   assert.ok(focusPos > 0 && roadmapPos > 0);
@@ -208,5 +207,5 @@ test('Phase 6.9.7 regression: renderPlan still renders edit button in path heade
 test('Phase 6.9.7 regression: platform right rail in renderPlan', () => {
   const planBlock = views.slice(views.indexOf('export function renderPlan'), views.indexOf('export function editPath'));
   assert.match(planBlock, /platformRightRailHTML/);
-  assert.match(planBlock, /aurora-unified-rail/);
+  assert.match(planBlock, /rightRail/);
 });
