@@ -104,6 +104,14 @@ export function renderDesignSystemGallery(){
       + '<div style="border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-xl);padding:var(--lpt-layout-card-inset);background:var(--lpt-color-surface-raised)">'
       + '<div style="border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-large);padding:var(--lpt-layout-row-padding-y) var(--lpt-layout-row-padding-x);background:var(--lpt-color-surface-input);font-size:13px">Control / task row (12px radius, 14px/16px padding)</div>'
       + '</div></div></section>',
+    '<section><h2>Content centering</h2><p class="lpt-gallery-note">Component example. Shell content column uses flex centering with margin-inline:auto on inner wrapper. Content stays centered inside the column without re-centering the full shell grid.</p></section>',
+    '<section><h2>Search frame system</h2><p class="lpt-gallery-note">Component example. Outer aurora-search-frame uses panel radius (20px). Inner controls use large radius (12px). Filters separated by border-top inside the frame.</p>'
+      + '<div class="aurora-search-frame" style="position:static">'
+      + '<div class="aurora-discovery-search-row"><span style="flex:1;background:var(--lpt-color-surface-input);border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-large);padding:8px 12px;font-size:13px;color:var(--lpt-color-text-muted)">Search input (large radius)</span>'
+      + '<span style="background:var(--lpt-color-surface-input);border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-large);padding:8px 12px;font-size:13px;color:var(--lpt-color-text-muted)">Select (large radius)</span></div>'
+      + '</div></section>',
+    '<section><h2>Day detail rail card</h2><p class="lpt-gallery-note">Component example. Selected day task list rendered in the right rail below consistency and path trust cards.</p></section>',
+    '<section><h2>Focus screen centering</h2><p class="lpt-gallery-note">Component example. Daily focus/session screen uses a 3-zone grid (header / center / bottom) for vertical centering like a lesson screen.</p></section>',
     '<section><h2>Responsive notes</h2><p class="lpt-gallery-note">Mobile (&le;767px): bottom nav, single column, proof chip wraps below. Tablet (768-1023px): side nav, rail stacks below. Laptop (1024-1279px): narrower two-column. Desktop (1280+): full three-column layout with side nav, content, and right rail.</p></section>',
   ];
   return renderAppShell({
