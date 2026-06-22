@@ -88,8 +88,9 @@ export function personalPathCardHTML(id, {
   const badge = def.platform
     ? ('By ' + resolveCreatorName(def, store.currentUser))
     : (cloudActive() ? 'Local draft' : 'Your path');
+  const status = def.platform ? '' : '<span class="aurora-path-card-status">Private workspace</span>';
   let html = '<button class="skill-card aurora-path-card" data-id="' + esc(id) + '">'
-    + '<div class="aurora-path-card-meta"><span class="aurora-path-card-creator">' + esc(badge) + '</span><span class="aurora-path-card-status">' + (def.platform ? 'Platform path' : 'Private workspace') + '</span></div>'
+    + '<div class="aurora-path-card-meta"><span class="aurora-path-card-creator">' + esc(badge) + '</span>' + status + '</div>'
     + '<h3 class="aurora-path-card-title">' + esc(pathTitle(id)) + '</h3>'
     + (goal ? ('<p class="aurora-path-card-subtitle">' + esc(goal) + '</p>') : '')
     + '<p class="aurora-path-card-description">' + pathCardBlurb(def, t.total, { pathTasksReady }) + '</p>'
@@ -104,11 +105,11 @@ export function personalPathCardHTML(id, {
 
 export function createPathCardsHTML({ store, configPresent } = {}){
   if(store.currentUser || !configPresent()){
-    return '<button class="skill-card create aurora-path-card" id="createCard"><div class="aurora-path-card-meta"><span class="aurora-path-card-status">Private tool</span></div>'
+    return '<button class="skill-card create aurora-path-card" id="createCard">'
       + '<h3 class="aurora-path-card-title">Create new path</h3>'
       + '<p class="aurora-path-card-description">Build a path you own, keep it private, publish it publicly, or share it by direct link.</p>'
       + '<div class="aurora-path-card-action">New path &rarr;</div></button>'
-      + '<button class="skill-card create ai-create aurora-path-card" id="aiCreateCard"><div class="aurora-path-card-meta"><span class="aurora-path-card-status">AI draft</span></div>'
+      + '<button class="skill-card create ai-create aurora-path-card" id="aiCreateCard">'
       + '<h3 class="aurora-path-card-title">Build path with AI</h3>'
       + '<p class="aurora-path-card-description">Describe a goal, review the generated draft, edit it, then save it as a private path.</p>'
       + '<div class="aurora-path-card-action">Generate a path</div></button>';

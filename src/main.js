@@ -23,14 +23,14 @@ import {
 } from './plan.js';
 import { applyHeader, updateOverall } from './header.js';
 import {
-  renderCatalog, renderPlan, renderToday, renderWeek, renderMap,
+  renderCatalog, renderWorkspace, renderPlan, renderToday, renderWeek, renderMap,
   renderLadders, renderDrills, renderRes, renderLog,
   openSkill, goCatalog, goWeek, editPath,
   refreshSuggest, updateLogDot, handleHashRoute,
   hasPendingPathRoute, hasSharedPathRouteState, renderPendingPathRouteState, retryPendingPathRoute,
 } from './views.js';
 import { trackOperation } from './sync.js';
-import { hashRouteUrl, initialRouteIntent, parsePathRoute } from './routes.js';
+import { appHash, hashRouteUrl, initialRouteIntent, parseAppRoute, parsePathRoute } from './routes.js';
 
 let preflightPromise = null;
 let platformSyncPromise = null;
@@ -40,7 +40,7 @@ let reconciledUserId = null;
 
 /* ---- tab router ---- */
 function routeHashForCurrent(tab = store.activeTab){
-  if(!store.state.current) return '#/discover';
+  if(!store.state.current) return appHash('today');
   return '#/path/' + encodeURIComponent(store.state.current) + '/' + encodeURIComponent(tab || 'plan');
 }
 
@@ -104,7 +104,8 @@ async function finishLoad(){
     switchTab(store.activeTab);
   } else {
     store.state.current = null;
-    renderCatalog();
+    if(store.currentUser) renderWorkspace();
+    else renderCatalog();
   }
   markBootReady();
 }
@@ -123,6 +124,10 @@ function refreshVisibleRoute(){
     handleHashRoute();
     return;
   }
+  if(parseAppRoute({ hash:location.hash })){
+    handleHashRoute();
+    return;
+  }
   if(hasPendingPathRoute()){
     if(cloudAvailable()) retryPendingPathRoute();
     else renderPendingPathRouteState();
@@ -134,6 +139,7 @@ function refreshVisibleRoute(){
   }
   if(store.state.current && store.activeTab === 'plan') renderPlan();
   else if(store.state.current) switchTab(store.activeTab);
+  else if(store.currentUser) renderWorkspace();
   else renderCatalog();
 }
 
