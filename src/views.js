@@ -42,7 +42,7 @@ import {
   isOwner, isPathParticipant, normalizePathStats, resolveCreatorName, trustBadgesForStats,
 } from './platform.js';
 import {
-  focusHash, hashRouteUrl, makePendingPathRoute, parsePathRoute, pathHash, pathPreviewHash, pathShareLink,
+  appHash, focusHash, hashRouteUrl, makePendingPathRoute, parseAppRoute, parsePathRoute, pathHash, pathPreviewHash, pathShareLink,
 } from './routes.js';
 import {
   AI_CADENCE_TYPES, AI_GUIDED_STAGES, AI_PATH_TYPES, AI_PROGRESSION_CURVES, AI_TASK_MODES,
@@ -99,9 +99,10 @@ import {
 } from './public-progress.js';
 import { REPORT_REASONS, reportTargetLabel } from './moderation.js';
 import {
-  bindCatalogEvents, canOpenFullPlatformPath, platformAccessRecordFromState, renderCatalogView,
+  bindCatalogEvents, canOpenFullPlatformPath, platformAccessRecordFromState, renderDiscoverView, renderWorkspaceView,
 } from './views/catalog/index.js';
 import { renderDesignSystemGallery } from './ui/design-gallery.js';
+import { renderAppShell, renderAuroraShell } from './ui/core.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -375,14 +376,8 @@ function canOpenFullPath(id, def = store.state.userPaths?.[id]){
   return canOpenFullPlatformPath({ store, id, def, canAccessFullPath });
 }
 
-async function loadMorePublicPaths(){
-  await dbLoadMorePlatformPaths();
-  if(store.discoveryPage?.errorMessage) flash(store.discoveryPage.errorMessage);
-  renderCatalog();
-}
-
-export function renderCatalog(){
-  const result = renderCatalogView({
+function appViewContext(){
+  return {
     store,
     skills:SKILLS,
     syncStatusHTML,
@@ -394,14 +389,56 @@ export function renderCatalog(){
     totalsFor,
     canOpenFullPath,
     pathTasksReady,
-  });
-  $('content').innerHTML = result.html;
+  };
+}
+
+function appShellHTML(active, body, { title = '', rightRail = '', className = '' } = {}){
+  if(store.currentUser){
+    return renderAuroraShell({ active, title, body, rightRail, className });
+  }
+  if(active === 'discover'){
+    return renderAppShell({ body, className:'aurora-public-discover-shell ' + className });
+  }
+  return renderAppShell({ body, className:'aurora-public-app-shell ' + className });
+}
+
+async function loadMorePublicPaths(){
+  await dbLoadMorePlatformPaths();
+  if(store.discoveryPage?.errorMessage) flash(store.discoveryPage.errorMessage);
+  renderCatalog();
+}
+
+export function renderCatalog(){
+  const result = renderDiscoverView(appViewContext());
+  $('content').innerHTML = appShellHTML('discover', result.html, { title:'Discover', className:'aurora-discover-page' });
   applyHeader();
   if(result.restoring) return;
   bindCatalogEvents({
     $,
     store,
     renderCatalog,
+    openPathRoute,
+    openSkill,
+    canOpenFullPath,
+    getOpeningPathId:() => openingPathId,
+    setOpeningPathId:value => { openingPathId = value; },
+    importLocalPath,
+    createPath,
+    openAIPathBuilder,
+    openAuthModal,
+    loadMorePublicPaths,
+  });
+}
+
+export function renderWorkspace(){
+  const result = renderWorkspaceView(appViewContext());
+  $('content').innerHTML = appShellHTML('paths', result.html, { title:'Paths', rightRail:result.rightRail || '', className:'aurora-workspace-page' });
+  applyHeader();
+  if(result.restoring) return;
+  bindCatalogEvents({
+    $,
+    store,
+    renderCatalog:renderWorkspace,
     openPathRoute,
     openSkill,
     canOpenFullPath,
@@ -2517,10 +2554,20 @@ export async function openSkill(id, options = {}){
 export function goCatalog(){
   clearPendingPathRoute();
   focusScreenActive = false;
-  store.route = { kind:'catalog' };
+  store.route = { kind:'app', page:'discover' };
   store.state.current = null; store.editMode = false;
   dbSaveState(); applyHeader(); renderCatalog();
-  setRoute('#/discover');
+  setRoute(appHash('discover'));
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+export function goWorkspace(){
+  clearPendingPathRoute();
+  focusScreenActive = false;
+  store.route = { kind:'app', page:'paths' };
+  store.state.current = null; store.editMode = false;
+  dbSaveState(); applyHeader(); renderWorkspace();
+  setRoute(appHash('paths'));
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 
@@ -2530,8 +2577,28 @@ export async function handleHashRoute(){
     renderDesignSystemGalleryRoute();
     return true;
   }
-  if(hash === 'discover' || hash === 'my-paths'){
-    goCatalog();
+  const appRoute = parseAppRoute({ hash:location.hash });
+  if(appRoute){
+    clearPendingPathRoute();
+    if(appRoute.page === 'discover'){
+      store.route = { kind:'app', page:'discover' };
+      store.state.current = null;
+      store.editMode = false;
+      renderCatalog();
+    } else if(appRoute.page === 'paths'){
+      store.route = { kind:'app', page:'paths' };
+      store.state.current = null;
+      store.editMode = false;
+      renderWorkspace();
+    } else if(appRoute.page === 'progress'){
+      renderProgress();
+    } else if(appRoute.page === 'profile'){
+      renderProfile();
+    } else {
+      store.route = { kind:'app', page:'today' };
+      store.editMode = false;
+      renderToday();
+    }
     return true;
   }
   const route = parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search });
@@ -2871,6 +2938,76 @@ function publicProgressTimelineHTML(record){
   return h + '</section>';
 }
 
+function publicProgressFeedHTML(){
+  const records = Object.entries(store.state.userPaths || {}).map(([id, def]) => ({
+    id,
+    path:def.platformData || def,
+    publicProgress:store.publicProgress?.[id] || def.publicProgress || [],
+  }));
+  const entries = [];
+  records.forEach(record => {
+    progressEntriesForPath(record.id, record).forEach(entry => {
+      entries.push({ record, entry });
+    });
+  });
+  entries.sort((a, b) => {
+    const aTime = new Date(a.entry.publishedAt || a.entry.createdAt || 0).getTime() || 0;
+    const bTime = new Date(b.entry.publishedAt || b.entry.createdAt || 0).getTime() || 0;
+    return bTime - aTime;
+  });
+  if(!entries.length){
+    return '<section class="panel card public-progress-section aurora-progress-empty"><div class="public-progress-head"><div><h3>Public progress</h3><p>Real public proof updates from loaded paths will appear here.</p></div></div>'
+      + '<div class="muted">No public progress is loaded yet. Open public path previews or publish proof-backed updates to populate this page.</div></section>';
+  }
+  let h = '<section class="public-progress-section aurora-progress-feed" aria-label="Loaded public progress"><div class="public-progress-head"><div><h3>Public progress</h3><p>Only real loaded public proof entries are shown here.</p></div></div><div class="public-progress-list">';
+  entries.slice(0, 20).forEach(({ record, entry }) => {
+    const pathName = record.path?.title || record.path?.goal || 'Path';
+    const proofTitle = entry.publicCaption || ('Day ' + entry.dayNumber + ' proof');
+    const summary = entry.taskSummary?.length
+      ? entry.taskSummary.map(item => item.title).join(' - ')
+      : (entry.hasEvidence ? (entry.evidenceCount + ' proof item' + (entry.evidenceCount === 1 ? '' : 's')) : 'Public proof details are limited.');
+    h += '<article class="public-progress-entry proof-first-progress-card" data-proof-state="submitted">'
+      + '<div class="progress-author">' + (entry.authorPhotoURL ? '<img src="' + esc(entry.authorPhotoURL) + '" alt=""/>' : '<span></span>')
+      + '<div><b>' + esc(entry.authorName) + '</b><small>Day ' + esc(entry.dayNumber) + ' - ' + esc(pathName) + (dateText(entry.publishedAt) ? ' - ' + esc(dateText(entry.publishedAt)) : '') + '</small></div></div>'
+      + '<h4>' + esc(proofTitle) + '</h4>'
+      + '<p class="progress-caption proof-card-specimen">' + esc(summary) + '</p>'
+      + '<div class="progress-metrics proof-card-meta"><span>Proof submitted</span><span>' + esc((entry.completionTier || 'completed').replace(/_/g, ' ')) + '</span><span>' + esc(entry.requiredCompletedCount) + '/' + esc(entry.requiredTotalCount) + ' required</span></div>'
+      + '</article>';
+  });
+  return h + '</div></section>';
+}
+
+export function renderProgress(){
+  clearPendingPathRoute();
+  focusScreenActive = false;
+  store.route = { kind:'app', page:'progress' };
+  store.state.current = null;
+  store.editMode = false;
+  const body = '<div class="aurora-progress-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Progress</span><h2>Public proof updates</h2><p>No rankings, follower counts, or estimated activity. This page only uses public progress data already loaded by the app.</p></div></header>'
+    + publicProgressFeedHTML()
+    + '</div>';
+  $('content').innerHTML = appShellHTML('progress', body, { title:'Progress', className:'aurora-progress-route' });
+  applyHeader();
+}
+
+export function renderProfile(){
+  clearPendingPathRoute();
+  focusScreenActive = false;
+  store.route = { kind:'app', page:'profile' };
+  store.state.current = null;
+  store.editMode = false;
+  const user = store.currentUser;
+  const name = user?.displayName || user?.email || 'Signed out';
+  const body = '<div class="aurora-profile-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Profile</span><h2>' + esc(name) + '</h2><p>' + esc(user ? 'Account details and workspace identity.' : 'Sign in to manage a synced learning workspace.') + '</p></div></header>'
+    + (user
+      ? '<section class="panel card"><h3>Account</h3><p class="muted">' + esc(user.email || user.uid || 'Signed-in user') + '</p></section>'
+      : '<section class="panel card"><h3>Sign in required</h3><p class="muted">Profile tools are available after signing in.</p><button class="btn gold" id="signinCard" type="button">Sign in</button></section>')
+    + '</div>';
+  $('content').innerHTML = appShellHTML('profile', body, { title:'Profile', className:'aurora-profile-route' });
+  applyHeader();
+  const signIn = $('signinCard'); if(signIn) signIn.onclick = () => openAuthModal('signin');
+}
+
 function updateProgressEntry(pathId, entryId, updater){
   const apply = entry => entry.id === entryId ? normalizePublicProgressEntry(updater({ ...entry })) : entry;
   store.publicProgress[pathId] = (store.publicProgress?.[pathId] || []).map(apply);
@@ -3084,7 +3221,7 @@ function renderPathPreview(record){
     + publicProgressTimelineHTML(record)
     + '<section class="panel card preview-scheme"><h3>Milestones</h3>' + milestonePreviewHTML(record) + '</section>'
     + '</div>';
-  $('content').innerHTML = h;
+  $('content').innerHTML = appShellHTML('discover', h, { title:'Path preview', className:'aurora-path-preview-route' });
   const open = $('openFullPath'); if(open) open.onclick = () => openSkill(record.id);
   const start = $('startJoinedPath'); if(start) start.onclick = () => openSkill(record.id, { tab:'roadmap', day:1 });
   const manage = $('managePath'); if(manage) manage.onclick = async () => { await openSkill(record.id); store.editMode = true; renderPlan(); };
@@ -4360,7 +4497,7 @@ function wireFocusScreenControls(id, def){
 export function renderPlan(){
   if(focusScreenActive){ renderFocusScreen(); return; }
   const id = store.state.current, def = curUser();
-  if(!def){ renderCatalog(); return; }
+  if(!def){ if(store.currentUser) renderWorkspace(); else renderCatalog(); return; }
   if(def.platform && !canOpenFullPath(id, def)){
     const record = platformAccessRecord(id, def);
     if(canPreviewPath(record.path, store.currentUser)) renderPathPreview(record);
@@ -4450,7 +4587,7 @@ export function renderPlan(){
     h += '<div class="danger-zone"><button class="linklike danger" data-act="delPath">Delete this path</button></div>';
   }
   }
-  $('content').innerHTML = h;
+  $('content').innerHTML = appShellHTML('paths', h, { title:'Path detail', className:'aurora-path-detail-route' });
   wireJourneyControls(id, def);
 
   // view-mode checkboxes
@@ -4599,7 +4736,8 @@ export function renderToday(){
   const def = curDef(), cs = curState();
   const ep = effPlan();
   if(!def || !cs || !ep.length){
-    $('content').innerHTML = '<div class="today-grid lpt-shell lpt-today-screen proof-studio-today"><div class="lpt-core-column"><section class="panel card proof-studio-today-hero is-empty"><span class="proof-studio-kicker">Today</span><h2>No active path</h2><p>Create or join a path to start today.</p></section></div></div>';
+    const emptyToday = '<div class="today-grid lpt-today-screen proof-studio-today"><div class="lpt-core-column"><section class="panel card proof-studio-today-hero is-empty"><span class="proof-studio-kicker">Today</span><h2>No active path</h2><p>Create or join a path to start today.</p></section></div></div>';
+    $('content').innerHTML = appShellHTML('today', emptyToday, { title:'Today', className:'aurora-today-route' });
     return;
   }
   let wkNum = cs.meta.startDate ? currentWeekFromStart() : store.currentWeek;
@@ -4615,7 +4753,7 @@ export function renderToday(){
   const proofSummary = dayDef.ship
     ? 'Shipping day: save or publish one proof piece when finished.'
     : 'No required proof today; save a note if useful.';
-  let h = '<div class="today-grid lpt-shell lpt-today-screen proof-studio-today"><div class="lpt-core-column">';
+  let h = '<div class="today-grid lpt-today-screen proof-studio-today"><div class="lpt-core-column">';
   // left: today's session
   h += '<div class="panel card today-main lpt-today-card proof-studio-today-hero">';
   h += '<div class="goal-line proof-studio-context"><span>' + esc(pathTitle(store.state.current)) + '</span><b>' + esc(dayNames[tk] || 'Today') + ' - Week ' + tdPos + ' of ' + tdTotal + ' - ' + esc(todayDate) + '</b></div>';
@@ -4646,7 +4784,7 @@ export function renderToday(){
   h += '<div class="stat-row" style="margin-top:14px"><span>Path trust</span><b>' + (tot.total ? tpct + '%' : 'Not enough data yet') + '</b></div><div class="progress-bar"><div style="width:' + tpct + '%"></div></div>';
   h += '<div class="muted" style="font-size:12px;margin-top:16px;line-height:1.5">Every number here is proof-backed from your local progress. No rankings or follower counts are estimated.</div>';
   h += '</aside></div>';
-  $('content').innerHTML = h;
+  $('content').innerHTML = appShellHTML('today', h, { title:'Today', className:'aurora-today-route' });
   wireChecks();
   const ow = $('openWeek'); if(ow) ow.onclick = () => { store.currentWeek = wk.w; curState().meta.lastWeek = wk.w; store.nav.switchTab('week'); };
   const rm = $('openRoadmapFromToday'); if(rm) rm.onclick = () => store.nav.switchTab('week');

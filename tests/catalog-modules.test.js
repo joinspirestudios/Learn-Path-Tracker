@@ -139,7 +139,7 @@ test('public discovery excludes private and unlisted paths while controls render
   assert.doesNotMatch(controls, /discovery-filter-row|discovery-search-shell|discovery-filter-chips/);
 });
 
-test('renderCatalogView composes discovery, curated sections, and workspace cards', () => {
+test('renderCatalogView composes discovery and curated sections without workspace cards', () => {
   const store = {
     currentUser:{ uid:'creator' },
     cloudStatus:'connected',
@@ -150,8 +150,7 @@ test('renderCatalogView composes discovery, curated sections, and workspace card
   assert.equal(result.restoring, false);
   assert.match(result.html, /Search public paths/);
   assert.match(result.html, /All public paths/);
-  assert.match(result.html, /Your workspace/);
-  assert.match(result.html, /Create new path/);
+  assert.doesNotMatch(result.html, /Your workspace/);
 });
 
 test('catalog event helpers update discovery state and route cards by access', async () => {
@@ -280,7 +279,7 @@ test('catalog event binder calls load-more without resetting discovery filters',
   assert.equal(elements.loadMorePublicPaths.textContent, 'Loading more paths...');
 });
 
-test('signed-out catalog does not render Your workspace or Private tools and drafts', () => {
+test('signed-out catalog renders sign-in CTA, not workspace or private tools', () => {
   const store = {
     currentUser:null,
     cloudStatus:'connected',
@@ -294,7 +293,7 @@ test('signed-out catalog does not render Your workspace or Private tools and dra
   assert.match(result.html, /Sign in/);
 });
 
-test('signed-in catalog still renders Your workspace and create path cards', () => {
+test('signed-in catalog is discovery only, workspace is separate', () => {
   const store = {
     currentUser:{ uid:'user1' },
     cloudStatus:'connected',
@@ -302,9 +301,9 @@ test('signed-in catalog still renders Your workspace and create path cards', () 
     state:{ skills:{}, userPaths:{ public:path('public') } },
   };
   const result = renderCatalogView(catalogContext(store));
-  assert.match(result.html, /Your workspace/);
-  assert.match(result.html, /Create new path/);
-  assert.match(result.html, /Build path with AI/);
+  assert.doesNotMatch(result.html, /Your workspace/);
+  assert.match(result.html, /Search public paths/);
+  assert.match(result.html, /All public paths/);
 });
 
 test('Cinematic Storytelling x 3D does not render in active catalog', () => {

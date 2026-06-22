@@ -5,14 +5,11 @@ import {
 } from '../../discovery.js';
 import { publicPathCardHTML } from './cards.js';
 
-function pathCountLabel(count, qualifier = ''){
-  const safeCount = Math.max(0, Number(count) || 0);
-  const noun = safeCount === 1 ? 'path' : 'paths';
-  return safeCount + (qualifier ? ' ' + qualifier : '') + ' ' + noun;
-}
-
-function discoverySectionHeaderHTML(title, count, qualifier = ''){
-  return '<div class="discovery-section-head"><h3>' + esc(title) + '</h3><span class="discovery-section-count">' + esc(pathCountLabel(count, qualifier)) + '</span></div>';
+function discoverySectionHeaderHTML(title, count){
+  const countLabel = typeof count === 'number' && count > 0
+    ? '<span class="discovery-section-count">' + count + ' path' + (count === 1 ? '' : 's') + '</span>'
+    : '';
+  return '<div class="discovery-section-head"><h3>' + esc(title) + '</h3>' + countLabel + '</div>';
 }
 
 export function publicDiscoveryPaths(store){
@@ -49,15 +46,16 @@ export function discoverySectionsHTML(paths, state, context = {}){
   }
   const filtered = discoverPaths(paths, state);
   if(!isDiscoveryDefault(state)){
-    return '<div class="discovery-section">' + discoverySectionHeaderHTML('Matching public paths', filtered.length, 'matching')
+    return '<div class="discovery-section">' + discoverySectionHeaderHTML('Matching public paths', filtered.length)
       + renderDiscoveryGrid(filtered, state.query ? 'No loaded public paths match this search yet. Try a broader goal, category or intensity, or load more public paths.' : 'No loaded paths match these filters. Try clearing a filter or loading more public paths.', context) + '</div>';
   }
   let h = curatedDiscoverySections(paths).map(section =>
     '<div class="discovery-section">' + discoverySectionHeaderHTML(section.title, section.paths.length)
       + renderDiscoveryGrid(section.paths, '', context) + '</div>'
   ).join('');
-  h += '<div class="discovery-section">' + discoverySectionHeaderHTML('All public paths', paths.length)
-    + renderDiscoveryGrid(discoverPaths(paths, { ...DEFAULT_DISCOVERY_STATE, sort:'recommended' }), '', context) + '</div>';
+  const allPaths = discoverPaths(paths, { ...DEFAULT_DISCOVERY_STATE, sort:'recommended' });
+  h += '<div class="discovery-section">' + discoverySectionHeaderHTML('All public paths', allPaths.length)
+    + renderDiscoveryGrid(allPaths, '', context) + '</div>';
   return h;
 }
 
