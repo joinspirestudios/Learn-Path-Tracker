@@ -9,6 +9,14 @@ import { firstName, cachedAuthLabel, doSignOut, openAuthModal } from './auth.js'
 import { isUserPath, pathTitle, allTotals, weekObj, weekProg } from './plan.js';
 
 export function applyHeader(){
+  const top = document.querySelector('header.top');
+  const tabs = $('tabs');
+  if(store.currentUser){
+    if(top) top.style.display = 'none';
+    if(tabs) tabs.style.display = 'none';
+    return;
+  }
+  if(top) top.style.display = '';
   const k = $('kicker'), sub = $('brandSub'), inSkill = !!store.state.current;
   const user = inSkill && isUserPath(store.state.current);
   const fn = firstName();
@@ -16,7 +24,7 @@ export function applyHeader(){
   sub.textContent = inSkill ? pathTitle(store.state.current) : 'Pick a skill. Practice deliberately. Track your climb.';
   $('startWrap').style.display    = (inSkill && !user) ? '' : 'none';
   $('overallWrap').style.display  = inSkill ? '' : 'none';
-  $('tabs').style.display         = inSkill ? '' : 'none';
+  if(tabs) tabs.style.display     = inSkill ? '' : 'none';
   document.querySelectorAll('.tab-cine').forEach(b => b.style.display = (inSkill && !user) ? '' : 'none');
   document.querySelectorAll('.tab-user').forEach(b => b.style.display = user ? '' : 'none');
   const signedInish = !!store.currentUser || (!store.authChecked && !!cachedAuthLabel());

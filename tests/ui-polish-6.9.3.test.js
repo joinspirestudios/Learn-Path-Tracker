@@ -83,13 +83,13 @@ test('Phase 6.9.3 Discovery toolbar keeps search primary and filters compact', (
   assert.match(controls, /data-discovery-field="intensity"/);
   assert.match(controls, /data-discovery-field="proof"/);
   assert.match(controls, /data-discovery-field="sort"/);
-  assert.match(controls, /id="clearDiscoverySearch"/);
+  assert.match(controls, /id="toggleDiscoveryFilters"/);
   assert.match(controls, /id="clearDiscoveryFilters"/);
   assert.ok(controls.indexOf('id="discoveryQuery"') < controls.indexOf('aurora-filter-row'));
   assert.doesNotMatch(controls, /panel card|discovery-mainline|discovery-search-shell|discovery-filter-chips/);
 });
 
-test('Phase 6.9.5 Discovery sections label counts instead of naked number badges', () => {
+test('Phase 6.9.7 Discovery sections render without count badges', () => {
   const html = discoverySectionsHTML([publicPath({ id:'a' }), publicPath({ id:'b' })], {
     query:'',
     category:'all',
@@ -102,7 +102,8 @@ test('Phase 6.9.5 Discovery sections label counts instead of naked number badges
     canOpenFullPath:() => false,
   });
   assert.doesNotMatch(html, /<span>\s*\d+\s*<\/span>/);
-  assert.match(html, /discovery-section-count">2 paths/);
+  assert.doesNotMatch(html, /discovery-section-count/);
+  assert.match(html, /discovery-section-head/);
 });
 
 test('Phase 6.9.3 roadmap source renders a proof journey without private evidence URLs', () => {
@@ -112,7 +113,8 @@ test('Phase 6.9.3 roadmap source renders a proof journey without private evidenc
   assert.match(roadmapBlock, /auroraRoadmapDayItemHTML/);
   assert.match(auroraRoadmapDayItemHTML({ day:2, status:'active', label:'Today', open:true }), /Continue this day/);
   assert.doesNotMatch(auroraRoadmapDayItemHTML({ day:3, status:'locked', label:'Locked' }), /Continue this day|data-road-day/);
-  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /Proof submitted - strong/);
+  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /Proof submitted/);
+  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /aurora-tier-chip/);
   assert.doesNotMatch(roadmapBlock, /evidenceUrl|downloadURL|storagePath/);
 });
 

@@ -128,7 +128,7 @@ test('public discovery excludes private and unlisted paths while controls render
   assert.match(controls, /aria-label="Search public paths"/);
   assert.match(controls, /aria-label="Sort public paths"/);
   assert.match(controls, /id="clearDiscoveryFilters"/);
-  assert.match(controls, /id="clearDiscoverySearch"/);
+  assert.match(controls, /id="toggleDiscoveryFilters"/);
   assert.match(controls, /data-discovery-field="category"/);
   assert.match(controls, /data-discovery-field="duration"/);
   assert.match(controls, /data-discovery-field="intensity"/);
@@ -197,8 +197,8 @@ test('catalog event binder updates filters and clears discovery state', () => {
     clearDiscoveryFilters:{
       set onclick(fn){ handlers.clearFilters = fn; },
     },
-    clearDiscoverySearch:{
-      set onclick(fn){ handlers.clearSearch = fn; },
+    toggleDiscoveryFilters:{
+      set onclick(fn){ handlers.toggleFilters = fn; },
     },
     discoveryQuery:{
       selectionStart:0,
@@ -226,11 +226,9 @@ test('catalog event binder updates filters and clears discovery state', () => {
   });
   handlers.sort({ target:{ dataset:{ discoveryField:'sort' }, value:'most_joined' } });
   assert.equal(store.discovery.sort, 'most_joined');
-  handlers.clearSearch();
-  assert.equal(store.discovery.query, '');
   handlers.clearFilters();
   assert.deepEqual(store.discovery, { query:'', category:'all', duration:'all', intensity:'all', proof:'all', sort:'recommended' });
-  assert.equal(renders, 3);
+  assert.equal(renders, 2);
 });
 
 test('catalog event binder calls load-more without resetting discovery filters', async () => {
@@ -244,7 +242,7 @@ test('catalog event binder calls load-more without resetting discovery filters',
   const elements = {
     content:root,
     clearDiscoveryFilters:null,
-    clearDiscoverySearch:null,
+    toggleDiscoveryFilters:null,
     discoveryQuery:null,
     loadMorePublicPaths:{
       disabled:false,

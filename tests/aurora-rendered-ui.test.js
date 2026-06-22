@@ -30,7 +30,7 @@ function publicPath(id = 'public-rendered', extra = {}){
   };
 }
 
-test('Phase 6.9.5 Discovery sections render labeled counts, never naked numeric spans', () => {
+test('Phase 6.9.7 Discovery sections render without count badges', () => {
   const html = discoverySectionsHTML([publicPath('one'), publicPath('two')], {
     query:'',
     category:'all',
@@ -40,11 +40,8 @@ test('Phase 6.9.5 Discovery sections render labeled counts, never naked numeric 
     sort:'recommended',
   }, { store:{ currentUser:null, state:{ userPaths:{} } }, canOpenFullPath:() => false });
   assert.doesNotMatch(html, /<span>\s*\d+\s*<\/span>/);
-  const counts = [...html.matchAll(/class="discovery-section-count">([^<]+)<\/span>/g)].map(match => match[1]);
-  assert.ok(counts.length >= 1);
-  for(const count of counts){
-    assert.match(count, /\bpath(s)?\b/);
-  }
+  assert.doesNotMatch(html, /discovery-section-count/);
+  assert.match(html, /discovery-section-head/);
 });
 
 test('Phase 6.9.5 Discovery controls use the compact Aurora toolbar and preserve hooks', () => {
@@ -61,7 +58,7 @@ test('Phase 6.9.5 Discovery controls use the compact Aurora toolbar and preserve
   assert.match(html, /aurora-filter-row/);
   assert.match(html, /aurora-filter-pill/);
   assert.match(html, /id="discoveryQuery"/);
-  assert.match(html, /id="clearDiscoverySearch"/);
+  assert.match(html, /id="toggleDiscoveryFilters"/);
   assert.match(html, /id="clearDiscoveryFilters"/);
   for(const field of ['sort', 'category', 'duration', 'intensity', 'proof']){
     assert.match(html, new RegExp('data-discovery-field="' + field + '"'));
@@ -97,8 +94,9 @@ test('Phase 6.9.5 roadmap renders a clean list with active CTA and quiet locked 
   assert.match(styles, /\.aurora-journey-list\{[\s\S]*list-style:none[\s\S]*counter-reset:none/);
   assert.equal((active.match(/aurora-journey-cta/g) || []).length, 1);
   assert.match(active, /Continue this day/);
-  assert.match(active, /Day 4 - Today/);
-  assert.match(completed, /Proof submitted - strong/);
+  assert.match(active, /Day 4 · Today/);
+  assert.match(completed, /Proof submitted/);
+  assert.match(completed, /aurora-tier-chip/);
   assert.match(locked, /aria-disabled="true"/);
   assert.doesNotMatch(locked, /Continue this day|data-road-day/);
   assert.doesNotMatch(active + completed + locked, /evidenceUrl|downloadURL|storagePath/);
