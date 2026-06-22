@@ -2,7 +2,7 @@
 
 Learn Path Tracker is a Vite + Firebase proof-of-growth app for creating learning paths, habits, challenges, and personal-development roadmaps. It supports local mode, platform paths, creator attribution, enrollments, day logs, streaks, freezes, evidence, templates, and an optional Anthropic-powered AI path builder.
 
-Phase 5.8 adds public progress timelines on top of stable live voice transcription, responsive guided path creation, protected Phase 5 AI routes, and the guided daily evidence session. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, day completion, and optional sanitized progress sharing. Live web research is not part of this phase.
+Phase 6.9.9 stabilizes the Aurora app shell layout and frame system: full-viewport shell, anchored side nav, right rail placement, formal radius/frame-inset tokens, and daily task row alignment. Phase 5.8 adds public progress timelines on top of stable live voice transcription, responsive guided path creation, protected Phase 5 AI routes, and the guided daily evidence session. The web app guides users through goal entry, adaptive clarification, path creation, daily agenda review, evidence preparation, one-task-at-a-time completion, pending tasks, day completion, and optional sanitized progress sharing. Live web research is not part of this phase.
 
 ## Install and run
 

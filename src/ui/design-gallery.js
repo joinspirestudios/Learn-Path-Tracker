@@ -75,6 +75,36 @@ export function renderDesignSystemGallery(){
       + renderProofMetricCard({ title:'Path trust', value:'12 proof submitted', body:'Every number here is proof-backed.' })
       + renderProofMetricCard({ title:'Path trust', empty:true, body:'Not enough data yet.' })
       + '</div></section>',
+    '<section><h2>Aurora shell layout</h2><p class="lpt-gallery-note">Component example. The app shell spans the full viewport, nav anchors left, content gets responsive gutters, rail aligns right.</p>'
+      + '<div class="lpt-gallery-row" style="font-size:12px;gap:8px;flex-wrap:wrap">'
+      + '<code>--lpt-layout-shell-nav-width: 232px</code>'
+      + '<code>--lpt-layout-shell-rail-width: 320px</code>'
+      + '<code>--lpt-layout-content-gutter: clamp(20px, 4vw, 64px)</code>'
+      + '</div></section>',
+    '<section><h2>Daily focus with task rows</h2><p class="lpt-gallery-note">Component example. Task rows use grid with reserved status column for consistent proof-chip alignment.</p>'
+      + '<div class="aurora-daily-focus"><span class="aurora-section-kicker">Daily focus</span>'
+      + '<div class="aurora-daily-focus-meta"><span>Day 5 of 30</span><span>Jun 22</span></div>'
+      + '<h2>Build the daily proof note</h2>'
+      + '<div class="aurora-daily-tasks">'
+      + '<div class="aurora-daily-task"><span class="aurora-daily-task-check">&#10003;</span><span>Review yesterday lesson</span><span class="aurora-chip aurora-chip-proof">Proof required</span></div>'
+      + '<div class="aurora-daily-task"><span class="aurora-daily-task-check"></span><span>Record one proof note with a longer task name that might wrap on smaller screens</span><span class="aurora-chip aurora-chip-proof">Proof required</span></div>'
+      + '<div class="aurora-daily-task is-done"><span class="aurora-daily-task-check">&#10003;</span><span>Save the reflection</span></div>'
+      + '</div></div></section>',
+    '<section><h2>Radius ladder</h2><p class="lpt-gallery-note">Component example. Radius tokens from small (4px) through hero (24px).</p>'
+      + '<div class="lpt-gallery-row" style="gap:12px;flex-wrap:wrap;align-items:center">'
+      + '<div style="width:48px;height:48px;border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-small);display:grid;place-items:center;font-size:10px">4px</div>'
+      + '<div style="width:56px;height:56px;border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-medium);display:grid;place-items:center;font-size:10px">8px</div>'
+      + '<div style="width:64px;height:64px;border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-large);display:grid;place-items:center;font-size:10px">12px</div>'
+      + '<div style="width:72px;height:72px;border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-xl);display:grid;place-items:center;font-size:10px">16px</div>'
+      + '<div style="width:80px;height:80px;border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-panel);display:grid;place-items:center;font-size:10px">20px</div>'
+      + '<div style="width:88px;height:88px;border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-hero);display:grid;place-items:center;font-size:10px">24px</div>'
+      + '</div></section>',
+    '<section><h2>Frame-inset ladder</h2><p class="lpt-gallery-note">Component example. Nested rounded rectangles follow: outer radius &gt; inner radius &gt; control radius. Inner padding is consistent.</p>'
+      + '<div style="border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-panel);padding:var(--lpt-layout-panel-inset);background:var(--lpt-color-surface-panel)">'
+      + '<div style="border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-xl);padding:var(--lpt-layout-card-inset);background:var(--lpt-color-surface-raised)">'
+      + '<div style="border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-large);padding:var(--lpt-layout-row-padding-y) var(--lpt-layout-row-padding-x);background:var(--lpt-color-surface-input);font-size:13px">Control / task row (12px radius, 14px/16px padding)</div>'
+      + '</div></div></section>',
+    '<section><h2>Responsive notes</h2><p class="lpt-gallery-note">Mobile (&le;767px): bottom nav, single column, proof chip wraps below. Tablet (768-1023px): side nav, rail stacks below. Laptop (1024-1279px): narrower two-column. Desktop (1280+): full three-column layout with side nav, content, and right rail.</p></section>',
   ];
   return renderAppShell({
     title:'Design system gallery',

@@ -69,12 +69,14 @@ export const SPACING_TOKENS = {
 
 export const RADIUS_TOKENS = {
   small: { value: '4px', usage: 'Chips, badges, small controls' },
-  medium: { value: '8px', usage: 'Buttons, inputs, selects' },
-  large: { value: '12px', usage: 'Cards, panels' },
-  xl: { value: '16px', usage: 'Modals, large panels' },
+  medium: { value: '8px', usage: 'Thumbnails, small media' },
+  large: { value: '12px', usage: 'Controls, inputs, task rows' },
+  xl: { value: '16px', usage: 'Cards, nested cards' },
+  panel: { value: '20px', usage: 'Major cards, panels' },
+  hero: { value: '24px', usage: 'Shell panels, modals, hero cards' },
   pill: { value: '9999px', usage: 'Pills, fully rounded elements' },
   card: { value: '16px', usage: 'Cards, panels, daily focus, rail cards (matches xl)' },
-  modal: { value: '16px', usage: 'Modal dialog corners' },
+  modal: { value: '24px', usage: 'Modal dialog corners' },
 };
 
 export const ELEVATION_TOKENS = {
@@ -134,6 +136,21 @@ export const ACCESSIBILITY_TOKENS = {
   colorIndependence: { rule: 'Never use color as the only means of conveying status', purpose: 'Pair colors with icons, text labels or patterns', wcag: 'WCAG 2.1 SC 1.4.1' },
 };
 
+export const LAYOUT_TOKENS = {
+  shellNavWidth: { value: '232px', usage: 'Side navigation column width' },
+  shellRailWidth: { value: '320px', usage: 'Right context rail column width' },
+  contentMax: { value: '1180px', usage: 'Maximum content width inside shell' },
+  contentGutter: { value: 'clamp(20px, 4vw, 64px)', usage: 'Horizontal content padding' },
+  topGutter: { value: 'clamp(24px, 4vh, 56px)', usage: 'Top content breathing space' },
+  bottomGutter: { value: 'clamp(40px, 6vh, 96px)', usage: 'Bottom content breathing space' },
+  mainColumnWidth: { value: '720px', usage: 'Main content column max width in two-column layouts' },
+  contextRailWidth: { value: '320px', usage: 'Context rail column width in two-column layouts' },
+  panelInset: { value: '24px', usage: 'Panel internal padding (desktop)' },
+  cardInset: { value: '20px', usage: 'Card internal padding (desktop)' },
+  rowPaddingY: { value: '14px', usage: 'Task row vertical padding' },
+  rowPaddingX: { value: '16px', usage: 'Task row horizontal padding' },
+};
+
 export const DESIGN_TOKENS = {
   color: COLOR_TOKENS,
   typography: TYPOGRAPHY_TOKENS,
@@ -144,4 +161,5 @@ export const DESIGN_TOKENS = {
   motion: MOTION_TOKENS,
   state: STATE_TOKENS,
   accessibility: ACCESSIBILITY_TOKENS,
+  layout: LAYOUT_TOKENS,
 };

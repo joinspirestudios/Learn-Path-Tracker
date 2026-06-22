@@ -9,34 +9,33 @@ const docs = readFileSync(new URL('../docs/design-system-foundation.md', import.
 
 /* ── FIX 1: Shell layout ── */
 
-test('Phase 6.9.8 shell has 1680px max-width cap for 4K', () => {
-  assert.match(styles, /\.aurora-app-shell\{[^}]*max-width:\s*1680px/);
+test('Phase 6.9.8 shell spans full viewport width', () => {
+  assert.match(styles, /\.aurora-app-shell\{[^}]*width:\s*100%/);
 });
 
-test('Phase 6.9.8 side nav has min-height 100vh', () => {
-  assert.match(styles, /\.aurora-side-nav\{[^}]*min-height:\s*100vh/);
+test('Phase 6.9.8 side nav has full viewport height', () => {
+  assert.match(styles, /\.aurora-side-nav\{[^}]*height:\s*100dvh/);
 });
 
-test('Phase 6.9.8 shell content uses vertical padding with space tokens', () => {
-  assert.match(styles, /\.aurora-shell-content\{[^}]*padding:\s*var\(--lpt-space-5xl\)\s+var\(--lpt-space-4xl\)/);
+test('Phase 6.9.8 shell content uses layout gutter tokens', () => {
+  assert.match(styles, /\.aurora-shell-content\{[^}]*padding:\s*var\(--lpt-layout-top-gutter\)\s+var\(--lpt-layout-content-gutter\)/);
 });
 
 test('Phase 6.9.8 shell rail is sticky', () => {
   assert.match(styles, /\.aurora-shell-rail\{[^}]*position:\s*sticky/);
 });
 
-test('Phase 6.9.8 unified layout uses 3-column grid with breathing space', () => {
+test('Phase 6.9.8 unified layout uses 3-column grid with layout tokens', () => {
   const match = styles.match(/\.aurora-unified-layout\{[^}]*grid-template-columns:[^;}]+/);
   assert.ok(match, 'unified layout should have grid-template-columns');
-  assert.match(match[0], /760px/);
-  assert.match(match[0], /300px/);
+  assert.match(match[0], /--lpt-layout-main-column-width/);
+  assert.match(match[0], /--lpt-layout-context-rail-width/);
 });
 
-test('Phase 6.9.8 core column max-width is 760px left-aligned', () => {
+test('Phase 6.9.8 core column uses content-max token', () => {
   const coreBlock = styles.match(/\.lpt-core-column\{[^}]+\}/);
   assert.ok(coreBlock);
-  assert.match(coreBlock[0], /max-width:\s*760px/);
-  assert.doesNotMatch(coreBlock[0], /margin:\s*0\s+auto/);
+  assert.match(coreBlock[0], /max-width:\s*var\(--lpt-layout-content-max\)/);
 });
 
 test('Phase 6.9.8 tablet breakpoint stacks rail below at 1023px', () => {
@@ -51,8 +50,10 @@ test('Phase 6.9.8 mobile breakpoint at 767px shows bottom nav', () => {
 
 /* ── FIX 2: Radius token ladder ── */
 
-test('Phase 6.9.8 design-tokens.js card radius is 16px', () => {
+test('Phase 6.9.8 design-tokens.js card radius is 16px and panel is 20px', () => {
   assert.match(tokens, /card:\s*\{[^}]*value:\s*'16px'/);
+  assert.match(tokens, /panel:\s*\{[^}]*value:\s*'20px'/);
+  assert.match(tokens, /hero:\s*\{[^}]*value:\s*'24px'/);
 });
 
 test('Phase 6.9.8 generated CSS has correct radius tokens', () => {
@@ -60,8 +61,10 @@ test('Phase 6.9.8 generated CSS has correct radius tokens', () => {
   assert.match(tokenCSS, /--lpt-radius-medium:\s*8px/);
   assert.match(tokenCSS, /--lpt-radius-large:\s*12px/);
   assert.match(tokenCSS, /--lpt-radius-xl:\s*16px/);
+  assert.match(tokenCSS, /--lpt-radius-panel:\s*20px/);
+  assert.match(tokenCSS, /--lpt-radius-hero:\s*24px/);
   assert.match(tokenCSS, /--lpt-radius-card:\s*16px/);
-  assert.match(tokenCSS, /--lpt-radius-modal:\s*16px/);
+  assert.match(tokenCSS, /--lpt-radius-modal:\s*24px/);
   assert.match(tokenCSS, /--lpt-radius-pill:\s*9999px/);
 });
 
@@ -89,8 +92,8 @@ test('Phase 6.9.8 core Aurora classes use --lpt-radius-* tokens', () => {
 
 /* ── FIX 2: Nesting rules ── */
 
-test('Phase 6.9.8 daily-focus card uses uniform 3xl inset padding', () => {
-  assert.match(styles, /\.aurora-daily-focus\{[^}]*padding:\s*var\(--lpt-space-3xl\)/);
+test('Phase 6.9.8 daily-focus card uses panel-inset token for padding', () => {
+  assert.match(styles, /\.aurora-daily-focus\{[^}]*padding:\s*var\(--lpt-layout-panel-inset\)/);
 });
 
 test('Phase 6.9.8 daily-tasks uses uniform lg sibling gap', () => {
@@ -109,7 +112,7 @@ test('Phase 6.9.8 today-task inner radius is large (step-down from card)', () =>
 
 test('Phase 6.9.8 design system docs include updated radius ladder', () => {
   assert.match(docs, /card.*16px/);
-  assert.match(docs, /modal.*16px/);
+  assert.match(docs, /modal.*24px/);
   assert.match(docs, /Concentric step-down/i);
   assert.match(docs, /Uniform inset/i);
   assert.match(docs, /No arbitrary values/i);

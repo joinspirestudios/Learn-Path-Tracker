@@ -161,19 +161,60 @@ A consistent spacing scale ensures visual rhythm across all components and scree
 | Token | Value | Role |
 | --- | --- | --- |
 | `small` | 4px | Chips, badges, tiny controls |
-| `medium` | 8px | Buttons, inputs, selects (control rung) |
-| `large` | 12px | Inner card elements, nested panels (inner rung) |
-| `xl` | 16px | Top-level cards, panels, daily focus |
+| `medium` | 8px | Thumbnails, small media |
+| `large` | 12px | Controls, inputs, task rows |
+| `xl` | 16px | Cards, nested cards |
+| `panel` | 20px | Major cards, panels |
+| `hero` | 24px | Shell panels, modals, hero cards |
 | `pill` | 9999px | Fully rounded pills, tags, progress bars |
 | `card` | 16px | Semantic alias for xl — primary card corners |
-| `modal` | 16px | Modal dialog corners |
+| `modal` | 24px | Modal dialog corners (matches hero) |
 
 ### Radius and nesting rules
 
-1. **Concentric step-down** — a child's radius must be one rung smaller than its parent: card (16) → inner (12) → control (8) → small (4).
-2. **Uniform inset** — primary cards use `--lpt-space-3xl` (24 px) padding on all four sides so nested elements sit concentrically inside the parent radius.
+1. **Concentric step-down** — a child's radius must be one rung smaller than its parent: hero (24) → panel (20) → card/xl (16) → large (12) → medium (8) → small (4).
+2. **Uniform inset** — panels use `--lpt-layout-panel-inset` (24px), cards use `--lpt-layout-card-inset` (20px), rows use `--lpt-layout-row-padding-y/x` (14/16px).
 3. **Uniform sibling gap** — siblings at the same nesting level share the same gap token (e.g. `--lpt-space-lg` for task rows inside a daily-focus card).
 4. **No arbitrary values** — every `border-radius` declaration must reference a `--lpt-radius-*` token. Raw pixel values are not allowed.
+
+## Layout system
+
+### App shell grid
+
+The Aurora app shell spans the full viewport width. No `max-width` or `margin: 0 auto` on the shell.
+
+| Token | Value | Purpose |
+| --- | --- | --- |
+| `shellNavWidth` | 232px | Side navigation column |
+| `shellRailWidth` | 320px | Right context rail column |
+| `contentMax` | 1180px | Maximum content width |
+| `contentGutter` | clamp(20px, 4vw, 64px) | Horizontal content padding |
+| `topGutter` | clamp(24px, 4vh, 56px) | Top breathing space |
+| `bottomGutter` | clamp(40px, 6vh, 96px) | Bottom breathing space |
+| `mainColumnWidth` | 720px | Main content column in two-column layouts |
+| `contextRailWidth` | 320px | Context rail in two-column layouts |
+
+### Frame-inset ladder
+
+| Token | Value | Purpose |
+| --- | --- | --- |
+| `panelInset` | 24px | Panel/major card internal padding |
+| `cardInset` | 20px | Card/nested card internal padding |
+| `rowPaddingY` | 14px | Task row vertical padding |
+| `rowPaddingX` | 16px | Task row horizontal padding |
+
+### Responsive breakpoints
+
+| Range | Behavior |
+| --- | --- |
+| ≤767px (mobile) | Bottom nav, single column, no side nav |
+| 768–1023px (tablet) | Side nav visible, rail stacks below content |
+| 1024–1279px (laptop) | Narrower two-column layout |
+| ≥1280px (desktop) | Full three-column: nav + content + rail |
+
+### Daily task row
+
+Task rows use CSS grid with three columns: check icon, title (flexible), status chip (reserved min-width). On mobile, the status column drops to a second row below the title. Proof-required chips are non-interactive status indicators (`cursor: default; pointer-events: none`).
 
 ## Elevation / shadow system
 
