@@ -37,8 +37,8 @@ test('Phase 6.9.9 side nav is first column and uses full viewport height', () =>
   assert.match(styles, /\.aurora-side-nav\{[^}]*top:\s*0/);
 });
 
-test('Phase 6.9.9 side nav user/account anchors to bottom via margin-top auto', () => {
-  assert.match(styles, /\.aurora-side-nav\s+\.aurora-nav-item:last-child\{[^}]*margin-top:\s*auto/);
+test('Phase 6.9.9 side nav user block anchors to bottom via margin-top auto', () => {
+  assert.match(styles, /\.aurora-side-nav-user\{[^}]*margin-top:\s*auto/);
 });
 
 test('Phase 6.9.9 shell content uses layout gutter tokens', () => {
@@ -122,7 +122,7 @@ test('Phase 6.9.9 aurora shell classes use tokenized padding/insets', () => {
 
 test('Phase 6.9.9 daily task rows use grid with reserved status column', () => {
   assert.match(styles, /\.aurora-daily-task\{[^}]*display:\s*grid/);
-  assert.match(styles, /\.aurora-daily-task\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+minmax\(112px/);
+  assert.match(styles, /\.aurora-daily-task\{[^}]*grid-template-columns:\s*20px\s+minmax\(0,\s*1fr\)\s+minmax\(112px/);
 });
 
 test('Phase 6.9.9 proof required chip is non-interactive', () => {
@@ -137,14 +137,14 @@ test('Phase 6.9.9 proof required chip uses status chip class not primary button'
   assert.doesNotMatch(proofChip[0], /box-shadow:\s*var\(--lpt-effect-lead-glow\)/);
 });
 
-test('Phase 6.9.9 proof chip aligns to right status column on desktop', () => {
-  assert.match(styles, /\.aurora-chip-proof\{[^}]*justify-self:\s*end/);
+test('Phase 6.9.9 proof chip status column aligns to end on desktop', () => {
+  assert.match(styles, /\.aurora-daily-task-status\{[^}]*justify-self:\s*end/);
 });
 
 test('Phase 6.9.9 mobile rule allows chip to wrap below without overflow', () => {
   const mobileBlock = styles.slice(styles.lastIndexOf('@media(max-width:767px)'));
-  assert.match(mobileBlock, /\.aurora-daily-task\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/);
-  assert.match(mobileBlock, /\.aurora-chip-proof\{[^}]*grid-column:\s*2/);
+  assert.match(mobileBlock, /\.aurora-daily-task\{[^}]*grid-template-columns:\s*20px\s+minmax\(0,\s*1fr\)/);
+  assert.match(mobileBlock, /\.aurora-daily-task-status\{[^}]*grid-column:\s*2/);
 });
 
 /* ── Design gallery coverage ── */

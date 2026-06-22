@@ -15,14 +15,29 @@ export function renderAppShell({ title = '', body = '', className = '' } = {}){
     + '</main>';
 }
 
-export function renderShellNav({ active = 'today', compact = false } = {}){
-  return '<nav class="' + (compact ? 'aurora-bottom-nav' : 'aurora-side-nav') + '" aria-label="App navigation">'
-    + AURORA_APP_NAV.map(item => {
-      const activeClass = item.id === active ? ' is-active' : '';
-      return '<a class="aurora-nav-item' + activeClass + '" href="' + esc(item.href) + '" data-app-route="' + esc(item.id) + '"' + (item.id === active ? ' aria-current="page"' : '') + '>'
-        + '<span class="aurora-nav-dot" aria-hidden="true"></span><span>' + esc(item.label) + '</span></a>';
-    }).join('')
-    + '</nav>';
+export function renderShellNav({ active = 'today', compact = false, userLabel = '' } = {}){
+  if(compact){
+    return '<nav class="aurora-bottom-nav" aria-label="App navigation">'
+      + AURORA_APP_NAV.map(item => {
+        const activeClass = item.id === active ? ' is-active' : '';
+        return '<a class="aurora-nav-item' + activeClass + '" href="' + esc(item.href) + '" data-app-route="' + esc(item.id) + '"' + (item.id === active ? ' aria-current="page"' : '') + '>'
+          + '<span class="aurora-nav-dot" aria-hidden="true"></span><span>' + esc(item.label) + '</span></a>';
+      }).join('')
+      + '</nav>';
+  }
+  let nav = '<nav class="aurora-side-nav" aria-label="App navigation">';
+  nav += '<div class="aurora-side-nav-links">';
+  nav += AURORA_APP_NAV.map(item => {
+    const activeClass = item.id === active ? ' is-active' : '';
+    return '<a class="aurora-nav-item' + activeClass + '" href="' + esc(item.href) + '" data-app-route="' + esc(item.id) + '"' + (item.id === active ? ' aria-current="page"' : '') + '>'
+      + '<span class="aurora-nav-dot" aria-hidden="true"></span><span>' + esc(item.label) + '</span></a>';
+  }).join('');
+  nav += '</div>';
+  if(userLabel){
+    nav += '<div class="aurora-side-nav-user">' + esc(userLabel) + '</div>';
+  }
+  nav += '</nav>';
+  return nav;
 }
 
 export function renderAuroraShell({
@@ -31,12 +46,15 @@ export function renderAuroraShell({
   body = '',
   rightRail = '',
   className = '',
+  userLabel = '',
 } = {}){
   const railClass = rightRail ? ' has-right-rail' : '';
   return '<main class="lpt-shell aurora-app-shell' + railClass + ' ' + esc(className) + '" data-shell-active="' + esc(active) + '">'
-    + renderShellNav({ active })
+    + renderShellNav({ active, userLabel })
     + '<section class="aurora-shell-content" aria-label="' + esc(title || 'Workspace') + '">'
+    + '<div class="aurora-shell-content-inner">'
     + body
+    + '</div>'
     + '</section>'
     + (rightRail ? '<aside class="aurora-shell-rail" aria-label="Context">' + rightRail + '</aside>' : '')
     + renderShellNav({ active, compact:true })

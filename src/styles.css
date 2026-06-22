@@ -42,6 +42,9 @@
   a{color:var(--gold-soft);text-decoration:none}
   a:hover{color:var(--gold)}
   .wrap{max-width:1100px;margin:0 auto;padding:0 22px 100px}
+  body.aurora-shell-mode .wrap{max-width:none;width:100%;margin:0;padding:0}
+  body.aurora-shell-mode #content{min-height:100dvh;min-height:100vh;width:100%}
+  body.aurora-shell-mode header.top,body.aurora-shell-mode #tabs{display:none !important}
   header.top{position:sticky;top:0;z-index:50;background:linear-gradient(180deg, rgba(21,19,28,0.96), rgba(21,19,28,0.78));backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
   .top-inner{max-width:1100px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
   .brand{display:flex;flex-direction:column;gap:2px;flex:1;min-width:200px}
@@ -1523,7 +1526,8 @@
   border-right:1px solid var(--lpt-color-border-subtle);
   background:linear-gradient(180deg,rgba(109,93,246,.04),rgba(21,19,28,.98));
 }
-.aurora-side-nav .aurora-nav-item:last-child{margin-top:auto}
+.aurora-side-nav-links{display:grid;gap:var(--lpt-space-xs)}
+.aurora-side-nav-user{margin-top:auto;padding:var(--lpt-space-md) var(--lpt-space-lg);font-size:12px;color:var(--lpt-color-text-muted);font-weight:700}
 .aurora-nav-item{
   display:flex;align-items:center;gap:var(--lpt-space-md);
   padding:var(--lpt-space-md) var(--lpt-space-lg);
@@ -1693,7 +1697,7 @@
 .aurora-daily-tasks{display:grid;gap:var(--lpt-space-lg);margin:var(--lpt-space-md) 0}
 .aurora-daily-task{
   display:grid;
-  grid-template-columns:auto minmax(0,1fr) minmax(112px,max-content);
+  grid-template-columns:20px minmax(0,1fr) minmax(112px,136px);
   align-items:center;
   column-gap:var(--lpt-space-md);
   padding:var(--lpt-layout-row-padding-y) var(--lpt-layout-row-padding-x);
@@ -1709,12 +1713,14 @@
   color:var(--lpt-color-accent-proof);
 }
 .aurora-daily-task.is-done .aurora-daily-task-check{background:var(--lpt-color-accent-proof);color:var(--lpt-color-text-inverse)}
-.aurora-daily-task-title{min-width:0}
+.aurora-daily-task-title{min-width:0;overflow-wrap:anywhere}
 .aurora-daily-task-sub{color:var(--lpt-color-text-muted);font-size:12px;justify-self:end}
+.aurora-daily-task-status{justify-self:end;width:100%;display:flex;justify-content:flex-end}
 .aurora-chip-proof{
+  min-width:112px;max-width:136px;justify-content:center;
   border-color:var(--lpt-color-accent-proof);color:var(--lpt-color-accent-proof);
-  font-size:11px;justify-self:end;white-space:nowrap;text-align:center;
-  cursor:default;pointer-events:none;
+  font-size:11px;text-align:center;white-space:normal;
+  cursor:default;pointer-events:none;box-shadow:none;
 }
 .aurora-daily-progress{
   display:flex;gap:var(--lpt-space-lg);
@@ -1859,10 +1865,16 @@ select option,
   .aurora-shell-content{padding:var(--lpt-space-xl) var(--lpt-space-md) calc(var(--lpt-space-3xl) + 60px)}
   .aurora-daily-focus{padding:var(--lpt-space-xl)}
   .aurora-daily-task{
-    grid-template-columns:auto minmax(0,1fr);
+    grid-template-columns:20px minmax(0,1fr);
     padding:var(--lpt-space-lg) var(--lpt-space-xl);
   }
-  .aurora-chip-proof{grid-column:2;justify-self:start}
+  .aurora-daily-task-status{
+    grid-column:2;
+    justify-self:start;
+    justify-content:flex-start;
+    margin-top:var(--lpt-space-xs);
+  }
+  .aurora-chip-proof{grid-column:auto;justify-self:start}
 }
 
 /* ---- undo toast (J1) ---- */

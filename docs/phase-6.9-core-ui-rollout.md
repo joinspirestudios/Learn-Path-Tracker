@@ -120,6 +120,20 @@ Phase 6.9.9 repairs the Aurora app display system by making the shell span the v
 - Proof-required chips are non-interactive status indicators
 - Responsive breakpoints: mobile (≤767), tablet (768-1023), laptop (1024-1279), desktop (1280+)
 
+## Phase 6.9.10 — Aurora Shell Host Fix
+
+Phase 6.9.10 fixes the root cause of the Aurora shell layout problem: the legacy `.wrap` container was constraining `#content` (and therefore `.aurora-app-shell`) to `max-width:1100px;margin:0 auto`.
+
+- `body.aurora-shell-mode` class added/removed when rendering Aurora vs legacy screens
+- `.wrap` constraints removed only when `aurora-shell-mode` is active
+- `header.top` and `#tabs` hidden in Aurora shell mode
+- `renderAuroraShell` now renders `aurora-shell-content-inner` wrapper
+- Side nav restructured: `aurora-side-nav-links` holds nav items, `aurora-side-nav-user` is the only bottom-anchored block
+- Profile remains a normal nav item, not pushed to bottom by CSS hack
+- Today and path detail pages use shell `rightRail` slot instead of embedding rail inside content body
+- Daily task rows use explicit `aurora-daily-task-title` and `aurora-daily-task-status` markup
+- Proof-required chips use dedicated status column with consistent alignment
+
 ## Deferred
 
 This phase does not build the native mobile app, redesign the whole app, add a design library, add analytics tracking, add adaptive planning, add Gemini/evidence intelligence, add notifications, rename the product, or add game economy features.
