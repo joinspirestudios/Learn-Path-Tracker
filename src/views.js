@@ -3870,25 +3870,6 @@ function journeyDetailHTML(id, def){
   return h;
 }
 
-function journeyStatusHTML(id, def){
-  const enrollment = currentEnrollmentForPath(id);
-  const tasksReady = pathTasksReady(def);
-  const today = localDateString();
-  const totalDays = getMaxRoadmapDay(def, enrollment);
-  const day = enrollment?.startDate ? Math.min(journeyDayForDate(enrollment.startDate, today), totalDays) : 0;
-  const status = enrollment?.startDate ? getDayStatus(day || 1, enrollment, enrollment.dayLogs || {}, today) : 'not started';
-  const todayTasks = (tasksReady && enrollment?.startDate) ? getTasksForDay(def, day || 1) : [];
-  const log = enrollment?.dayLogs && (enrollment.dayLogs[day] || enrollment.dayLogs[String(day)]);
-  const done = todayTasks.filter(task => taskIsDone(task, log)).length;
-  return '<div class="panel card journey-status">'
-    + '<div><span>Day</span><b>' + (day || '-') + ' of ' + totalDays + '</b></div>'
-    + '<div><span>Streak</span><b>' + esc(enrollment?.streak || 0) + '</b></div>'
-    + '<div><span>Freezes</span><b>' + esc(enrollment?.freezeCount ?? 1) + '</b></div>'
-    + '<div><span>Started</span><b>' + esc(enrollment?.startDate || 'Not yet') + '</b></div>'
-    + '<div><span>Today</span><b>' + esc(statusLabel(status)) + '</b></div>'
-    + '<div><span>Progress</span><b>' + (tasksReady ? (done + '/' + todayTasks.length) : 'Loading') + '</b></div>'
-    + '</div>';
-}
 
 async function updateJourneyTask(id, def, taskId, checked){
   const enrollment = currentEnrollmentForPath(id);
@@ -4509,15 +4490,16 @@ export function renderPlan(){
   const pathStats = normalizePathStats(def.stats, def);
   const ownerShareable = ['public', 'unlisted'].includes(def.visibility);
   const p = P(); const t = totalsFor(id); const pct = t.total ? Math.round(t.done/t.total*100) : 0;
-  let h = '<div class="plan-head"><div><div class="chip" style="margin-bottom:8px">Your path</div>'
+  let h = '<div class="aurora-unified-layout"><div class="aurora-unified-core">';
+  h += '<div class="aurora-path-header"><div><div class="chip" style="margin-bottom:8px">Your path</div>'
     + '<div class="section-title" style="margin:0">' + esc(pathTitle(id)) + '</div>'
     + (pathGoal(id) ? ('<div class="muted" style="margin-top:6px;max-width:640px">' + esc(pathGoal(id)) + '</div>') : '')
-    + '</div><div style="text-align:right"><button class="btn ' + (store.editMode ? 'gold' : '') + '" id="planEdit">' + (store.editMode ? 'Done editing' : '✎ Edit') + '</button>'
+    + '</div><div class="aurora-path-header-actions">' + (editable ? '<button class="btn lpt-button ' + (store.editMode ? 'lpt-button-primary' : 'lpt-button-secondary') + '" id="planEdit">' + (store.editMode ? 'Done editing' : '✎ Edit') + '</button>' : '')
     + '<div class="muted" style="font-size:12px;margin-top:10px">' + t.done + ' / ' + t.total + ' done · ' + pct + '%</div>'
-    + '<div class="progress-bar" style="width:220px;max-width:60vw;margin-left:auto"><div style="width:' + pct + '%"></div></div></div></div>';
+    + '<div class="progress-bar" style="width:220px;max-width:60vw"><div style="width:' + pct + '%"></div></div></div></div>';
 
   h += syncStatusHTML();
-  h += journeyStatusHTML(id, def);
+  h += platformDailyFocusHTML(id, def);
   h += roadmapHTML(id, def);
   h += journeyDetailHTML(id, def);
 
@@ -4587,6 +4569,7 @@ export function renderPlan(){
     h += '<div class="danger-zone"><button class="linklike danger" data-act="delPath">Delete this path</button></div>';
   }
   }
+  h += '</div><aside class="aurora-unified-rail" aria-label="Path progress">' + platformRightRailHTML(id, def) + '</aside></div>';
   $('content').innerHTML = appShellHTML('paths', h, { title:'Path detail', className:'aurora-path-detail-route' });
   wireJourneyControls(id, def);
 
@@ -4732,11 +4715,176 @@ export function renderPlan(){
 /* ============================================================ */
 /* ---------- TODAY ------------------------------------------- */
 /* ============================================================ */
+
+function findActiveEnrolledPath(){
+  const userId = (store.currentUser && store.currentUser.uid) || 'local';
+  let best = null, bestDate = '';
+  const allEnrollments = { ...store.enrollments, ...(store.state.enrollments || {}) };
+  for(const [eid, en] of Object.entries(allEnrollments)){
+    if(!en || !en.pathId || !en.startDate) continue;
+    const def = store.state.userPaths[en.pathId];
+    if(!def || !def.platform) continue;
+    if(!canOpenFullPath(en.pathId, def)) continue;
+    const act = en.lastActivityDate || en.startDate || '';
+    if(!best || act > bestDate){ best = en; bestDate = act; }
+  }
+  return best;
+}
+
+function compactRoadmapHTML(id, def, windowSize){
+  const enrollment = currentEnrollmentForPath(id);
+  const tasksReady = pathTasksReady(def);
+  const logs = enrollment?.dayLogs || {};
+  const today = localDateString();
+  const totalDays = getMaxRoadmapDay(def, enrollment);
+  const activeDay = enrollment?.startDate ? journeyDayForDate(enrollment.startDate, today) : 1;
+  const lo = Math.max(1, activeDay - windowSize);
+  const hi = Math.min(totalDays, activeDay + windowSize);
+  let h = '<section class="aurora-roadmap-panel aurora-compact-roadmap proof-studio-roadmap">'
+    + '<header class="aurora-roadmap-header"><div><span class="aurora-section-kicker">Proof journey</span><h3>' + esc(def.title || 'Your path') + '</h3></div></header>';
+  h += '<ol class="aurora-journey-list">';
+  for(let day = lo; day <= hi; day++){
+    const status = getDayStatus(day, enrollment, logs, today);
+    const open = canOpenDay(day, status);
+    const date = enrollment?.startDate ? dateForJourneyDay(enrollment.startDate, day) : null;
+    const taskCount = tasksReady ? getTasksForDay(def, day).length : 0;
+    const log = logs[day] || logs[String(day)] || {};
+    const tier = log.completionTier || log.tier || '';
+    const proofSubmitted = Number(log.evidenceCount || 0) > 0 || (log.verifiedTaskIds || []).length > 0;
+    h += auroraRoadmapDayItemHTML({
+      day,
+      status,
+      label:statusLabel(status),
+      date:date ? date.slice(5) : '',
+      title:status === 'active' ? "Today's proof session" : status === 'completed' ? 'Completed proof day' : 'Scheduled proof day',
+      taskSummary:tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks',
+      tier,
+      proofSubmitted,
+      open,
+      isToday:day === activeDay,
+    });
+  }
+  h += '</ol>';
+  if(totalDays > (hi - lo + 1)){
+    h += '<div class="aurora-roadmap-expander"><button class="btn lpt-button lpt-button-secondary" id="viewFullRoadmap" type="button">View full path (' + totalDays + ' days)</button></div>';
+  }
+  h += '</section>';
+  return h;
+}
+
+function platformDailyFocusHTML(id, def){
+  const enrollment = currentEnrollmentForPath(id);
+  const tasksReady = pathTasksReady(def);
+  if(!enrollment?.startDate){
+    const canStart = pathCanStart(def);
+    return '<section class="panel card aurora-daily-focus" aria-label="Daily focus">'
+      + '<span class="aurora-section-kicker">Daily focus</span>'
+      + '<h2>' + esc(def.title || 'Your path') + '</h2>'
+      + '<p>' + esc(canStart ? 'Set today as Day 1 and begin tracking progress.' : 'Add at least one Day 1 task before starting.') + '</p>'
+      + '<button class="btn gold lpt-button lpt-button-primary" id="startJourney" ' + (!canStart || startingJourneyId === id ? 'disabled' : '') + '>'
+      + (startingJourneyId === id ? 'Starting...' : 'Start this path') + '</button></section>';
+  }
+  const today = localDateString();
+  const activeDay = journeyDayForDate(enrollment.startDate, today);
+  const day = Math.min(Number(enrollment.currentDay || 1), activeDay);
+  const status = getDayStatus(day, enrollment, enrollment.dayLogs || {}, today);
+  const dayTasks = tasksReady ? getTasksForDay(def, day) : [];
+  const log = dayLogFor(enrollment, day) || {};
+  const completedCount = dayTasks.filter(task => taskIsDone(task, log)).length;
+  const totalDays = getMaxRoadmapDay(def, enrollment);
+  const evidenceCount = evidenceCountFor(enrollment.id, day);
+  const date = dateForJourneyDay(enrollment.startDate, day);
+  const sessionStarted = !!log.sessionStartedAt;
+  const ctaLabel = status === 'completed' ? 'Review Day ' + day : (sessionStarted ? 'Continue day' : 'Start day');
+  const proofNeeded = dayTasks.some(t => t.evidenceRequired);
+  let h = '<section class="panel card aurora-daily-focus" aria-label="Daily focus">';
+  h += '<span class="aurora-section-kicker">Daily focus</span>';
+  h += '<div class="aurora-daily-focus-meta">'
+    + '<span>Day ' + day + ' of ' + totalDays + '</span>'
+    + '<span>' + esc(date || '') + '</span>'
+    + '<span class="aurora-chip">' + esc(statusLabel(status)) + '</span>'
+    + '</div>';
+  h += '<h2>' + esc(def.title || 'Day ' + day) + '</h2>';
+  if(dayTasks.length){
+    h += '<div class="aurora-daily-tasks">';
+    dayTasks.forEach(task => {
+      const title = task.title || task.text || 'Task';
+      const done = taskIsDone(task, log);
+      h += '<div class="aurora-daily-task ' + (done ? 'is-done' : '') + '">'
+        + '<span class="aurora-daily-task-check" aria-hidden="true">' + (done ? '&#10003;' : '') + '</span>'
+        + '<span>' + esc(title) + '</span>'
+        + (task.evidenceRequired ? '<span class="aurora-chip aurora-chip-proof">Proof required</span>' : '')
+        + '</div>';
+    });
+    h += '</div>';
+    h += '<div class="aurora-daily-progress"><span>' + completedCount + ' / ' + dayTasks.length + ' tasks</span>'
+      + (evidenceCount > 0 ? '<span>' + evidenceCount + ' proof submitted</span>' : '')
+      + '</div>';
+  }
+  if(proofNeeded) h += '<div class="aurora-daily-proof-note">This day requires proof before completion.</div>';
+  if(status !== 'completed' && status !== 'locked'){
+    h += '<button class="btn gold lpt-button lpt-button-primary open-focus-session" type="button" data-focus-day="' + esc(day) + '">' + esc(ctaLabel) + '</button>';
+  }
+  h += '</section>';
+  return h;
+}
+
+function platformRightRailHTML(id, def){
+  const enrollment = currentEnrollmentForPath(id);
+  const streak = Number(enrollment?.streak || 0);
+  const totalDays = getMaxRoadmapDay(def, enrollment);
+  const completedDays = enrollment?.lastCompletedDay || 0;
+  const hasConsistency = !!(streak || completedDays);
+  const stats = normalizePathStats(def.stats, def);
+  const joined = stats.joinedCount || 0;
+  const proofs = stats.proofSubmissionCount || 0;
+  const completed = stats.completedCount || 0;
+  const hasPathTrust = !!(joined || proofs || completed);
+  let h = '<article class="aurora-workspace-rail-card proof-consistency-card ' + (hasConsistency ? 'has-data' : 'is-empty') + '">'
+    + '<span>Your consistency</span>'
+    + '<b>' + esc(hasConsistency ? (streak + ' day streak') : 'Not enough data yet') + '</b>'
+    + '<p>' + esc(hasConsistency ? (completedDays + ' of ' + totalDays + ' days completed from real progress.') : 'Complete a few sessions to see your consistency.') + '</p></article>';
+  h += '<article class="aurora-workspace-rail-card">'
+    + '<span>Path trust</span>'
+    + (hasPathTrust
+      ? '<b>' + joined + ' joined · ' + proofs + ' proofs · ' + completed + ' completed</b><p>Real metrics from verified participation.</p>'
+      : '<b>Not enough data yet</b><p>Metrics appear as participants join and submit proof.</p>')
+    + '</article>';
+  h += '<div class="muted" style="font-size:12px;margin-top:12px;line-height:1.5">Every number here is proof-backed from real progress. No rankings or follower counts are estimated.</div>';
+  return h;
+}
+
 export function renderToday(){
+  const userDef = curUser();
+  if(userDef && userDef.platform){
+    renderPlatformToday(store.state.current, userDef);
+    return;
+  }
+  if(!store.state.current && store.currentUser){
+    const enrolled = findActiveEnrolledPath();
+    if(enrolled){
+      const def = store.state.userPaths[enrolled.pathId];
+      if(def && def.platform){
+        renderPlatformToday(enrolled.pathId, def);
+        return;
+      }
+    }
+  }
   const def = curDef(), cs = curState();
   const ep = effPlan();
   if(!def || !cs || !ep.length){
-    const emptyToday = '<div class="today-grid lpt-today-screen proof-studio-today"><div class="lpt-core-column"><section class="panel card proof-studio-today-hero is-empty"><span class="proof-studio-kicker">Today</span><h2>No active path</h2><p>Create or join a path to start today.</p></section></div></div>';
+    let activePath = null;
+    for(const [id, d] of Object.entries(store.state.userPaths || {})){
+      if(d.platform && canOpenFullPath(id, d)){
+        const enrollment = currentEnrollmentForPath(id);
+        if(enrollment?.startDate){ activePath = { id, def:d }; break; }
+      }
+    }
+    if(activePath){
+      renderPlatformToday(activePath.id, activePath.def);
+      return;
+    }
+    const emptyToday = '<div class="aurora-unified-layout"><div class="aurora-unified-core"><section class="panel card aurora-daily-focus is-empty"><span class="aurora-section-kicker">Today</span><h2>No active path</h2><p>Create or join a path to start today.</p></section></div></div>';
     $('content').innerHTML = appShellHTML('today', emptyToday, { title:'Today', className:'aurora-today-route' });
     return;
   }
@@ -4753,42 +4901,56 @@ export function renderToday(){
   const proofSummary = dayDef.ship
     ? 'Shipping day: save or publish one proof piece when finished.'
     : 'No required proof today; save a note if useful.';
-  let h = '<div class="today-grid lpt-today-screen proof-studio-today"><div class="lpt-core-column">';
-  // left: today's session
-  h += '<div class="panel card today-main lpt-today-card proof-studio-today-hero">';
-  h += '<div class="goal-line proof-studio-context"><span>' + esc(pathTitle(store.state.current)) + '</span><b>' + esc(dayNames[tk] || 'Today') + ' - Week ' + tdPos + ' of ' + tdTotal + ' - ' + esc(todayDate) + '</b></div>';
-  h += '<div class="proof-studio-kicker">Today&apos;s proof</div>';
-  h += '<div class="today-kicker">' + esc(dayNames[tk] || 'Today') + ' · Week ' + tdPos + ' of ' + tdTotal + '</div>';
-  h += '<div class="lpt-session-header"><div><span>Today</span><h2>' + esc(dayLabel(wk, dayDef)) + '</h2><p>One focused daily action before the rest of the interface.</p></div></div>';
+  let h = '<div class="aurora-unified-layout"><div class="aurora-unified-core">';
+  h += '<div class="panel card aurora-daily-focus">';
+  h += '<span class="aurora-section-kicker">Today</span>';
+  h += '<div class="aurora-daily-focus-meta"><span>' + esc(pathTitle(store.state.current)) + '</span><span>' + esc(dayNames[tk] || 'Today') + ' · Week ' + tdPos + ' of ' + tdTotal + '</span><span>' + esc(todayDate) + '</span></div>';
+  h += '<h2>' + esc(dayLabel(wk, dayDef)) + '</h2>';
+  h += '<p>One focused daily action before the rest of the interface.</p>';
   if(!cs.meta.startDate) h += '<div class="hint" style="margin:10px 0">Set a <b>start date</b> in the header to lock your weekly schedule. Showing Week 1 for now.</div>';
-  h += '<div class="today-task proof-studio-task-preview ' + (P()[bid] ? 'done' : '') + '"><input type="checkbox" class="ck" data-id="' + bid + '" ' + (P()[bid] ? 'checked' : '') + '/>'
-    + '<div><div class="tt-title">' + esc(dayLabel(wk, dayDef)) + '</div><div class="tt-sub">' + esc(dayDef.s) + '</div></div></div>';
-  h += '<label class="taste today-taste"><input type="checkbox" class="ck sm ox" data-id="' + tid + '" ' + (P()[tid] ? 'checked' : '') + '/> Taste 15m (a quick rep, even on a busy day)</label>';
-  if(dayDef.ship) h += '<div class="ship-note">★ Shipping day. Finish and publish one piece. Shipping is the skill.</div>';
-  h += '<div class="proof-studio-proof-summary"><b>Proof needed</b><span>' + esc(proofSummary) + '</span></div>';
-  h += '<div class="lad-strip-today"><div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">Always-on ladders</div>';
-  ladders().forEach(l => { h += ladderRowHTML(l); });
+  h += '<div class="aurora-daily-tasks">';
+  h += '<div class="aurora-daily-task ' + (P()[bid] ? 'is-done' : '') + '"><input type="checkbox" class="ck" data-id="' + bid + '" ' + (P()[bid] ? 'checked' : '') + '/>'
+    + '<span>' + esc(dayLabel(wk, dayDef)) + '</span><span class="aurora-daily-task-sub">' + esc(dayDef.s) + '</span></div>';
+  h += '<div class="aurora-daily-task"><label><input type="checkbox" class="ck sm ox" data-id="' + tid + '" ' + (P()[tid] ? 'checked' : '') + '/> Taste 15m</label></div>';
   h += '</div>';
-  h += '<div class="today-actions lpt-primary-action-bar"><button class="btn gold lpt-button lpt-button-primary" id="openWeek">Continue day</button><button class="btn lpt-button lpt-button-secondary" id="openRoadmapFromToday">View roadmap</button></div>';
+  if(dayDef.ship) h += '<div class="aurora-daily-proof-note">Shipping day. Finish and publish one piece.</div>';
+  h += '<div class="aurora-daily-proof-note">' + esc(proofSummary) + '</div>';
+  h += '<div class="aurora-daily-actions"><button class="btn gold lpt-button lpt-button-primary" id="openWeek">Continue day</button><button class="btn lpt-button lpt-button-secondary" id="openRoadmapFromToday">View roadmap</button></div>';
   h += '</div></div>';
-  // right: momentum
   const tot = allTotals(), tpct = tot.total ? Math.round(tot.done/tot.total*100) : 0;
   const completedValues = Math.max(0, Number(tot.done || 0));
   const hasConsistencyData = Boolean(streak || completedValues);
-  h += '<aside class="panel card today-side lpt-today-metrics proof-studio-right-rail" aria-label="Real progress summary">';
-  h += '<article class="proof-consistency-card ' + (hasConsistencyData ? 'has-data' : 'is-empty') + '">'
+  h += '<aside class="aurora-unified-rail" aria-label="Real progress summary">';
+  h += '<article class="aurora-workspace-rail-card proof-consistency-card ' + (hasConsistencyData ? 'has-data' : 'is-empty') + '">'
     + '<span>Your consistency</span>'
     + '<b>' + esc(hasConsistencyData ? (streak + ' day streak') : 'Not enough completed days yet.') + '</b>'
     + '<p>' + esc(hasConsistencyData ? (completedValues + ' completed progress value' + (completedValues === 1 ? '' : 's') + ' from real local progress.') : 'Complete a few sessions to see your consistency map.') + '</p></article>';
-  h += '<div class="stat-row"><span>This week</span><b>' + wpct + '%</b></div><div class="progress-bar"><div style="width:' + wpct + '%"></div></div>';
-  h += '<div class="stat-row" style="margin-top:14px"><span>Path trust</span><b>' + (tot.total ? tpct + '%' : 'Not enough data yet') + '</b></div><div class="progress-bar"><div style="width:' + tpct + '%"></div></div>';
-  h += '<div class="muted" style="font-size:12px;margin-top:16px;line-height:1.5">Every number here is proof-backed from your local progress. No rankings or follower counts are estimated.</div>';
+  h += '<article class="aurora-workspace-rail-card"><span>This week</span><b>' + wpct + '%</b><div class="progress-bar"><div style="width:' + wpct + '%"></div></div></article>';
+  h += '<article class="aurora-workspace-rail-card"><span>Path trust</span><b>' + (tot.total ? tpct + '%' : 'Not enough data yet') + '</b><div class="progress-bar"><div style="width:' + tpct + '%"></div></div></article>';
+  h += '<div class="muted" style="font-size:12px;margin-top:12px;line-height:1.5">Every number here is proof-backed from your local progress. No rankings or follower counts are estimated.</div>';
   h += '</aside></div>';
   $('content').innerHTML = appShellHTML('today', h, { title:'Today', className:'aurora-today-route' });
   wireChecks();
   const ow = $('openWeek'); if(ow) ow.onclick = () => { store.currentWeek = wk.w; curState().meta.lastWeek = wk.w; store.nav.switchTab('week'); };
   const rm = $('openRoadmapFromToday'); if(rm) rm.onclick = () => store.nav.switchTab('week');
   $('content').querySelectorAll('input.ck').forEach(cb => cb.addEventListener('change', () => setTimeout(renderToday, 60)));
+}
+
+function renderPlatformToday(id, def){
+  const body = '<div class="aurora-unified-layout"><div class="aurora-unified-core">'
+    + platformDailyFocusHTML(id, def)
+    + compactRoadmapHTML(id, def, 2)
+    + '</div><aside class="aurora-unified-rail" aria-label="Progress summary">'
+    + platformRightRailHTML(id, def)
+    + '</aside></div>';
+  $('content').innerHTML = appShellHTML('today', body, { title:'Today', className:'aurora-today-route' });
+  wireJourneyControls(id, def);
+  const fullRoadmap = $('viewFullRoadmap');
+  if(fullRoadmap) fullRoadmap.onclick = () => {
+    store.state.current = id;
+    store.editMode = false;
+    renderPlan();
+  };
 }
 
 /* ============================================================ */

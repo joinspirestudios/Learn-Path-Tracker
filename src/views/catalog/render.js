@@ -76,7 +76,7 @@ export function renderWorkspaceView(context = {}){
   const currentId = store.state.current;
   const currentTitle = currentId ? pathTitle(currentId) : '';
   const totalPaths = personalIds.length + skills.length;
-  const rightRail = '<div class="aurora-workspace-rail-card"><span>Workspace</span><b>' + totalPaths + '</b><p>Owned, joined, or built-in paths available to this account.</p></div>'
+  const rightRail = '<div class="aurora-workspace-rail-card"><span>Workspace</span><b>' + totalPaths + ' path' + (totalPaths === 1 ? '' : 's') + '</b><p>Owned, joined, or built-in paths available to this account.</p></div>'
     + '<div class="aurora-workspace-rail-card"><span>Continue</span><b>' + esc(currentTitle || 'No active path') + '</b><p>' + esc(currentTitle ? 'Your active path is ready from Today or the path workspace.' : 'Open a path to make it active for Today.') + '</p></div>';
 
   const fn = store.currentUser?.displayName || store.currentUser?.email || '';

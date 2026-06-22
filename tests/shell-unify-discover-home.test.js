@@ -141,7 +141,7 @@ test('Search header: clear is ghost style', () => {
     sort:'recommended',
   });
   assert.match(html, /aurora-button-ghost.*aurora-clear-control/);
-  assert.match(html, /id="clearDiscoverySearch"/);
+  assert.match(html, /id="toggleDiscoveryFilters"/);
   assert.match(html, /id="clearDiscoveryFilters"/);
 });
 
@@ -262,7 +262,7 @@ test('Progress: renderProgress does not use following or leaderboard', () => {
 
 /* ── Count badges: no floating N PATHS count pills ── */
 
-test('Badges: discovery section headers include labeled counts not floating pills', () => {
+test('Badges: discovery section headers render without count badges', () => {
   const html = discoverySectionsHTML([publicPath('a'), publicPath('b')], {
     query:'',
     category:'all',
@@ -272,11 +272,8 @@ test('Badges: discovery section headers include labeled counts not floating pill
     sort:'recommended',
   }, { store:{ currentUser:null, state:{ userPaths:{} } }, canOpenFullPath:() => false });
   assert.doesNotMatch(html, /<span>\s*\d+\s*<\/span>/);
-  const counts = [...html.matchAll(/class="discovery-section-count">([^<]+)<\/span>/g)].map(m => m[1]);
-  assert.ok(counts.length >= 1, 'should have at least one labeled count');
-  for(const count of counts){
-    assert.match(count, /\bpath(s)?\b/);
-  }
+  assert.doesNotMatch(html, /discovery-section-count/);
+  assert.match(html, /discovery-section-head/);
 });
 
 /* ── Workspace card tags: no Private tool or AI draft ── */

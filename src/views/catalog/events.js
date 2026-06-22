@@ -32,11 +32,6 @@ export function bindCatalogEvents(context = {}){
       }
     }, 160);
   };
-  const clearSearch = $('clearDiscoverySearch');
-  if(clearSearch) clearSearch.onclick = () => {
-    store.discovery.query = '';
-    renderCatalog();
-  };
   content.querySelectorAll('[data-discovery-field]').forEach(select => {
     select.onchange = e => {
       store.discovery[e.target.dataset.discoveryField] = e.target.value;
@@ -47,6 +42,11 @@ export function bindCatalogEvents(context = {}){
   if(clearFilters) clearFilters.onclick = () => {
     store.discovery = clearDiscoveryState();
     renderCatalog();
+  };
+  const toggleFilters = $('toggleDiscoveryFilters');
+  if(toggleFilters) toggleFilters.onclick = () => {
+    const row = $('discoveryFilterRow');
+    if(row) row.classList.toggle('is-open');
   };
   const loadMore = $('loadMorePublicPaths');
   if(loadMore && typeof loadMorePublicPaths === 'function'){

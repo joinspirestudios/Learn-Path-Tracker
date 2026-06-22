@@ -94,13 +94,12 @@ test('Completion Result renders score, tier, summaries and stable motion contain
   assert.match(html, /Proof submitted/);
 });
 
-test('Today source uses Proof Studio action center with one primary Start/Continue CTA', () => {
+test('Today source uses Aurora unified layout with one primary Continue CTA', () => {
   const todayBlock = views.slice(views.indexOf('export function renderToday'), views.indexOf('export function editPath'));
-  assert.match(todayBlock, /lpt-today-screen/);
-  assert.match(todayBlock, /lpt-core-column/);
-  assert.match(todayBlock, /proof-studio-today-hero/);
-  assert.match(todayBlock, /Today&apos;s proof/);
-  assert.match(todayBlock, /Proof needed/);
+  assert.match(todayBlock, /aurora-unified-layout/);
+  assert.match(todayBlock, /aurora-unified-core/);
+  assert.match(todayBlock, /aurora-daily-focus/);
+  assert.match(todayBlock, /aurora-unified-rail/);
   assert.match(todayBlock, /Continue day/);
   assert.match(todayBlock, /View roadmap/);
   assert.match(todayBlock, /Not enough data yet/);
@@ -117,7 +116,8 @@ test('Roadmap source supports completed, active and locked Proof Studio states',
   assert.match(roadmapBlock, /aurora-roadmap-panel/);
   assert.match(roadmapBlock, /aurora-journey-list/);
   assert.match(roadmapBlock, /auroraRoadmapDayItemHTML/);
-  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /Proof submitted - strong/);
+  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /Proof submitted/);
+  assert.match(auroraRoadmapDayItemHTML({ day:1, status:'completed', label:'Completed', proofSubmitted:true, tier:'strong', open:true }), /aurora-tier-chip/);
   assert.doesNotMatch(roadmapBlock, /evidenceUrl|downloadURL|storagePath/);
 });
 
