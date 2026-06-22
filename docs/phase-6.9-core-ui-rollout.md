@@ -134,6 +134,16 @@ Phase 6.9.10 fixes the root cause of the Aurora shell layout problem: the legacy
 - Daily task rows use explicit `aurora-daily-task-title` and `aurora-daily-task-status` markup
 - Proof-required chips use dedicated status column with consistent alignment
 
+## Phase 6.9.11 — Aurora Content Centering and Search Frame System
+
+Phase 6.9.11 addresses five remaining visual issues after the 6.9.10 shell host fix.
+
+- Content centering: `.aurora-shell-content` uses `display:flex; justify-content:center`, `.aurora-shell-content-inner` uses `margin-inline:auto`
+- Rail divider removed: `border-left` on `.aurora-shell-rail` deleted
+- Day detail rail card: `selectedDayDetailRailCardHTML` renders selected day tasks in the right rail below consistency/path trust cards
+- Focus screen centering: `.daily-focus-screen` uses 3-zone CSS grid (`auto 1fr auto`) for vertical centering
+- Search frame system: `.aurora-search-frame` wraps discovery controls with panel radius (20px), inner controls use large radius (12px), filter row separated by border-top
+
 ## Deferred
 
 This phase does not build the native mobile app, redesign the whole app, add a design library, add analytics tracking, add adaptive planning, add Gemini/evidence intelligence, add notifications, rename the product, or add game economy features.

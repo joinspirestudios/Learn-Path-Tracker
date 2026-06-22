@@ -4834,6 +4834,36 @@ function platformDailyFocusHTML(id, def){
   return h;
 }
 
+function selectedDayDetailRailCardHTML(id, def){
+  const enrollment = currentEnrollmentForPath(id);
+  if(!enrollment?.startDate) return '';
+  const tasksReady = pathTasksReady(def);
+  const today = localDateString();
+  const activeDay = journeyDayForDate(enrollment.startDate, today);
+  const day = Math.min(Number(enrollment.currentDay || 1), activeDay);
+  const status = getDayStatus(day, enrollment, enrollment.dayLogs || {}, today);
+  const dayTasks = tasksReady ? getTasksForDay(def, day) : [];
+  const log = dayLogFor(enrollment, day) || {};
+  const completedCount = dayTasks.filter(task => taskIsDone(task, log)).length;
+  if(!dayTasks.length) return '';
+  let h = '<article class="aurora-day-detail-rail">';
+  h += '<span class="aurora-day-detail-kicker">Day ' + day + ' detail</span>';
+  h += '<h4>' + esc(def.title || 'Day ' + day) + '</h4>';
+  h += '<div class="aurora-day-detail-tasks">';
+  dayTasks.forEach(task => {
+    const title = task.title || task.text || 'Task';
+    const done = taskIsDone(task, log);
+    h += '<div class="aurora-day-detail-task' + (done ? ' is-done' : '') + '">'
+      + '<span class="aurora-day-detail-check" aria-hidden="true">' + (done ? '&#10003;' : '') + '</span>'
+      + '<span>' + esc(title) + '</span>'
+      + '</div>';
+  });
+  h += '</div>';
+  h += '<div class="muted" style="font-size:11px">' + completedCount + ' / ' + dayTasks.length + ' tasks · ' + esc(statusLabel(status)) + '</div>';
+  h += '</article>';
+  return h;
+}
+
 function platformRightRailHTML(id, def){
   const enrollment = currentEnrollmentForPath(id);
   const streak = Number(enrollment?.streak || 0);
@@ -4855,6 +4885,7 @@ function platformRightRailHTML(id, def){
       ? '<b>' + joined + ' joined · ' + proofs + ' proofs · ' + completed + ' completed</b><p>Real metrics from verified participation.</p>'
       : '<b>Not enough data yet</b><p>Metrics appear as participants join and submit proof.</p>')
     + '</article>';
+  h += selectedDayDetailRailCardHTML(id, def);
   h += '<div class="muted" style="font-size:12px;margin-top:12px;line-height:1.5">Every number here is proof-backed from real progress. No rankings or follower counts are estimated.</div>';
   return h;
 }

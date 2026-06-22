@@ -181,7 +181,7 @@ A consistent spacing scale ensures visual rhythm across all components and scree
 
 ### App shell grid
 
-The Aurora app shell spans the full viewport width. No `max-width` or `margin: 0 auto` on the shell.
+The Aurora app shell spans the full viewport width. No `max-width` or `margin: 0 auto` on the shell. Content inside the shell column is centered using `display:flex; justify-content:center` on `.aurora-shell-content` and `margin-inline:auto` on `.aurora-shell-content-inner`. The right rail has no border-left divider.
 
 | Token | Value | Purpose |
 | --- | --- | --- |
@@ -211,6 +211,18 @@ The Aurora app shell spans the full viewport width. No `max-width` or `margin: 0
 | 768–1023px (tablet) | Side nav visible, rail stacks below content |
 | 1024–1279px (laptop) | Narrower two-column layout |
 | ≥1280px (desktop) | Full three-column: nav + content + rail |
+
+### Search/Control frame system
+
+Discovery search uses a formal frame system. The outer `.aurora-search-frame` has panel radius (20px) and a subtle border. Inner controls (inputs, selects) use large radius (12px) instead of pill. Filter rows inside the frame are separated by `border-top`. The frame is sticky at `top:0; z-index:10`.
+
+### Day detail rail card
+
+The selected day's task list renders as an `.aurora-day-detail-rail` card inside the right rail, below the consistency and path trust cards. Each task shows a small check circle and title. The card uses `border-radius: xl (16px)` with `cardInset` padding.
+
+### Focus screen centering
+
+The daily focus/session screen (`.daily-focus-screen`) uses a 3-zone CSS grid (`grid-template-rows: auto 1fr auto`) for vertical centering. The header occupies zone 1, the session content self-centers in zone 2 with `align-self:center` and `max-width: mainColumnWidth`.
 
 ### Daily task row
 

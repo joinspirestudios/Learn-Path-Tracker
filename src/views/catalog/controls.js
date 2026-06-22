@@ -12,7 +12,8 @@ export function discoveryControlsHTML(paths, state){
   const categoryOptions = [{ id:'all', label:'All categories' }, ...discoveryCategoryOptions(paths)];
   const hasFilters = !isDiscoveryDefault(state);
   const hasSecondary = state.duration !== 'all' || state.intensity !== 'all' || state.proof !== 'all';
-  return '<div class="aurora-discovery-search-header aurora-discovery-toolbar" aria-label="Discover public paths search and filters">'
+  return '<div class="aurora-search-frame" aria-label="Discover public paths search and filters">'
+    + '<div class="aurora-discovery-search-header aurora-discovery-toolbar">'
     + '<div class="aurora-discovery-search-row aurora-discovery-primary-row">'
     + '<label class="aurora-search-control" for="discoveryQuery"><span class="sr-only">Search public paths</span><input type="search" id="discoveryQuery" aria-label="Search public paths" value="' + esc(state.query) + '" placeholder="Search by goal, creator or category"/></label>'
     + '<label class="aurora-category-control"><span>Category</span><select aria-label="Filter by category" data-discovery-field="category">' + optionListHTML(categoryOptions, state.category) + '</select></label>'
@@ -24,6 +25,7 @@ export function discoveryControlsHTML(paths, state){
     + '<label class="aurora-filter-pill"><span>Duration</span><select aria-label="Filter by duration" data-discovery-field="duration">' + optionListHTML(DISCOVERY_DURATION_BUCKETS, state.duration) + '</select></label>'
     + '<label class="aurora-filter-pill"><span>Intensity</span><select aria-label="Filter by intensity" data-discovery-field="intensity">' + optionListHTML(DISCOVERY_INTENSITIES, state.intensity) + '</select></label>'
     + '<label class="aurora-filter-pill"><span>Proof</span><select aria-label="Filter by proof or activity" data-discovery-field="proof">' + optionListHTML(DISCOVERY_PROOF_FILTERS, state.proof) + '</select></label>'
+    + '</div>'
     + '</div>'
     + '</div>';
 }
