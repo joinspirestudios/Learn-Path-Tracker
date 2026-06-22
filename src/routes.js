@@ -1,4 +1,5 @@
 const PATH_ID_RE = /^[a-zA-Z0-9_-]+$/;
+export const APP_ROUTES = ['today', 'discover', 'progress', 'paths', 'profile'];
 
 function safeDecode(value){
   try{ return decodeURIComponent(String(value || '')); }
@@ -42,6 +43,17 @@ export function focusHash(id, day){
   const cleanId = cleanPathId(id);
   if(!cleanId || !day) return '#/discover';
   return '#/path/' + encodeURIComponent(cleanId) + '/plan/roadmap/day/' + encodeURIComponent(day) + '/focus';
+}
+
+export function appHash(page = 'today'){
+  return APP_ROUTES.includes(page) ? '#/' + page : '#/today';
+}
+
+export function parseAppRoute({ hash = '' } = {}){
+  const rawHash = String(hash || '').replace(/^#\/?/, '').replace(/\/+$/, '');
+  if(rawHash === 'my-paths') return { kind:'app', page:'paths', source:'hash' };
+  if(APP_ROUTES.includes(rawHash)) return { kind:'app', page:rawHash, source:'hash' };
+  return null;
 }
 
 export function pathPreviewHash(id){

@@ -4,5 +4,5 @@ export {
   renderProofFirstProgressCard, renderProofMetricCard, renderProofStudioTodayHero,
   renderProofUploadCard, renderRoadmapNode, renderToastBanner, renderConsistencyCard,
 } from './core-components.js';
-export { renderAppShell, renderCoreColumn, renderSessionHeader } from './core-layout.js';
+export { AURORA_APP_NAV, renderAppShell, renderAuroraShell, renderCoreColumn, renderSessionHeader, renderShellNav } from './core-layout.js';
 export { renderDesignSystemGallery } from './design-gallery.js';
