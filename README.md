@@ -663,6 +663,25 @@ name, unique username/handle, bio, avatar, cover) and owned-path personalization
 See [`docs/account-profile-path-personalization.md`](docs/account-profile-path-personalization.md).
 Mobile media proof upload and offline drafts are deferred to Phase 6.16.
 
+### Phase 6.15.1 — profile runtime repair
+
+- **Web avatar/cover upload now works**: selecting an image uploads to
+  `users/{uid}/profile/avatar|cover/{assetId}`, saves the download URL to the
+  profile, and renders it in the profile preview and the side-nav user block
+  (with an initials fallback).
+- **Accurate username errors**: availability is checked first; permission-denied
+  is reported as a rules/config issue, never a false "taken".
+- Path banner upload is deferred (input disabled, "coming next") — avatar/cover
+  upload is fully wired.
+
+> **Deploy Firebase rules separately — Vercel does not.** After profile/
+> personalization changes run:
+> ```bash
+> firebase deploy --only firestore:rules,storage
+> ```
+> If username save says it's "blocked by Firebase rules or configuration", the
+> live rules are missing the `usernames` collection — deploy the rules.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

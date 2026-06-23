@@ -47,7 +47,9 @@ test('Phase 6.9.10 appShellHTML adds aurora-shell-mode for signed-in users', () 
 });
 
 test('Phase 6.9.10 appShellHTML removes aurora-shell-mode for public/legacy screens', () => {
-  const appShellBlock = views.slice(views.indexOf('function appShellHTML'), views.indexOf('function appShellHTML') + 600);
+  // Window widened in 6.15.1: appShellHTML grew (side-nav profile identity), but
+  // the signed-out branch still removes the shell-mode class.
+  const appShellBlock = views.slice(views.indexOf('function appShellHTML'), views.indexOf('function appShellHTML') + 1200);
   assert.match(appShellBlock, /classList\.remove\(['"]aurora-shell-mode['"]\)/);
 });
 
