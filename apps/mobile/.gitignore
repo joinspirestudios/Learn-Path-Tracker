@@ -1,0 +1,23 @@
+# Mobile foundation — never commit installed deps, build output, secrets or credentials.
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.log
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Native build credentials (never commit)
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+google-services.json
+GoogleService-Info.plist
+eas.json

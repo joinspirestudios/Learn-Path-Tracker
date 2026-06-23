@@ -149,17 +149,22 @@ test('docs/mobile-core-loop-and-architecture.md exists and covers required topic
   assert.match(doc, /No mobile app is built yet/i);
 });
 
-test('no Expo project scaffold exists yet', () => {
-  assert.equal(existsSync(resolve(root, 'apps', 'mobile')), false, 'no apps/mobile/');
-  assert.equal(existsSync(resolve(root, 'mobile')), false, 'no mobile/');
-  assert.equal(existsSync(resolve(root, 'expo')), false, 'no expo/');
-  assert.equal(existsSync(resolve(root, 'app.json')), false, 'no app.json');
-  assert.equal(existsSync(resolve(root, 'eas.json')), false, 'no eas.json');
-  assert.equal(existsSync(resolve(root, 'app.config.js')), false, 'no app.config.js');
+test('Expo foundation lives under apps/mobile, not at the repo root (Phase 6.10)', () => {
+  // Phase 6.10 created the isolated mobile foundation under apps/mobile.
+  assert.equal(existsSync(resolve(root, 'apps', 'mobile')), true, 'apps/mobile/ exists');
+  // The web app must stay web-first: no Expo config at the repo root.
+  assert.equal(existsSync(resolve(root, 'mobile')), false, 'no root mobile/');
+  assert.equal(existsSync(resolve(root, 'expo')), false, 'no root expo/');
+  assert.equal(existsSync(resolve(root, 'app.json')), false, 'no root app.json');
+  assert.equal(existsSync(resolve(root, 'eas.json')), false, 'no root eas.json');
+  assert.equal(existsSync(resolve(root, 'app.config.js')), false, 'no root app.config.js');
 });
 
 test('no EAS config or mobile signing credentials exist', () => {
   assert.equal(existsSync(resolve(root, 'eas.json')), false);
+  assert.equal(existsSync(resolve(root, 'apps', 'mobile', 'eas.json')), false, 'no mobile eas.json');
   assert.equal(existsSync(resolve(root, 'android')), false, 'no android project');
   assert.equal(existsSync(resolve(root, 'ios')), false, 'no ios project');
+  assert.equal(existsSync(resolve(root, 'apps', 'mobile', 'android')), false, 'no mobile android project');
+  assert.equal(existsSync(resolve(root, 'apps', 'mobile', 'ios')), false, 'no mobile ios project');
 });

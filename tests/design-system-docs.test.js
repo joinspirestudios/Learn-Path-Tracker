@@ -59,11 +59,12 @@ test('design system foundation doc states no Figma file is committed', () => {
   assert.match(doc, /no figma file was committed/i);
 });
 
-test('no Expo or native mobile scaffold exists', () => {
+test('no Expo or native mobile scaffold exists at the repo root', () => {
+  // Web app stays web-first. The Phase 6.10 mobile foundation is isolated under
+  // apps/mobile; no Expo config or native project lives at the repo root.
   assert.equal(existsSync(resolve(root, 'app.json')), false);
   assert.equal(existsSync(resolve(root, 'eas.json')), false);
   assert.equal(existsSync(resolve(root, 'expo')), false);
-  assert.equal(existsSync(resolve(root, 'apps', 'mobile')), false);
   assert.equal(existsSync(resolve(root, 'mobile')), false);
   assert.equal(existsSync(resolve(root, 'ios')), false);
   assert.equal(existsSync(resolve(root, 'android')), false);

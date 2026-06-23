@@ -1,0 +1,26 @@
+# Aurora Web UI Feedback Backlog
+
+This backlog parks remaining **web** visual polish so it is not mixed into the
+mobile work. These items are intentionally deferred and will be handled later
+under a dedicated web-polish phase before public launch:
+
+> **Phase 6.9.12 — Aurora Web UI Final Polish**
+
+## Deferred web UI feedback
+
+- Remaining Aurora layout fine tuning
+- Remaining spacing and radius refinements
+- Remaining dashboard / content balance feedback
+- Remaining Daily Focus visual refinement
+- Remaining roadmap polish
+- Remaining Discover search polish
+- Remaining visual QA from screenshots
+
+## Notes
+
+- These are presentation-only refinements. They do not change product behavior,
+  scoring, data models, APIs, Firebase rules, authentication, or privacy rules.
+- Do not address these inside mobile phases (6.10–6.14). Mobile is a separate
+  skin with its own visual baseline.
+- When the web-polish phase begins, convert each item above into concrete,
+  testable changes with before/after references.
