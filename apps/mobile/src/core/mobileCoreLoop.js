@@ -14,6 +14,7 @@ import {
   createInitialTaskState,
 } from './mobileSessionState.js';
 import { computeMobileScore, mobileCompletionTier } from './mobileScoring.js';
+import { isValidProofUrl } from './mobileProofMappers.js';
 
 function cloneTaskState(taskState) {
   const next = {};
@@ -138,6 +139,18 @@ export function addTextProof(state, taskId, proofText) {
   return next;
 }
 
+export function addLinkProof(state, taskId, url) {
+  const idx = indexOfTask(state, taskId);
+  if (idx < 0) return state;
+  const next = cloneState(state);
+  const id = state.tasks[idx].id;
+  next.session.taskState[id] = {
+    ...next.session.taskState[id],
+    proofUrl: String(url == null ? '' : url),
+  };
+  return next;
+}
+
 export function addTaskReflection(state, taskId, reflection) {
   const idx = indexOfTask(state, taskId);
   if (idx < 0) return state;
@@ -160,14 +173,16 @@ export function markTaskDone(state, taskId, payload = {}) {
   const id = task.id;
   const existing = state.session.taskState[id] || {};
   const proofText = payload.proofText != null ? String(payload.proofText) : existing.proofText || '';
+  const proofUrl = payload.proofUrl != null ? String(payload.proofUrl) : existing.proofUrl || '';
   const reflection = payload.reflection != null ? String(payload.reflection) : existing.reflection || '';
 
-  if (task.requiresProof && !String(proofText).trim()) {
-    return state; // cannot complete a proof task without text proof
+  // A proof task needs either non-empty text proof or a valid link proof.
+  if (task.requiresProof && !String(proofText).trim() && !isValidProofUrl(proofUrl)) {
+    return state;
   }
 
   const next = cloneState(state);
-  next.session.taskState[id] = { ...existing, done: true, proofText, reflection };
+  next.session.taskState[id] = { ...existing, done: true, proofText, proofUrl, reflection };
   if (state.session.status === MOBILE_SESSION_STATUS.NOT_STARTED) {
     next.session.status = MOBILE_SESSION_STATUS.IN_PROGRESS;
   }
@@ -235,6 +250,7 @@ export default {
   createInitialMobileLoopState,
   getTodaySummary,
   todayCta,
+  addLinkProof,
   startTodaySession,
   startTask,
   getCurrentTask,

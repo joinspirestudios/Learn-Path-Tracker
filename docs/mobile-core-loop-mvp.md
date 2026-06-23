@@ -110,8 +110,11 @@ not renamed.
 
 **Phase 6.12** added mobile auth, read-only cloud path loading, a read-only
 roadmap, and public discovery (see
-[`mobile-auth-paths-discovery.md`](mobile-auth-paths-discovery.md)). Cloud daily
-session sync and proof capture remain deferred to **Phase 6.13**. Remaining web
-visual polish stays parked in
+[`mobile-auth-paths-discovery.md`](mobile-auth-paths-discovery.md)).
+**Phase 6.13** added finished-day cloud sync, private text/link proof, and
+explicit sanitized public progress publishing (see
+[`mobile-day-sync-proof-public-progress.md`](mobile-day-sync-proof-public-progress.md)).
+Media proof upload and offline drafts are deferred to **Phase 6.14**. Remaining
+web visual polish stays parked in
 [`aurora-ui-feedback-backlog.md`](aurora-ui-feedback-backlog.md) for
 **Phase 6.9.12 — Aurora Web UI Final Polish**.

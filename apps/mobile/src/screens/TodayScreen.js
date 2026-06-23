@@ -6,13 +6,16 @@ import { AuroraCard } from '../components/AuroraCard.js';
 import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraStatusPill } from '../components/AuroraStatusPill.js';
 import { getTodaySummary, todayCta } from '../core/mobileCoreLoop.js';
+import { SYNC_STATUS } from '../core/mobileSyncStatus.js';
+import { MobileSyncStatusPill } from '../components/MobileSyncStatusPill.js';
 
 export function TodayScreen({
-  loopState, selectedCloudPath, signedIn,
+  loopState, selectedCloudPath, signedIn, syncStatus = SYNC_STATUS.LOCAL_ONLY,
   onStartToday, onContinueDay, onViewResult, onReviewPath,
 }) {
   const summary = getTodaySummary(loopState);
   const cta = todayCta(loopState);
+  const finished = summary.status === 'finished';
 
   function handlePrimary() {
     if (cta.action === 'result') return onViewResult && onViewResult();
@@ -49,6 +52,12 @@ export function TodayScreen({
         </Text>
         {summary.proofSubmitted > 0 ? (
           <Text style={styles.stat}>{summary.proofSubmitted} proof submitted</Text>
+        ) : null}
+        {signedIn && finished ? (
+          <View style={styles.metaRow}>
+            <Text style={styles.stat}>Day sync</Text>
+            <MobileSyncStatusPill status={syncStatus} />
+          </View>
         ) : null}
       </AuroraCard>
 

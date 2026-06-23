@@ -30,6 +30,15 @@ export const MOBILE_PRIVACY_RULES = [
   'Raw audio and transcripts are never rendered.',
   'Discovery only shows public/discoverable path metadata.',
   'Mobile 6.12 is read-only for path data; it does not write day logs or proof.',
+  // Phase 6.13 — day sync, text/link proof, public progress:
+  'Text and link proof are private by default.',
+  'Reflection text is private by default.',
+  'Public progress requires explicit user action; it is never automatic.',
+  'Public progress summaries are sanitized: day result only, never private proof or reflection.',
+  'Mobile 6.13 does not upload files or capture camera/audio.',
+  'Mobile 6.13 does not publish comments or reactions.',
+  'Mobile 6.13 does not verify proof; proof is submitted, not verified.',
+  'ID tokens are never logged; proof and reflection bodies are never logged.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

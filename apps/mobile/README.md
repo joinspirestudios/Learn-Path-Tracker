@@ -12,11 +12,18 @@ direction, but does **not** import any web DOM module (`src/views.js`,
 
 ## Status
 
-**Phase 6.12 — auth, cloud paths and discovery (read-only).** The app now has a
-Firebase client auth gate, loads owned cloud paths, shows a read-only roadmap,
-and lists public discoverable paths with a preview. Daily Focus stays local-only.
-No proof upload, no day-log/proof writes, no public-progress publish, no mobile
-join yet. See [docs/mobile-auth-paths-discovery.md](../../docs/mobile-auth-paths-discovery.md).
+**Phase 6.13 — day sync, text/link proof and public progress.** Signed-in users
+can finish a local day, add private text/link proof, **sync** the finished day to
+their private cloud record (`users/{uid}/mobileDayLogs`, idempotent), and
+**explicitly publish** a sanitized public progress summary via the existing
+`/api/publish-progress` route. Proof is private and "submitted" (never
+"verified"). No media/file/camera/audio upload, no offline drafts, no
+notifications, no comments/reactions, no mobile join. See
+[docs/mobile-day-sync-proof-public-progress.md](../../docs/mobile-day-sync-proof-public-progress.md).
+
+**Phase 6.12 — auth, cloud paths and discovery (read-only).** Firebase client
+auth gate, owned cloud path loading, read-only roadmap, public discovery +
+preview. See [docs/mobile-auth-paths-discovery.md](../../docs/mobile-auth-paths-discovery.md).
 
 **Phase 6.11 — local core loop MVP.** The app runs a local, functional core loop
 (Today → Daily Focus → Completion Result) on in-memory React state.

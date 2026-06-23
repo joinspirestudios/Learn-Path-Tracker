@@ -1,24 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 
 import { auroraTheme } from '../theme/auroraTheme.js';
 import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraTaskCard } from '../components/AuroraTaskCard.js';
-import { AuroraTextInput } from '../components/AuroraTextInput.js';
 import { AuroraProgressBar } from '../components/AuroraProgressBar.js';
+import { MobileProofInput } from '../components/MobileProofInput.js';
 import {
-  getCurrentTask,
-  getCompletionSummary,
-  canFinishMobileDay,
+  getCurrentTask, getCompletionSummary, canFinishMobileDay,
 } from '../core/mobileCoreLoop.js';
+import { isValidProofUrl } from '../core/mobileProofMappers.js';
 
 // Daily Focus shows exactly ONE task at a time — never the whole task list.
+// Proof is text or link only (no files/camera/audio), saved privately.
 export function DailyFocusScreen({
-  loopState, onProofChange, onMarkDone, onNext, onPrevious, onFinishDay, onExit,
+  loopState, onProofChange, onProofUrlChange, onReflectionChange,
+  onMarkDone, onNext, onPrevious, onFinishDay, onExit,
 }) {
   const current = getCurrentTask(loopState);
   const summary = getCompletionSummary(loopState);
   const canFinish = canFinishMobileDay(loopState);
+  const [proofType, setProofType] = useState('text');
 
   if (!current) {
     return (
@@ -28,9 +30,13 @@ export function DailyFocusScreen({
     );
   }
 
-  const proofText = current.state.proofText || '';
+  const st = current.state;
+  const proofText = st.proofText || '';
+  const proofUrl = st.proofUrl || '';
+  const reflection = st.reflection || '';
   const proofRequired = !!current.requiresProof;
-  const proofMissing = proofRequired && !proofText.trim();
+  const hasValidProof = proofText.trim() !== '' || isValidProofUrl(proofUrl);
+  const proofMissing = proofRequired && !hasValidProof;
   const doneLabel = proofRequired ? 'Save proof and mark done' : 'Mark as done';
 
   return (
@@ -46,40 +52,37 @@ export function DailyFocusScreen({
         title={current.title}
         description={current.description}
         requiresProof={proofRequired}
-        done={current.state.done}
+        done={st.done}
       >
-        {proofRequired ? (
-          <View style={styles.proofBlock}>
-            <Text style={styles.proofLabel}>Text proof or reflection (local only)</Text>
-            <AuroraTextInput
-              value={proofText}
-              onChangeText={text => onProofChange(current.id, text)}
-              placeholder="Describe what you actually did today"
-            />
-          </View>
+        {(proofRequired || proofText || proofUrl) ? (
+          <MobileProofInput
+            proofType={proofType}
+            onProofTypeChange={setProofType}
+            proofText={proofText}
+            onProofTextChange={text => onProofChange(current.id, text)}
+            proofUrl={proofUrl}
+            onProofUrlChange={url => onProofUrlChange(current.id, url)}
+            reflection={reflection}
+            onReflectionChange={text => onReflectionChange(current.id, text)}
+          />
         ) : null}
       </AuroraTaskCard>
 
       <View style={styles.actions}>
         <AuroraButton label="Previous" variant="ghost" onPress={onPrevious} />
         <AuroraButton
-          label={current.state.done ? 'Done' : doneLabel}
+          label={st.done ? 'Done' : doneLabel}
           variant="primary"
-          disabled={current.state.done || proofMissing}
+          disabled={st.done || proofMissing}
           onPress={() => onMarkDone(current.id)}
         />
         <AuroraButton label="Next task" variant="secondary" onPress={onNext} />
       </View>
 
-      <AuroraButton
-        label="Finish day"
-        variant="secondary"
-        disabled={!canFinish}
-        onPress={onFinishDay}
-      />
+      <AuroraButton label="Finish day" variant="secondary" disabled={!canFinish} onPress={onFinishDay} />
       <AuroraButton label="Back to Today" variant="ghost" onPress={onExit} />
 
-      <Text style={styles.note}>Proof and reflections stay on this device. Mobile sync is not connected yet.</Text>
+      <Text style={styles.note}>Proof and reflections stay private on this device until you sync.</Text>
     </ScrollView>
   );
 }
@@ -92,8 +95,6 @@ const styles = StyleSheet.create({
   context: { color: c.text.secondary, fontSize: 13, fontWeight: '700' },
   position: { color: c.text.muted, fontSize: 12, fontWeight: '700' },
   title: { color: c.text.primary, fontSize: 18, fontWeight: '700' },
-  proofBlock: { gap: auroraTheme.spacing.xs, marginTop: auroraTheme.spacing.sm },
-  proofLabel: { color: c.text.muted, fontSize: 12, fontWeight: '700' },
   actions: { flexDirection: 'row', gap: auroraTheme.spacing.sm, justifyContent: 'space-between' },
   note: { color: c.text.muted, fontSize: 12, lineHeight: 18 },
 });

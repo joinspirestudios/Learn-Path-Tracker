@@ -618,6 +618,21 @@ and public path preview.
 See [`docs/mobile-auth-paths-discovery.md`](docs/mobile-auth-paths-discovery.md).
 Proof capture and day sync are deferred to Phase 6.13.
 
+## Mobile day sync, text/link proof and public progress (Phase 6.13)
+
+Phase 6.13 adds the first real mobile write path: sync a finished local day to
+the cloud, capture private text/link proof, and explicitly publish a sanitized
+public progress summary.
+
+- Day sync writes to the user's **private** space (`users/{uid}/mobileDayLogs`) — owner-only by existing rules, idempotent, finished-days-only.
+- Text or **link** proof (validated http(s)); private by default; "submitted", never "verified". No camera/file/audio capture.
+- Public progress publishes via the existing `/api/publish-progress` route with the ID token — explicit, post-sync only, sanitized (day result, never private proof/reflection). No new API route.
+- Firestore rules unchanged (relies on `users/{uid}` owner writes + server-only public progress).
+- No mobile comments/reactions/moderation/join, no notifications, no media upload, no fake metrics.
+
+See [`docs/mobile-day-sync-proof-public-progress.md`](docs/mobile-day-sync-proof-public-progress.md).
+Media proof upload and offline drafts are deferred to Phase 6.14; notifications to Phase 6.15.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

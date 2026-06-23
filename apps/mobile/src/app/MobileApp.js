@@ -1,8 +1,9 @@
-// Mobile app shell — auth gate + local core loop + read-only cloud data.
+// Mobile app shell — auth gate + local core loop + cloud reads + day sync.
 //
-// Phase 6.12: gates the private shell behind Firebase client auth, loads
-// read-only cloud paths/discovery/roadmap, and keeps the Phase 6.11 local core
-// loop intact. No Firestore writes, no proof upload, no public-progress publish.
+// Phase 6.12: auth gate + read-only cloud paths/discovery/roadmap.
+// Phase 6.13: real write path — sync a FINISHED local day to the user's private
+// cloud day log, and (explicitly) publish a sanitized public progress summary
+// via the existing API. No media/file upload, no auto-sync, no auto-publish.
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { SafeAreaView, View, Text, Pressable, StyleSheet } from 'react-native';
@@ -11,16 +12,23 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 import { MOBILE_TABS } from '../navigation/mobileTabs.js';
 import {
   createInitialMobileLoopState, startTodaySession, markTaskDone, addTextProof,
-  goToNextTask, goToPreviousTask, finishMobileDay,
+  addLinkProof, addTaskReflection, goToNextTask, goToPreviousTask, finishMobileDay,
 } from '../core/mobileCoreLoop.js';
 import {
   AUTH_STATUS, resolveAuthStatus, createAsyncState, asyncLoading, asyncLoaded, asyncError,
 } from '../core/mobileCloudState.js';
+import { SYNC_STATUS } from '../core/mobileSyncStatus.js';
+import { buildDayLogPayload } from '../core/mobileDaySync.js';
+import { buildPublicSummary } from '../core/mobilePublicProgressMappers.js';
 import { createFirebaseClient } from '../services/firebaseClient.js';
 import { createMobileAuthService } from '../services/authService.js';
 import { createPathRepository } from '../services/pathRepository.js';
 import { createDiscoveryRepository } from '../services/discoveryRepository.js';
 import { createRoadmapRepository } from '../services/roadmapRepository.js';
+import { createDayLogRepository } from '../services/dayLogRepository.js';
+import { createMobilePublicProgressRepository } from '../services/mobilePublicProgressRepository.js';
+import { createApiClient } from '../services/apiClient.js';
+import { getMobileApiBaseUrl } from '../services/env.js';
 
 import { AuthWelcomeScreen } from '../screens/AuthWelcomeScreen.js';
 import { TodayScreen } from '../screens/TodayScreen.js';
@@ -42,6 +50,16 @@ export function MobileApp() {
   const pathRepo = useMemo(() => createPathRepository({ gateway }), [gateway]);
   const discoveryRepo = useMemo(() => createDiscoveryRepository({ gateway }), [gateway]);
   const roadmapRepo = useMemo(() => createRoadmapRepository({ gateway }), [gateway]);
+  const userGateway = useMemo(() => client.createUserDataGateway(), [client]);
+  const dayLogRepo = useMemo(() => createDayLogRepository({ gateway: userGateway }), [userGateway]);
+  const apiClient = useMemo(
+    () => createApiClient({ baseUrl: getMobileApiBaseUrl(), getIdToken: () => authService.getIdToken() }),
+    [authService],
+  );
+  const publicProgressRepo = useMemo(
+    () => createMobilePublicProgressRepository({ apiClient }),
+    [apiClient],
+  );
   const configured = authService.isConfigured();
 
   // Auth state.
@@ -64,6 +82,14 @@ export function MobileApp() {
   const [selectedPath, setSelectedPath] = useState(null);
   const [roadmapState, setRoadmapState] = useState(createAsyncState());
   const [previewState, setPreviewState] = useState(createAsyncState());
+
+  // Day sync + publish state (Phase 6.13).
+  const [syncStatus, setSyncStatus] = useState(SYNC_STATUS.LOCAL_ONLY);
+  const [syncError, setSyncError] = useState('');
+  const [publishStatus, setPublishStatus] = useState(SYNC_STATUS.PUBLISH_AVAILABLE);
+  const [publishError, setPublishError] = useState('');
+  const [publicCaption, setPublicCaption] = useState('');
+  const [lastDayLog, setLastDayLog] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -128,11 +154,58 @@ export function MobileApp() {
   function handleContinueDay() { setActiveFlow('focus'); }
   function handleViewResult() { setActiveFlow('completion'); }
   function handleProofChange(taskId, text) { setLoopState(s => addTextProof(s, taskId, text)); }
+  function handleProofUrlChange(taskId, url) { setLoopState(s => addLinkProof(s, taskId, url)); }
+  function handleReflectionChange(taskId, text) { setLoopState(s => addTaskReflection(s, taskId, text)); }
   function handleMarkDone(taskId) { setLoopState(s => markTaskDone(s, taskId)); }
   function handleNext() { setLoopState(s => goToNextTask(s)); }
   function handlePrev() { setLoopState(s => goToPreviousTask(s)); }
-  function handleFinishDay() { setLoopState(s => finishMobileDay(s)); setActiveFlow('completion'); }
+  function handleFinishDay() {
+    setLoopState(s => finishMobileDay(s));
+    setActiveFlow('completion');
+    setSyncStatus(signedIn ? SYNC_STATUS.READY_TO_SYNC : SYNC_STATUS.LOCAL_ONLY);
+    setSyncError(''); setPublishError('');
+  }
   function handleBackToToday() { setActiveTab('today'); setActiveFlow('today'); }
+
+  // ── Day sync + publish (Phase 6.13) ──
+  async function handleSyncDay() {
+    if (!authUser) { setSyncError('Please sign in again.'); return; }
+    const pathId = (selectedPath && selectedPath.id) || loopState.path.id;
+    const payload = buildDayLogPayload(loopState, {
+      pathId, uid: authUser.uid, dayNumber: loopState.path.dayNumber,
+    });
+    if (!payload) { setSyncError('Finish the day before syncing.'); return; }
+    setSyncStatus(SYNC_STATUS.SYNCING); setSyncError('');
+    try {
+      await dayLogRepo.upsertDayLog({ pathId, uid: authUser.uid, dayNumber: payload.dayNumber, dayLog: payload });
+      setLastDayLog(payload);
+      setSyncStatus(SYNC_STATUS.PUBLISH_AVAILABLE);
+      setPublishStatus(SYNC_STATUS.PUBLISH_AVAILABLE);
+    } catch {
+      setSyncStatus(SYNC_STATUS.SYNC_FAILED);
+      setSyncError('We could not sync your day yet. Check your connection and try again.');
+    }
+  }
+
+  async function handlePublishProgress() {
+    if (!lastDayLog) { setPublishError('Sync your day before publishing.'); return; }
+    setPublishStatus(SYNC_STATUS.PUBLISHING); setPublishError('');
+    const res = await publicProgressRepo.publish({ dayLog: lastDayLog, publicCaption });
+    if (res.ok) {
+      setPublishStatus(SYNC_STATUS.PUBLISHED);
+    } else {
+      setPublishStatus(SYNC_STATUS.PUBLISH_FAILED);
+      setPublishError(res.message || 'We could not publish your progress yet.');
+    }
+  }
+
+  const publicSummary = lastDayLog
+    ? buildPublicSummary(lastDayLog, {
+        uid: authUser && authUser.uid,
+        pathTitle: (selectedPath && selectedPath.title) || loopState.path.title,
+        publicCaption,
+      })
+    : null;
 
   // ── Cloud path handlers (read-only) ──
   async function handleOpenRoadmap(path) {
@@ -190,6 +263,8 @@ export function MobileApp() {
         <DailyFocusScreen
           loopState={loopState}
           onProofChange={handleProofChange}
+          onProofUrlChange={handleProofUrlChange}
+          onReflectionChange={handleReflectionChange}
           onMarkDone={handleMarkDone}
           onNext={handleNext}
           onPrevious={handlePrev}
@@ -202,6 +277,16 @@ export function MobileApp() {
       return (
         <CompletionResultScreen
           loopState={loopState}
+          signedIn={signedIn}
+          syncStatus={syncStatus}
+          syncError={syncError}
+          onSync={handleSyncDay}
+          publishStatus={publishStatus}
+          publishError={publishError}
+          publicSummary={publicSummary}
+          caption={publicCaption}
+          onCaptionChange={setPublicCaption}
+          onPublish={handlePublishProgress}
           onBackToToday={handleBackToToday}
           onReviewPath={() => { setActiveTab('paths'); setPathView('list'); }}
         />
@@ -212,6 +297,7 @@ export function MobileApp() {
         loopState={loopState}
         selectedCloudPath={selectedPath}
         signedIn={signedIn}
+        syncStatus={syncStatus}
         onStartToday={handleStartToday}
         onContinueDay={handleContinueDay}
         onViewResult={handleViewResult}

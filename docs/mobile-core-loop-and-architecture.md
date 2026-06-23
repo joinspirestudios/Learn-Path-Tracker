@@ -16,8 +16,13 @@ Phase 6.5 planning document. No mobile app is built yet.
 > **Phase 6.12 update:** Mobile **auth, read-only cloud paths, roadmap, and
 > discovery** are implemented with the Firebase client SDK (env-driven, no Admin
 > SDK). Path data is read-only; no proof upload or day-log writes. See
-> [docs/mobile-auth-paths-discovery.md](mobile-auth-paths-discovery.md). The next
-> milestone is **Phase 6.13 — Mobile Proof Capture, Day Sync and Public Progress**.
+> [docs/mobile-auth-paths-discovery.md](mobile-auth-paths-discovery.md).
+>
+> **Phase 6.13 update:** Mobile **day sync, text/link proof, and public progress
+> publishing** are implemented. Finished days sync to the user's private cloud
+> record; public progress publishes via the existing API, sanitized and explicit.
+> See [docs/mobile-day-sync-proof-public-progress.md](mobile-day-sync-proof-public-progress.md).
+> Next: **Phase 6.14 — Mobile Media Proof Upload and Offline Drafts**.
 
 ## Product intent
 

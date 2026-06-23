@@ -199,3 +199,13 @@ Phase 6.12 reads path/discovery/roadmap data on mobile directly via the Firebase
 added and the Vercel function count is unchanged. The mobile API client seam
 (`apiClient`) remains available for future protected calls; the auth service
 exposes `getIdToken()` for when those calls are wired in a later phase.
+
+### Mobile public progress publishing (Phase 6.13)
+
+Phase 6.13 publishes public progress from mobile through the **existing**
+`/api/publish-progress` route (no new route, function count unchanged), using the
+shared `API_ENDPOINTS.PUBLISH_PROGRESS` constant and attaching the Firebase ID
+token via the mobile `apiClient`. The request body matches the web contract
+(`{ pathId, dayNumber, publicCaption }`); the server builds and sanitizes the
+stored entry. Mobile day-log writes go to the user's private
+`users/{uid}/mobileDayLogs` space via the Firestore client SDK, not the API.
