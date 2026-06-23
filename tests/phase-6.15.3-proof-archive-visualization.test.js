@@ -117,18 +117,20 @@ test('Phase 6.15.3 publicProofTimelineHTML groups by day', () => {
 
 /* ── Today / rail / completed day wiring (source-level) ── */
 
-test('Phase 6.15.3 Today shows proof strip and fixed proof-submitted chip', () => {
+test('Phase 6.15.3 Today shows a proof preview and fixed proof-submitted chip', () => {
+  // Phase 6.15.4 replaced the strip with a compact day-proof preview.
   const views = read('src/views.js');
   const block = views.slice(views.indexOf('function platformDailyFocusHTML'), views.indexOf('function selectedDayDetailRailCardHTML'));
-  assert.match(block, /compactProofStripHTML/);
+  assert.match(block, /compactDayProofPreviewHTML/);
   assert.match(block, /Proof submitted/);
   assert.match(block, /is-submitted/);
 });
 
-test('Phase 6.15.3 right rail day detail includes proof cards', () => {
+test('Phase 6.15.3 right rail day detail includes a proof preview', () => {
+  // Phase 6.15.4 uses a compact preview instead of stacked cards.
   const views = read('src/views.js');
   const block = views.slice(views.indexOf('function selectedDayDetailRailCardHTML'), views.indexOf('function platformRightRailHTML'));
-  assert.match(block, /compactProofStripHTML/);
+  assert.match(block, /compactDayProofPreviewHTML/);
 });
 
 test('Phase 6.15.3 completed day detail uses card-based proof archive', () => {
@@ -146,9 +148,10 @@ test('Phase 6.15.3 Progress page renders a private proof archive', () => {
 test('Phase 6.15.3 public path page renders a public proof timeline for public paths only', () => {
   const views = read('src/views.js');
   assert.match(views, /publicPathProofTimelineHTML/);
-  const block = views.slice(views.indexOf('function publicPathProofTimelineHTML'), views.indexOf('function publicPathProofTimelineHTML') + 1100);
+  const block = views.slice(views.indexOf('function publicPathProofTimelineHTML'), views.indexOf('function publicPathProofTimelineHTML') + 2000);
   assert.match(block, /visibility !== 'public'/);
-  assert.match(block, /publicProofTimelineHTML/);
+  // Phase 6.15.4 renders the public timeline as daily documentation entries.
+  assert.match(block, /publicDailyDocumentationFeedHTML/);
 });
 
 /* ── Styling exists ── */
