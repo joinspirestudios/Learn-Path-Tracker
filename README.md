@@ -647,6 +647,22 @@ gap from Phase 6.13. No new API route is added and web publishing is unchanged.
 
 See [`docs/mobile-public-progress-server-bridge.md`](docs/mobile-public-progress-server-bridge.md).
 
+## Account, profile and path personalization (Phase 6.15)
+
+Phase 6.15 adds the shared identity/presentation layer: user profiles (display
+name, unique username/handle, bio, avatar, cover) and owned-path personalization
+(banner, accent color, public subtitle), with public-safe shaping.
+
+- Profile doc `users/{uid}/profile/main` (owner-only); public-safe fields exclude email/tokens/storage paths.
+- Username reservation `usernames/{usernameLower}` — uniqueness guaranteed by a create-when-absent Firestore rule + writeBatch (web); reserved terms blocked.
+- Profile/banner images use narrow, image-only, size-limited Storage paths (avatar ≤2 MB, cover/banner ≤5 MB). No proof/evidence or generic upload paths added.
+- Path personalization is owner-only and can never touch server-managed stats or identity fields.
+- Web Profile page gains a profile editor; owner-only path personalization editor. Mobile shows/edit safe text fields and displays profile/path images (mobile image upload deferred).
+- No followers/following/leaderboards/rankings, no proof media upload, no notifications. Firebase Admin unchanged; no new Vercel routes.
+
+See [`docs/account-profile-path-personalization.md`](docs/account-profile-path-personalization.md).
+Mobile media proof upload and offline drafts are deferred to Phase 6.16.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

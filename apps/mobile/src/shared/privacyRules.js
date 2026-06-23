@@ -39,6 +39,12 @@ export const MOBILE_PRIVACY_RULES = [
   'Mobile 6.13 does not publish comments or reactions.',
   'Mobile 6.13 does not verify proof; proof is submitted, not verified.',
   'ID tokens are never logged; proof and reflection bodies are never logged.',
+  // Phase 6.15 — account/profile/path personalization:
+  'Profile email and auth metadata are never shown publicly.',
+  'Only public-safe profile fields (display name, username, bio, avatar, cover) may appear publicly.',
+  'Bio and cover are hidden when the public profile is disabled.',
+  'Profile/path-banner images use narrow Storage paths and image-only validation.',
+  'Mobile 6.15 does not upload proof media, and does not add camera/audio/file pickers.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

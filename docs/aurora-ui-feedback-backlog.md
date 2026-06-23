@@ -23,7 +23,7 @@ under a dedicated web-polish phase before public launch:
 - Do not address these inside mobile phases (6.10–6.14). Mobile is a separate
   skin with its own visual baseline. Phases 6.11 (mobile core loop MVP), 6.12
   (mobile auth, cloud paths and discovery), 6.13 (mobile day sync, proof and
-  public progress) and 6.14 (public progress server bridge) explicitly left this
-  web polish deferred.
+  public progress), 6.14 (public progress server bridge) and 6.15 (account/
+  profile/path personalization) explicitly left this web polish deferred.
 - When the web-polish phase begins, convert each item above into concrete,
   testable changes with before/after references.

@@ -148,6 +148,30 @@ export function discoveryCardDTO(path){
   };
 }
 
+export function publicProfileDTO(profile){
+  if(!profile || typeof profile !== 'object') return null;
+  const publicEnabled = profile.publicProfileEnabled !== false;
+  return {
+    uid: safeString(profile.uid),
+    displayName: safeString(profile.displayName),
+    username: safeString(profile.username || profile.usernameLower),
+    bio: publicEnabled ? safeString(profile.bio) : '',
+    avatarURL: safeString(profile.avatarURL),
+    coverURL: publicEnabled ? safeString(profile.coverURL) : '',
+    publicProfileEnabled: publicEnabled,
+  };
+}
+
+export function pathPersonalizationDTO(personalization){
+  if(!personalization || typeof personalization !== 'object') return null;
+  return {
+    bannerURL: safeString(personalization.bannerURL),
+    accentColor: safeString(personalization.accentColor),
+    coverTitle: safeString(personalization.coverTitle),
+    publicSubtitle: safeString(personalization.publicSubtitle),
+  };
+}
+
 export function moderationReportDTO(report){
   if(!report || typeof report !== 'object') return null;
   return {

@@ -12,6 +12,9 @@ export const CURRENT_SCHEMA_VERSIONS = {
   discoveryPagination: 1,
   moderationReport: 1,
   rateLimit: 1,
+  userProfile: 1,
+  username: 1,
+  pathPersonalization: 1,
 };
 
 export function normalizeSchemaVersion(value, fallback = 0){

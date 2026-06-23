@@ -16,11 +16,44 @@ service firebase.storage {
         ];
     }
 
+    // Phase 6.15: profile/path-banner images only. Image content types only,
+    // narrow size limits, owner-only writes. These are public-safe display
+    // assets, so reads are public. No proof/evidence or generic upload paths.
+    function validProfileImage(maxBytes) {
+      return request.resource.size <= maxBytes
+        && request.resource.contentType in [
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ];
+    }
+
     match /evidence/{userId}/{enrollmentId}/{allPaths=**} {
       allow read: if signedIn() && request.auth.uid == userId;
       allow write: if signedIn()
         && request.auth.uid == userId
         && validEvidenceFile();
+    }
+
+    match /users/{userId}/profile/avatar/{assetId} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validProfileImage(2 * 1024 * 1024);
+    }
+
+    match /users/{userId}/profile/cover/{assetId} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validProfileImage(5 * 1024 * 1024);
+    }
+
+    match /users/{userId}/pathBanners/{pathId}/{assetId} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validProfileImage(5 * 1024 * 1024);
     }
   }
 }

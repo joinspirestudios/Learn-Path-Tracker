@@ -103,6 +103,10 @@ import {
 } from './views/catalog/index.js';
 import { renderDesignSystemGallery } from './ui/design-gallery.js';
 import { renderAppShell, renderAuroraShell } from './ui/core.js';
+import { profileSectionHTML } from './views/profile-editor.js';
+import { pathPersonalizationEditorHTML } from './views/path-personalization-editor.js';
+import { validateDisplayName, validateUsername, sanitizeBio, sanitizeWebsiteURL } from './user-profile-model.js';
+import { saveProfileText, claimUsername, loadProfile } from './user-profile-db.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -3001,14 +3005,51 @@ export function renderProfile(){
   store.editMode = false;
   const user = store.currentUser;
   const name = user?.displayName || user?.email || 'Signed out';
+  const profile = (user && store.userProfile) ? store.userProfile : (user ? { uid:user.uid, displayName:user.displayName || '', publicProfileEnabled:true } : {});
   const body = '<div class="aurora-profile-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Profile</span><h2>' + esc(name) + '</h2><p>' + esc(user ? 'Account details and workspace identity.' : 'Sign in to manage a synced learning workspace.') + '</p></div></header>'
     + (user
       ? '<section class="panel card"><h3>Account</h3><p class="muted">' + esc(user.email || user.uid || 'Signed-in user') + '</p></section>'
+        + profileSectionHTML(profile)
       : '<section class="panel card"><h3>Sign in required</h3><p class="muted">Profile tools are available after signing in.</p><button class="btn gold" id="signinCard" type="button">Sign in</button></section>')
     + '</div>';
   $('content').innerHTML = appShellHTML('profile', body, { title:'Profile', className:'aurora-profile-route' });
   applyHeader();
   const signIn = $('signinCard'); if(signIn) signIn.onclick = () => openAuthModal('signin');
+  if(user) wireProfileEditor(user);
+}
+
+function wireProfileEditor(user){
+  const saveBtn = $('profileSave');
+  if(!saveBtn) return;
+  const status = $('profileSaveStatus');
+  const setStatus = (msg) => { if(status) status.textContent = msg; };
+  saveBtn.onclick = async () => {
+    const nameResult = validateDisplayName($('profileDisplayName')?.value || '');
+    if(!nameResult.ok){ setStatus(nameResult.error); return; }
+    const usernameRaw = ($('profileUsername')?.value || '').trim();
+    let usernameResult = null;
+    if(usernameRaw){
+      usernameResult = validateUsername(usernameRaw);
+      if(!usernameResult.ok){ setStatus(usernameResult.error); return; }
+    }
+    setStatus('Saving...');
+    try{
+      await saveProfileText(user.uid, {
+        displayName:nameResult.value,
+        bio:sanitizeBio($('profileBio')?.value || ''),
+        websiteURL:sanitizeWebsiteURL($('profileWebsite')?.value || ''),
+        publicProfileEnabled:!!($('profilePublicEnabled') && $('profilePublicEnabled').checked),
+      });
+      if(usernameResult){
+        const current = (store.userProfile && store.userProfile.usernameLower) || '';
+        await claimUsername(user.uid, usernameResult.value, { currentUsernameLower:current });
+      }
+      store.userProfile = await loadProfile(user.uid);
+      setStatus('Saved');
+    }catch(error){
+      setStatus(error && error.code === 'permission-denied' ? 'That username is taken.' : 'Could not save profile. Try again.');
+    }
+  };
 }
 
 function updateProgressEntry(pathId, entryId, updater){
