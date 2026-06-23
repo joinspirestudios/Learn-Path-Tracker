@@ -6,8 +6,13 @@ Phase 6.5 planning document. No mobile app is built yet.
 > [`apps/mobile`](../apps/mobile). It is a scaffold only — placeholder screens,
 > the Aurora mobile theme, a safe API client seam, and generated API contracts.
 > No full mobile MVP, authentication, or real data wiring is built yet. See
-> [docs/mobile-app-foundation.md](mobile-app-foundation.md). The next mobile
-> milestone is **Phase 6.11 — Mobile Core Loop MVP**.
+> [docs/mobile-app-foundation.md](mobile-app-foundation.md).
+>
+> **Phase 6.11 update:** The local **Mobile Core Loop MVP** is now implemented
+> (Today → Daily Focus → Completion Result) on in-memory state, with a pure
+> scoring/tier model that mirrors the web policy. See
+> [docs/mobile-core-loop-mvp.md](mobile-core-loop-mvp.md). The next milestone is
+> **Phase 6.12 — Mobile Paths, Roadmap and Discovery** (auth/data/sync).
 
 ## Product intent
 

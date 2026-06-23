@@ -587,6 +587,20 @@ web visual polish is parked in
 [`docs/aurora-ui-feedback-backlog.md`](docs/aurora-ui-feedback-backlog.md) for a
 later web-polish phase (6.9.12).
 
+## Mobile core loop MVP (Phase 6.11)
+
+Phase 6.11 turns the mobile foundation into a **local, functional core loop**:
+Today → Daily Focus → Completion Result, running on in-memory React state only.
+
+- Local-only: no Firebase Auth, no Firestore sync, no proof upload, no camera/file picker, no live API calls from screens.
+- A local starter path (private, clearly labeled) provides a small proof-of-growth day to operate on.
+- Pure scoring/tier model in `apps/mobile/src/core/`; tiers mirror the web balanced policy (parity-tested).
+- Text proof/reflection only, stored locally and never logged; labeled "Proof submitted", never "verified".
+- New Aurora mobile components under `apps/mobile/src/components/`.
+
+See [`docs/mobile-core-loop-mvp.md`](docs/mobile-core-loop-mvp.md). Phase 6.12 will
+handle mobile auth, data loading, path sync, and discovery — not this phase.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

@@ -1,42 +1,144 @@
-// Mobile app shell.
+// Mobile app shell + local core-loop wiring.
 //
-// A simple internal tab-state shell — no navigation library yet. Renders a top
-// header, the active tab's screen, and an accessible bottom tab bar. Mobile-first
-// only: there is no desktop side nav here.
+// Holds the local mobile session state (React state only — no persistence
+// dependency, no backend calls) and routes the Today tab through the
+// Today -> Daily Focus -> Completion Result flow. Bottom tabs remain simple
+// internal state; no navigation library.
 
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, Pressable, StyleSheet } from 'react-native';
 
 import { auroraTheme } from '../theme/auroraTheme.js';
 import { MOBILE_TABS } from '../navigation/mobileTabs.js';
+import {
+  createInitialMobileLoopState,
+  startTodaySession,
+  markTaskDone,
+  addTextProof,
+  goToNextTask,
+  goToPreviousTask,
+  finishMobileDay,
+} from '../core/mobileCoreLoop.js';
 import { TodayScreen } from '../screens/TodayScreen.js';
+import { DailyFocusScreen } from '../screens/DailyFocusScreen.js';
+import { CompletionResultScreen } from '../screens/CompletionResultScreen.js';
 import { PathsScreen } from '../screens/PathsScreen.js';
+import { PathRoadmapScreen } from '../screens/PathRoadmapScreen.js';
 import { DiscoverScreen } from '../screens/DiscoverScreen.js';
 import { ProgressScreen } from '../screens/ProgressScreen.js';
 import { ProfileScreen } from '../screens/ProfileScreen.js';
 
-const TAB_SCREENS = {
-  today: TodayScreen,
-  paths: PathsScreen,
-  discover: DiscoverScreen,
-  progress: ProgressScreen,
-  profile: ProfileScreen,
-};
-
 export function MobileApp() {
+  const [loopState, setLoopState] = useState(() => createInitialMobileLoopState());
   const [activeTab, setActiveTab] = useState('today');
-  const ActiveScreen = TAB_SCREENS[activeTab] || TodayScreen;
+  const [activeFlow, setActiveFlow] = useState('today'); // today | focus | completion
+  const [pathView, setPathView] = useState('list'); // list | roadmap
+
+  const currentTaskId = loopState.tasks[loopState.session.currentTaskIndex]?.id;
+
+  function handleStartToday() {
+    setLoopState(s => startTodaySession(s));
+    setActiveFlow('focus');
+  }
+  function handleContinueDay() {
+    setActiveFlow('focus');
+  }
+  function handleViewResult() {
+    setActiveFlow('completion');
+  }
+  function handleProofChange(taskId, text) {
+    setLoopState(s => addTextProof(s, taskId, text));
+  }
+  function handleMarkDone(taskId) {
+    setLoopState(s => markTaskDone(s, taskId));
+  }
+  function handleNext() {
+    setLoopState(s => goToNextTask(s));
+  }
+  function handlePrev() {
+    setLoopState(s => goToPreviousTask(s));
+  }
+  function handleFinishDay() {
+    setLoopState(s => finishMobileDay(s));
+    setActiveFlow('completion');
+  }
+  function handleBackToToday() {
+    setActiveTab('today');
+    setActiveFlow('today');
+  }
+  function handleReviewPath() {
+    setActiveTab('paths');
+    setPathView('roadmap');
+  }
+
+  function renderTodayTab() {
+    if (activeFlow === 'focus') {
+      return (
+        <DailyFocusScreen
+          loopState={loopState}
+          onProofChange={handleProofChange}
+          onMarkDone={handleMarkDone}
+          onNext={handleNext}
+          onPrevious={handlePrev}
+          onFinishDay={handleFinishDay}
+          onExit={handleBackToToday}
+        />
+      );
+    }
+    if (activeFlow === 'completion') {
+      return (
+        <CompletionResultScreen
+          loopState={loopState}
+          onBackToToday={handleBackToToday}
+          onReviewPath={handleReviewPath}
+        />
+      );
+    }
+    return (
+      <TodayScreen
+        loopState={loopState}
+        onStartToday={handleStartToday}
+        onContinueDay={handleContinueDay}
+        onViewResult={handleViewResult}
+        onReviewPath={handleReviewPath}
+      />
+    );
+  }
+
+  function renderActiveContent() {
+    if (activeTab === 'today') return renderTodayTab();
+    if (activeTab === 'paths') {
+      if (pathView === 'roadmap') {
+        return (
+          <PathRoadmapScreen
+            loopState={loopState}
+            onBack={() => setPathView('list')}
+            onOpenToday={handleBackToToday}
+          />
+        );
+      }
+      return (
+        <PathsScreen
+          loopState={loopState}
+          onOpenRoadmap={() => setPathView('roadmap')}
+          onOpenToday={handleBackToToday}
+        />
+      );
+    }
+    if (activeTab === 'discover') return <DiscoverScreen />;
+    if (activeTab === 'progress') return <ProgressScreen />;
+    if (activeTab === 'profile') return <ProfileScreen loopState={loopState} />;
+    return renderTodayTab();
+  }
 
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Learn Path Tracker</Text>
-        <Text style={styles.headerSubtitle}>Mobile foundation</Text>
+        <Text style={styles.headerSubtitle}>Local mobile session</Text>
       </View>
 
-      <View style={styles.content}>
-        <ActiveScreen />
-      </View>
+      <View style={styles.content}>{renderActiveContent()}</View>
 
       <View style={styles.tabBar} accessibilityRole="tablist">
         {MOBILE_TABS.map(tab => {
@@ -44,7 +146,7 @@ export function MobileApp() {
           return (
             <Pressable
               key={tab.id}
-              onPress={() => setActiveTab(tab.id)}
+              onPress={() => { setActiveTab(tab.id); if (tab.id === 'paths') setPathView('list'); }}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={tab.label}
