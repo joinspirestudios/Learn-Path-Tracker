@@ -25,8 +25,9 @@ under a dedicated web-polish phase before public launch:
   (mobile auth, cloud paths and discovery), 6.13 (mobile day sync, proof and
   public progress), 6.14 (public progress server bridge), 6.15 (account/
   profile/path personalization), 6.15.1 (profile runtime repair), 6.15.2
-  (profile asset persistence) and 6.15.3 (public proof timeline + evidence cards)
-  explicitly left this web polish deferred. The full Proof Ledger visual redesign
-  remains parked for Phase 6.9.12.
+  (profile asset persistence), 6.15.3 (public proof timeline + evidence cards) and
+  6.15.4 (proof feed / daily documentation / gallery UX) explicitly left this web
+  polish deferred. The full Proof Ledger visual redesign remains parked for
+  Phase 6.9.12.
 - When the web-polish phase begins, convert each item above into concrete,
   testable changes with before/after references.

@@ -94,6 +94,13 @@ server-side public proof artifact projection collection, cross-path cloud proof
 loading beyond cached submissions, and the full Proof Ledger visual redesign
 (Phase 6.9.12). Firestore/Storage rules are unchanged this phase.
 
+## Phase 6.15.4 update
+
+The proof archive is reorganized into a **daily documentation feed** (one
+activity-style card per day) with a secondary proof gallery. The raw card grid is
+no longer the primary experience. See
+[proof-feed-gallery-ux.md](proof-feed-gallery-ux.md).
+
 ## Rules deployment reminder
 
 Vercel does not deploy Firebase rules. After any rule change, run

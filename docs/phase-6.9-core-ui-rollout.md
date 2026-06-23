@@ -162,6 +162,7 @@ pre-launch web polish:
 - **Phase 6.15.1 — Profile Runtime Repair**: working web avatar/cover upload + accurate username reservation.
 - **Phase 6.15.2 — Profile Asset Persistence**: text saves no longer wipe uploaded images.
 - **Phase 6.15.3 — Public Proof Timeline and Evidence Cards**: proof shown as evidence cards + public proof timeline.
+- **Phase 6.15.4 — Proof Feed, Daily Documentation and Gallery UX**: proof as a daily documentation feed + gallery.
 - **Phase 6.16 — Mobile Media Proof Upload and Offline Drafts**
 - **Phase 6.17 — Cross-Platform Notification System**
 - **Phase 6.18 — Mobile Store Readiness and Beta QA**

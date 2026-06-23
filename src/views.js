@@ -109,6 +109,10 @@ import {
   proofArchiveHTML, compactProofStripHTML, dayProofArchiveHTML, publicProofTimelineHTML,
 } from './views/proof-archive.js';
 import { isProofPublicVisible, normalizeProofSubmissions } from './proof-archive-model.js';
+import { buildDailyDocumentationEntries, buildDailyDocumentationEntry } from './daily-documentation-model.js';
+import {
+  dailyDocumentationFeedHTML, publicDailyDocumentationFeedHTML, compactDayProofPreviewHTML,
+} from './views/daily-documentation-feed.js';
 import { validateDisplayName, validateUsername, sanitizeBio, sanitizeWebsiteURL } from './user-profile-model.js';
 import {
   saveProfileText, claimUsername, loadProfile, checkUsernameAvailability,
@@ -2934,19 +2938,31 @@ function publicPathProofTimelineHTML(record){
   if(path.visibility !== 'public') return '';
   const entries = progressEntriesForPath(record.id, record);
   if(!entries.length) return '';
-  // Map each public progress entry into a public-safe proof submission shape.
-  const submissions = entries.map(entry => ({
-    dayNumber: entry.dayNumber,
-    taskTitle: (entry.taskSummary && entry.taskSummary[0] && entry.taskSummary[0].title)
-      || ('Day ' + entry.dayNumber + ' proof'),
-    evidenceType: 'note',
-    note: '',
-    publicCaption: entry.publicCaption || ((entry.evidenceCount || 0) + ' proof submitted'),
-    visibility: 'public',
-    publicVisible: true,
-    createdAt: entry.publishedAt || entry.completedAt || null,
-  }));
-  return publicProofTimelineHTML(submissions, { title:'Public proof timeline' });
+  const pathDoc = { id:record.id, title:path.title || path.previewTitle || 'Path', visibility:'public' };
+  // One public daily-documentation entry per published day.
+  const docEntries = entries.map(entry => {
+    const submissions = (entry.evidenceCount || 0) > 0
+      ? [{
+          dayNumber: entry.dayNumber,
+          taskTitle: (entry.taskSummary && entry.taskSummary[0] && entry.taskSummary[0].title)
+            || ('Day ' + entry.dayNumber + ' proof'),
+          evidenceType: 'note',
+          publicCaption: entry.publicCaption || '',
+          visibility: 'public',
+          publicVisible: true,
+          createdAt: entry.publishedAt || entry.completedAt || null,
+        }]
+      : [];
+    return buildDailyDocumentationEntry({
+      path: pathDoc,
+      dayNumber: entry.dayNumber,
+      submissions,
+      publicProgressEntry: entry,
+      author: { name: entry.authorName, avatarURL: entry.authorPhotoURL },
+      ownerView: false,
+    });
+  });
+  return publicDailyDocumentationFeedHTML(docEntries, { title:'Public proof timeline' });
 }
 
 function publicProgressTimelineHTML(record){
@@ -3039,7 +3055,68 @@ function privateProofArchiveHTML(){
     return '<section class="proof-archive is-empty"><div class="proof-archive-head"><h3>Your Proof Archive</h3></div>'
       + '<p class="muted">Your submitted proof will appear here as evidence cards. Complete a day with proof to start your archive.</p></section>';
   }
-  return proofArchiveHTML(submissions, { title:'Your Proof Archive' });
+  return proofArchiveHTML(submissions, { title:'All proof' });
+}
+
+// Resolve path + day-log lookups for the daily documentation model.
+function pathsForDocumentation(){
+  const map = {};
+  for(const [id, def] of Object.entries(store.state.userPaths || {})){
+    const path = def.platformData || def;
+    map[id] = { id, title:def.title || path.title || 'Path', visibility:path.visibility || def.visibility || 'private' };
+  }
+  return map;
+}
+
+function dayLogsForDocumentation(){
+  const map = {};
+  const enrollments = { ...(store.state.enrollments || {}), ...(store.enrollments || {}) };
+  for(const enrollment of Object.values(enrollments)){
+    if(!enrollment || !enrollment.pathId) continue;
+    const logs = enrollment.dayLogs || {};
+    for(const [dayKey, log] of Object.entries(logs)){
+      if(!log) continue;
+      const dayNumber = Number(log.dayNumber || dayKey);
+      map[enrollment.pathId + '__day_' + dayNumber] = { ...log, pathId:enrollment.pathId, dayNumber, streak:enrollment.streak };
+    }
+  }
+  return map;
+}
+
+let expandedProofGalleryId = '';
+
+function documentationAuthor(){
+  const profile = store.userProfile || {};
+  const user = store.currentUser || {};
+  return {
+    name:profile.displayName || user.displayName || user.email || '',
+    avatarURL:profile.avatarURL || '',
+  };
+}
+
+function privateDailyDocumentationFeedHTML(){
+  if(!store.currentUser) return '';
+  const entries = buildDailyDocumentationEntries({
+    submissions:allCachedEvidence(),
+    paths:pathsForDocumentation(),
+    dayLogs:dayLogsForDocumentation(),
+    publicProgress:store.publicProgress || {},
+    author:documentationAuthor(),
+    ownerView:true,
+  });
+  return dailyDocumentationFeedHTML(entries, {
+    title:'Daily Documentation', emptyState:true, expandedGalleryId:expandedProofGalleryId,
+  });
+}
+
+function wireProofGalleryButtons(reRender){
+  $('content').querySelectorAll('[data-proof-gallery]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-proof-gallery');
+      expandedProofGalleryId = (expandedProofGalleryId === id) ? '' : id;
+      reRender();
+    });
+  });
 }
 
 export function renderProgress(){
@@ -3048,14 +3125,16 @@ export function renderProgress(){
   store.route = { kind:'app', page:'progress' };
   store.state.current = null;
   store.editMode = false;
-  const body = '<div class="aurora-progress-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Progress</span><h2>Your proof and public updates</h2><p>No rankings, follower counts, or estimated activity. Your private proof archive is visible only to you; public proof updates use already-loaded public data.</p></div></header>'
-    + privateProofArchiveHTML()
+  const body = '<div class="aurora-progress-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Progress</span><h2>Your proof and public updates</h2><p>No rankings, follower counts, or estimated activity. Your daily documentation is visible only to you; public proof updates use already-loaded public data.</p></div></header>'
+    + privateDailyDocumentationFeedHTML()
+    + '<details class="aurora-progress-gallery"><summary>View all proof</summary>' + privateProofArchiveHTML() + '</details>'
     + '<section class="aurora-progress-public" aria-label="Public proof updates"><h3>Public proof updates</h3>'
     + publicProgressFeedHTML()
     + '</section>'
     + '</div>';
   $('content').innerHTML = appShellHTML('progress', body, { title:'Progress', className:'aurora-progress-route' });
   applyHeader();
+  wireProofGalleryButtons(renderProgress);
 }
 
 export function renderProfile(){
@@ -5003,10 +5082,15 @@ function platformDailyFocusHTML(id, def){
       + (evidenceCount > 0 ? '<span>' + evidenceCount + ' proof submitted</span>' : '')
       + '</div>';
   }
-  // Visible proof documentation: compact strip of the latest proof for this day.
+  // Visible proof documentation: compact preview (thumbnails + View gallery),
+  // not a long proof grid.
   const todayProof = cachedEvidenceFor(enrollment.id, day);
   if(todayProof.length){
-    h += compactProofStripHTML(todayProof, { title:"Today's proof", max:3 });
+    const docEntry = buildDailyDocumentationEntry({
+      path:{ id, title:def.title, visibility:(def.platformData || def).visibility },
+      dayNumber:day, submissions:todayProof, dayLog:log, ownerView:true,
+    });
+    h += compactDayProofPreviewHTML(docEntry, { title:"Today's proof" });
   }
   if(proofNeeded) h += '<div class="aurora-daily-proof-note">This day requires proof before completion.</div>';
   if(status !== 'completed' && status !== 'locked'){
@@ -5043,9 +5127,12 @@ function selectedDayDetailRailCardHTML(id, def){
   h += '</div>';
   h += '<div class="muted" style="font-size:11px">' + completedCount + ' / ' + dayTasks.length + ' tasks · ' + esc(statusLabel(status)) + '</div>';
   const dayProof = cachedEvidenceFor(enrollment.id, day);
-  if(dayProof.length){
-    h += compactProofStripHTML(dayProof, { title:'Day proof', max:3 });
-  }
+  // Compact preview only (thumbnails + View gallery) — never a long card dump.
+  const railEntry = buildDailyDocumentationEntry({
+    path:{ id, title:def.title, visibility:(def.platformData || def).visibility },
+    dayNumber:day, submissions:dayProof, dayLog:log, ownerView:true,
+  });
+  h += compactDayProofPreviewHTML(railEntry, { title:'Day proof', emptyState:true });
   h += '</article>';
   return h;
 }
@@ -5163,12 +5250,23 @@ function renderPlatformToday(id, def){
     + '</div>';
   $('content').innerHTML = appShellHTML('today', body, { title:'Today', rightRail:platformRightRailHTML(id, def), className:'aurora-today-route' });
   wireJourneyControls(id, def);
+  wireProofGalleryNav();
   const fullRoadmap = $('viewFullRoadmap');
   if(fullRoadmap) fullRoadmap.onclick = () => {
     store.state.current = id;
     store.editMode = false;
     renderPlan();
   };
+}
+
+// On Today/path surfaces, "View gallery" buttons navigate to the Progress page
+// where the full daily documentation gallery lives.
+function wireProofGalleryNav(){
+  $('content').querySelectorAll('[data-proof-gallery]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if(store.nav && typeof store.nav.switchTab === 'function') store.nav.switchTab('progress');
+    });
+  });
 }
 
 /* ============================================================ */

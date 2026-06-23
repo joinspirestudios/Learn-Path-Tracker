@@ -688,6 +688,15 @@ timeline". Completed proof tasks read "Proof submitted". Public surfaces never
 expose private notes/reflections, raw storage paths, or private evidence URLs. See
 [`docs/proof-archive-evidence-visualization.md`](docs/proof-archive-evidence-visualization.md).
 
+**Phase 6.15.4 — proof feed, daily documentation and gallery UX:** proof is now a
+**daily documentation feed** (one activity-style card per day with metrics, task
+summary, media preview and a "View gallery" action) instead of a raw grid of tiny
+cards. The Progress page leads with the feed and demotes the raw grid into a
+"View all proof" disclosure; Today and the right rail show a compact proof preview;
+public paths show a public daily-documentation timeline. Private notes/reflections,
+raw storage paths, and private evidence URLs are never exposed publicly. See
+[`docs/proof-feed-gallery-ux.md`](docs/proof-feed-gallery-ux.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash
