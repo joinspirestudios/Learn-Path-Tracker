@@ -12,11 +12,16 @@ direction, but does **not** import any web DOM module (`src/views.js`,
 
 ## Status
 
-- Placeholder screens for the planned mobile MVP (no real data).
+**Phase 6.11 — local core loop MVP.** The app now runs a local, functional
+core loop (Today → Daily Focus → Completion Result) on in-memory React state.
+
+- Local-only core loop: start a day, do one task at a time, add text proof/reflection where required, finish the day, see a score/tier result.
+- Pure model in `src/core/` (`mobileCoreLoop.js`, `mobileScoring.js`, `mobileSessionState.js`); tiers mirror the web balanced policy.
+- Aurora mobile components in `src/components/`.
 - Aurora mobile theme (indigo = action/progress, green = proof, purple = peak).
-- A safe API client seam pointing at the existing Vercel API contract.
+- A safe API client seam pointing at the existing Vercel API contract (not called by screens yet).
 - Generated API contract constants synced from `src/shared-api-contracts.js`.
-- No Firebase, auth, real API calls, proof capture, or native modules yet.
+- No Firebase, auth, real API calls, proof file upload, camera/file picker, or native modules yet.
 
 ## Structure
 
@@ -27,12 +32,16 @@ apps/mobile/
   package.json                Mobile-only dependencies (Expo, React, RN)
   scripts/check-foundation.mjs  Offline foundation sanity check
   src/
-    app/MobileApp.js          Tab-state shell (header + content + bottom tabs)
+    app/MobileApp.js          Tab-state shell + local core-loop wiring
+    core/mobileCoreLoop.js    Pure local Today->Focus->Completion model
+    core/mobileScoring.js     Pure score/tier logic (web-parity)
+    core/mobileSessionState.js  Local starter path + session constants
+    components/                Aurora RN components (card/button/progress/etc.)
     theme/auroraTheme.js      Aurora colors/spacing/radius/layout tokens
     navigation/mobileTabs.js  Today / Paths / Discover / Progress / Profile
-    screens/                  Placeholder screens
+    screens/                  Core-loop + placeholder screens
     services/env.js           Reads EXPO_PUBLIC_LEARN_PATH_API_BASE_URL
-    services/apiClient.js     createApiClient transport seam
+    services/apiClient.js     createApiClient transport seam (not called yet)
     shared/api-contracts.generated.js  Generated from the web brain
     shared/privacyRules.js    Mobile privacy rules
 ```

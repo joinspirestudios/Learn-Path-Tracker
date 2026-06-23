@@ -5,6 +5,11 @@ Expo mobile foundation under [`apps/mobile`](../apps/mobile). It is intentionall
 **not** a full mobile MVP — it is a safe, isolated scaffold that later mobile
 phases (6.11–6.14) build on.
 
+> **Phase 6.11 update:** The placeholder screens are now a **local, functional
+> core loop** (Today → Daily Focus → Completion Result) on in-memory state. See
+> [docs/mobile-core-loop-mvp.md](mobile-core-loop-mvp.md). Still no Firebase Auth,
+> Firestore sync, proof upload, or live API calls.
+
 ## One brain, two skins
 
 The product follows **one brain, two skins**:

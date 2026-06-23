@@ -16,6 +16,11 @@ export const MOBILE_PRIVACY_RULES = [
   'Never commit mobile signing credentials, keystores, or provisioning profiles.',
   'Never commit production env files or provider API keys.',
   'Only sanitized public progress metadata may be shown publicly.',
+  // Phase 6.11 — local mobile core loop:
+  'Text proof and reflections are local-only in Phase 6.11.',
+  'Do not log proof or reflection text.',
+  'Do not send proof or reflection text to any API yet.',
+  'Do not call public-progress APIs from mobile in Phase 6.11.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

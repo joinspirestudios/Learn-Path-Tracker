@@ -6,7 +6,7 @@ export function AuthWelcomeScreen() {
   return (
     <PlaceholderScreen
       title="Welcome"
-      intent="Sign-in lives here in a later phase. No real authentication is wired in the foundation."
+      intent="Sign-in will appear here in a later phase. No real authentication is wired in the foundation."
     />
   );
 }
