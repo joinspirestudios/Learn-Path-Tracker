@@ -5,7 +5,9 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 
 // Safe local text input. Contents are never logged. Placeholder copy must not
 // imply remote sync — proof/reflection text is local-only in Phase 6.11.
-export function AuroraTextInput({ value, onChangeText, placeholder, multiline = true }) {
+export function AuroraTextInput({
+  value, onChangeText, placeholder, multiline = true, secureTextEntry = false, autoCapitalize = 'sentences', keyboardType = 'default',
+}) {
   return (
     <TextInput
       value={value}
@@ -13,6 +15,9 @@ export function AuroraTextInput({ value, onChangeText, placeholder, multiline = 
       placeholder={placeholder}
       placeholderTextColor={auroraTheme.colors.text.muted}
       multiline={multiline}
+      secureTextEntry={secureTextEntry}
+      autoCapitalize={autoCapitalize}
+      keyboardType={keyboardType}
       style={styles.input}
     />
   );

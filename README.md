@@ -601,6 +601,23 @@ Today → Daily Focus → Completion Result, running on in-memory React state on
 See [`docs/mobile-core-loop-mvp.md`](docs/mobile-core-loop-mvp.md). Phase 6.12 will
 handle mobile auth, data loading, path sync, and discovery — not this phase.
 
+## Mobile auth, cloud paths and discovery (Phase 6.12)
+
+Phase 6.12 connects the mobile app to the shared brain (read-only): Firebase
+client auth gate, cloud path loading, a read-only roadmap view, public discovery,
+and public path preview.
+
+- Firebase **client** SDK only (env-driven via `EXPO_PUBLIC_*`); the Admin SDK never ships to mobile.
+- Auth gate: signed-out users see a real sign-in/create-account screen; signed-in users reach the shell.
+- Missing Firebase config shows a safe "not configured" state (local demo still available) — never a crash.
+- Read-only path/roadmap/discovery repositories with dependency injection (tests use mocks, no live calls).
+- Daily Focus stays local-only; a cloud-path day would be an unsynced local copy, clearly labeled.
+- No proof upload, no Firestore day-log/proof writes, no public-progress publish, no mobile join yet.
+- Mobile dependency added (in `apps/mobile` only): `firebase` (client SDK). Root deps unchanged.
+
+See [`docs/mobile-auth-paths-discovery.md`](docs/mobile-auth-paths-discovery.md).
+Proof capture and day sync are deferred to Phase 6.13.
+
 ## Deferred work
 
 This phase does not add research APIs, notifications, followers, global feeds, payments, public media proof, Gemini evidence intelligence, citations or adaptive planning. It does not update Vercel variables, deploy live Firebase rules, or deploy production automatically. Those operational actions must be completed in the relevant dashboards or authenticated CLIs.

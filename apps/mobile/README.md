@@ -12,8 +12,14 @@ direction, but does **not** import any web DOM module (`src/views.js`,
 
 ## Status
 
-**Phase 6.11 — local core loop MVP.** The app now runs a local, functional
-core loop (Today → Daily Focus → Completion Result) on in-memory React state.
+**Phase 6.12 — auth, cloud paths and discovery (read-only).** The app now has a
+Firebase client auth gate, loads owned cloud paths, shows a read-only roadmap,
+and lists public discoverable paths with a preview. Daily Focus stays local-only.
+No proof upload, no day-log/proof writes, no public-progress publish, no mobile
+join yet. See [docs/mobile-auth-paths-discovery.md](../../docs/mobile-auth-paths-discovery.md).
+
+**Phase 6.11 — local core loop MVP.** The app runs a local, functional core loop
+(Today → Daily Focus → Completion Result) on in-memory React state.
 
 - Local-only core loop: start a day, do one task at a time, add text proof/reflection where required, finish the day, see a score/tier result.
 - Pure model in `src/core/` (`mobileCoreLoop.js`, `mobileScoring.js`, `mobileSessionState.js`); tiers mirror the web balanced policy.
@@ -51,9 +57,21 @@ apps/mobile/
 | Variable | Purpose |
 | --- | --- |
 | `EXPO_PUBLIC_LEARN_PATH_API_BASE_URL` | Public base URL of the existing Vercel API. |
+| `EXPO_PUBLIC_FIREBASE_API_KEY` | Public Firebase client API key. |
+| `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase auth domain. |
+| `EXPO_PUBLIC_FIREBASE_PROJECT_ID` | Firebase project id. |
+| `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket. |
+| `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender id. |
+| `EXPO_PUBLIC_FIREBASE_APP_ID` | Firebase app id. |
 
-Copy `.env.example` to `.env.local` and adjust as needed. **Never commit `.env`
-files, provider keys, Firebase service accounts, or signing credentials.**
+These `EXPO_PUBLIC_FIREBASE_*` values are **public Firebase client config**, not
+Admin secrets. Copy `.env.example` to `.env.local` and adjust as needed. **Never
+commit `.env` files, provider keys, Firebase service accounts, or signing
+credentials.** If Firebase config is absent, the app shows a safe
+"cloud not configured" state and still offers the local demo.
+
+Auth session persistence is limited in this phase (in-memory); durable
+AsyncStorage-backed persistence is deferred to a later phase.
 
 ## Generated API contracts
 

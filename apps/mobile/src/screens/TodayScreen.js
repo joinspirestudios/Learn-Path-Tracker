@@ -7,7 +7,10 @@ import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraStatusPill } from '../components/AuroraStatusPill.js';
 import { getTodaySummary, todayCta } from '../core/mobileCoreLoop.js';
 
-export function TodayScreen({ loopState, onStartToday, onContinueDay, onViewResult, onReviewPath }) {
+export function TodayScreen({
+  loopState, selectedCloudPath, signedIn,
+  onStartToday, onContinueDay, onViewResult, onReviewPath,
+}) {
   const summary = getTodaySummary(loopState);
   const cta = todayCta(loopState);
 
@@ -20,8 +23,21 @@ export function TodayScreen({ loopState, onStartToday, onContinueDay, onViewResu
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>Today</Text>
-      <Text style={styles.title}>{summary.pathTitle}</Text>
 
+      {selectedCloudPath ? (
+        <AuroraCard>
+          <View style={styles.metaRow}>
+            <Text style={styles.cloudTitle}>{selectedCloudPath.title}</Text>
+            <AuroraStatusPill label="Cloud path" tone="progress" />
+          </View>
+          <Text style={styles.note}>
+            Daily sync is not connected yet. Starting a day here would create a local
+            session copy — not synced. Cloud daily sessions are coming next.
+          </Text>
+        </AuroraCard>
+      ) : null}
+
+      <Text style={styles.title}>{summary.pathTitle}</Text>
       <AuroraCard>
         <View style={styles.metaRow}>
           <Text style={styles.meta}>Day {summary.dayNumber}</Text>
@@ -29,9 +45,7 @@ export function TodayScreen({ loopState, onStartToday, onContinueDay, onViewResu
         </View>
         <Text style={styles.stat}>{summary.completedTasks} / {summary.totalTasks} tasks completed</Text>
         <Text style={styles.stat}>
-          {summary.proofNeeded > 0
-            ? summary.proofNeeded + ' task needs text proof'
-            : 'No proof needed right now'}
+          {summary.proofNeeded > 0 ? summary.proofNeeded + ' task needs text proof' : 'No proof needed right now'}
         </Text>
         {summary.proofSubmitted > 0 ? (
           <Text style={styles.stat}>{summary.proofSubmitted} proof submitted</Text>
@@ -41,7 +55,11 @@ export function TodayScreen({ loopState, onStartToday, onContinueDay, onViewResu
       <AuroraButton label={cta.label} variant="primary" onPress={handlePrimary} />
       <AuroraButton label="View local roadmap" variant="ghost" onPress={onReviewPath} />
 
-      <Text style={styles.note}>Mobile sync is not connected yet. This is a local mobile session.</Text>
+      <Text style={styles.note}>
+        {signedIn
+          ? 'This is a local session. Cloud daily sync is not connected yet.'
+          : 'Mobile sync is not connected yet. This is a local session.'}
+      </Text>
     </ScrollView>
   );
 }
@@ -58,6 +76,7 @@ const styles = StyleSheet.create({
   content: { padding: auroraTheme.layout.screenPadding, gap: auroraTheme.spacing.md },
   kicker: { color: c.text.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { color: c.text.primary, fontSize: 22, fontWeight: '700' },
+  cloudTitle: { color: c.text.primary, fontSize: 16, fontWeight: '700', flexShrink: 1 },
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   meta: { color: c.text.secondary, fontSize: 13, fontWeight: '700' },
   stat: { color: c.text.secondary, fontSize: 14 },

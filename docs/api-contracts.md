@@ -191,3 +191,11 @@ contracts by hand. `scripts/generate-mobile-contracts.mjs` imports from
 `SHARED_PRIVACY_CONSTRAINTS`. The generated file carries a "do not edit by hand"
 header. Regenerate with `npm run generate:mobile-contracts` from the repo root.
 Generation never changes endpoint paths and never adds Vercel routes.
+
+### Mobile cloud reads (Phase 6.12)
+
+Phase 6.12 reads path/discovery/roadmap data on mobile directly via the Firebase
+**client** SDK (read-only), not through the Vercel API. No new API routes are
+added and the Vercel function count is unchanged. The mobile API client seam
+(`apiClient`) remains available for future protected calls; the auth service
+exposes `getIdToken()` for when those calls are wired in a later phase.
