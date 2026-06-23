@@ -21,6 +21,15 @@ export const MOBILE_PRIVACY_RULES = [
   'Do not log proof or reflection text.',
   'Do not send proof or reflection text to any API yet.',
   'Do not call public-progress APIs from mobile in Phase 6.11.',
+  // Phase 6.12 — auth, cloud paths, discovery (read-only):
+  'Mobile auth uses the Firebase client SDK only; Firebase Admin never ships to mobile.',
+  'ID tokens are never logged.',
+  'Email and password are never logged.',
+  'Private evidence URLs are never rendered.',
+  'Private reflections are never rendered.',
+  'Raw audio and transcripts are never rendered.',
+  'Discovery only shows public/discoverable path metadata.',
+  'Mobile 6.12 is read-only for path data; it does not write day logs or proof.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

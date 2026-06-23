@@ -246,11 +246,12 @@ test('Phase 6.11 PathsScreen shows the local starter path without fake public st
   assert.doesNotMatch(src, /joined|leaderboard|followers?/i);
 });
 
-test('Phase 6.11 PathRoadmapScreen reflects local day status', () => {
+test('Phase 6.11 PathRoadmapScreen renders a read-only roadmap without exposing evidence', () => {
+  // Phase 6.12 repurposed this screen to render a read-only cloud roadmap.
   const src = read('apps/mobile/src/screens/PathRoadmapScreen.js');
-  assert.match(src, /Day /);
-  assert.match(src, /getTodaySummary|getCompletionSummary/);
-  assert.doesNotMatch(src, /discovery|public path|joined/i);
+  assert.match(src, /roadmap/i);
+  assert.match(src, /MobileRoadmapList|roadmapState/);
+  assert.doesNotMatch(src, /evidenceUrl|downloadURL|storagePath/i);
 });
 
 /* ── 4. No forbidden behavior ── */
@@ -303,12 +304,13 @@ test('Phase 6.11 no camera/file-picker/audio or new native deps added to mobile 
   for (const banned of [
     'expo-camera', 'expo-image-picker', 'expo-document-picker', 'expo-av',
     'expo-file-system', '@react-native-async-storage/async-storage',
-    'firebase', 'firebase-admin', '@react-navigation/native',
+    'firebase-admin', '@react-navigation/native',
   ]) {
     assert.equal(deps[banned], undefined, banned + ' must not be added');
   }
-  // Only expo/react/react-native in the foundation.
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['expo', 'react', 'react-native']);
+  // Phase 6.12 adds firebase (client SDK) for auth/cloud reads. No camera/
+  // picker/audio/native-storage/admin deps.
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['expo', 'firebase', 'react', 'react-native']);
 });
 
 /* ── 5. Components ── */

@@ -108,7 +108,10 @@ builder, discovery data, EAS build config, native credentials, analytics. No
 leaderboards, followers, global feeds, or hearts/gems/shop economy. The product is
 not renamed.
 
-**Phase 6.12** will handle mobile auth, data loading, path sync, and discovery
-planning — not this phase. Remaining web visual polish stays parked in
+**Phase 6.12** added mobile auth, read-only cloud path loading, a read-only
+roadmap, and public discovery (see
+[`mobile-auth-paths-discovery.md`](mobile-auth-paths-discovery.md)). Cloud daily
+session sync and proof capture remain deferred to **Phase 6.13**. Remaining web
+visual polish stays parked in
 [`aurora-ui-feedback-backlog.md`](aurora-ui-feedback-backlog.md) for
 **Phase 6.9.12 — Aurora Web UI Final Polish**.

@@ -11,8 +11,13 @@ Phase 6.5 planning document. No mobile app is built yet.
 > **Phase 6.11 update:** The local **Mobile Core Loop MVP** is now implemented
 > (Today → Daily Focus → Completion Result) on in-memory state, with a pure
 > scoring/tier model that mirrors the web policy. See
-> [docs/mobile-core-loop-mvp.md](mobile-core-loop-mvp.md). The next milestone is
-> **Phase 6.12 — Mobile Paths, Roadmap and Discovery** (auth/data/sync).
+> [docs/mobile-core-loop-mvp.md](mobile-core-loop-mvp.md).
+>
+> **Phase 6.12 update:** Mobile **auth, read-only cloud paths, roadmap, and
+> discovery** are implemented with the Firebase client SDK (env-driven, no Admin
+> SDK). Path data is read-only; no proof upload or day-log writes. See
+> [docs/mobile-auth-paths-discovery.md](mobile-auth-paths-discovery.md). The next
+> milestone is **Phase 6.13 — Mobile Proof Capture, Day Sync and Public Progress**.
 
 ## Product intent
 

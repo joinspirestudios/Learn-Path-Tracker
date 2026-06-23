@@ -9,6 +9,11 @@ phases (6.11–6.14) build on.
 > core loop** (Today → Daily Focus → Completion Result) on in-memory state. See
 > [docs/mobile-core-loop-mvp.md](mobile-core-loop-mvp.md). Still no Firebase Auth,
 > Firestore sync, proof upload, or live API calls.
+>
+> **Phase 6.12 update:** A Firebase **client** auth gate, read-only cloud path
+> loading, a read-only roadmap, and public discovery now exist. Path data is
+> read-only; no proof upload or day-log/proof writes. See
+> [docs/mobile-auth-paths-discovery.md](mobile-auth-paths-discovery.md).
 
 ## One brain, two skins
 
