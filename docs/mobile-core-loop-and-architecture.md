@@ -22,7 +22,12 @@ Phase 6.5 planning document. No mobile app is built yet.
 > publishing** are implemented. Finished days sync to the user's private cloud
 > record; public progress publishes via the existing API, sanitized and explicit.
 > See [docs/mobile-day-sync-proof-public-progress.md](mobile-day-sync-proof-public-progress.md).
-> Next: **Phase 6.14 — Mobile Media Proof Upload and Offline Drafts**.
+>
+> **Phase 6.14 update:** The server **public progress bridge** lets
+> `/api/publish-progress` accept mobile-origin publishes (web enrollment first,
+> then the mobile private day log for owned public/unlisted paths). See
+> [docs/mobile-public-progress-server-bridge.md](mobile-public-progress-server-bridge.md).
+> Next: **Phase 6.15 — Account, Profile and Path Personalization Foundation**.
 
 ## Product intent
 

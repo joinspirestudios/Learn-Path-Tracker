@@ -34,12 +34,10 @@ by existing Firestore rules (`match /users/{uid}/{document=**}` →
 `request.auth.uid == uid`), so **no rule change is required**. The two day-log
 locations do not conflict.
 
-> **Documented ambiguity / limitation:** because mobile day logs live in the
-> user's private space rather than the web enrollment subtree, server-side
-> publish-progress (which historically reads enrollment day logs) may need a
-> server follow-up to consume mobile-origin day data. The mobile client publishes
-> through the existing `/api/publish-progress` contract; full server acceptance of
-> mobile-origin publishes is a server concern for a later phase.
+> **Resolved in Phase 6.14:** the server now reads the mobile private day log when
+> there is no web enrollment, so mobile-origin publishes succeed through the
+> existing `/api/publish-progress` route. See
+> [mobile-public-progress-server-bridge.md](mobile-public-progress-server-bridge.md).
 
 The mobile day-log payload (`mobileDaySync.buildDayLogPayload`) includes:
 `id`, `pathId`, `uid`, `dayNumber`, `status:'completed'`, `completionScore`,
@@ -107,11 +105,12 @@ paths, ID tokens, or credentials.
 
 ## Intentionally deferred
 
-Media/file/camera/audio proof upload and offline drafts (**Phase 6.14**),
-notifications (**Phase 6.15**), store readiness/beta QA (**Phase 6.16**), mobile
-comments/reactions/moderation writes, mobile join/enrollment, AI generation,
-adaptive planning, and evidence intelligence. No leaderboards, followers,
-rankings, or hearts/gems/shop economy. The product is not renamed.
+Account/profile/path personalization (**Phase 6.15**), media/file/camera/audio
+proof upload and offline drafts (**Phase 6.16**), notifications (**Phase 6.17**),
+store readiness/beta QA (**Phase 6.18**), mobile comments/reactions/moderation
+writes, mobile join/enrollment, AI generation, adaptive planning, and evidence
+intelligence. No leaderboards, followers, rankings, or hearts/gems/shop economy.
+The product is not renamed.
 
 ## Firestore rules strategy
 

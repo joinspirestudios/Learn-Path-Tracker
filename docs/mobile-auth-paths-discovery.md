@@ -9,6 +9,10 @@ data — no proof upload, no day-log writes, no public-progress publish.
 > sync to the user's private cloud record, private text/link proof, and explicit
 > sanitized public progress publishing. See
 > [mobile-day-sync-proof-public-progress.md](mobile-day-sync-proof-public-progress.md).
+>
+> **Phase 6.14 update:** The server bridge lets `/api/publish-progress` accept
+> mobile-origin publishes from the private mobile day log. See
+> [mobile-public-progress-server-bridge.md](mobile-public-progress-server-bridge.md).
 
 ## Scope
 

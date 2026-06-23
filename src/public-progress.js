@@ -178,6 +178,64 @@ export function createSanitizedPublicProgressEntry({
   };
 }
 
+// Build a sanitized public progress entry from a MOBILE private day log
+// (users/{uid}/mobileDayLogs/...). Mirrors createSanitizedPublicProgressEntry's
+// output shape but never reads web tasks/evidence. It NEVER includes private
+// proof bodies, private link proof URLs, private reflections, raw evidence URLs,
+// audio, transcripts, tokens or credentials. Mobile text/link proof is reduced
+// to a safe submitted-proof COUNT only.
+export function createSanitizedPublicProgressEntryFromMobileDayLog({
+  pathId,
+  user,
+  dayNumber,
+  mobileDayLog = {},
+  caption = '',
+  now = new Date(),
+} = {}){
+  const day = Math.max(1, cleanNumber(dayNumber || mobileDayLog?.dayNumber, 1));
+  const proofSubmittedCount = cleanNumber(mobileDayLog?.proofSubmittedCount);
+  const completedCount = cleanNumber(mobileDayLog?.completedTaskCount);
+  const totalCount = cleanNumber(mobileDayLog?.totalTaskCount);
+  const completedAt = safeDate(mobileDayLog?.completedAt || mobileDayLog?.finishedAt, now);
+  const publishedAt = safeDate(now, new Date());
+  const id = publicProgressEntryId(user?.uid, day);
+  return {
+    id,
+    pathId:String(pathId || ''),
+    userId:String(user?.uid || ''),
+    authorName:cleanAuthorName(user?.name || user?.displayName),
+    authorPhotoURL:safeExternalUrl(user?.photoURL || user?.picture) || '',
+    dayNumber:day,
+    status:'completed',
+    visibility:'public',
+    title:`Day ${day} completed`,
+    publicCaption:cleanPublicCaption(caption),
+    completedAt,
+    publishedAt,
+    updatedAt:publishedAt,
+    requiredCompletedCount:completedCount,
+    requiredTotalCount:totalCount,
+    optionalCompletedCount:0,
+    optionalTotalCount:0,
+    // evidenceCount drives proof stats (publicProofCount reads evidenceCount).
+    evidenceCount:proofSubmittedCount,
+    completionScore:Math.min(100, cleanNumber(mobileDayLog?.completionScore)),
+    completionTier:cleanCompletionTier(mobileDayLog?.completionTier),
+    // Mobile proof types are not exposed as web url/file labels; count only.
+    evidenceTypes:[],
+    hasEvidence:proofSubmittedCount > 0,
+    // No web task titles are available server-side; keep summary empty rather
+    // than inventing titles. Counts above still reflect real completion.
+    taskSummary:[],
+    reactionCounts:emptyReactionCounts(),
+    totalReactionCount:0,
+    visibleCommentCount:0,
+    interactionUpdatedAt:null,
+    source:'mobile-day-log',
+    schemaVersion:PUBLIC_PROGRESS_SCHEMA_VERSION,
+  };
+}
+
 export function normalizePublicComment(raw = {}){
   const body = cleanPublicCommentBody(raw.body);
   return {

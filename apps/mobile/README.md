@@ -12,6 +12,14 @@ direction, but does **not** import any web DOM module (`src/views.js`,
 
 ## Status
 
+**Phase 6.14 — public progress server bridge.** The existing
+`/api/publish-progress` route now accepts mobile-origin publishes: when there is
+no web enrollment, the server reads the user's private mobile day log
+(`users/{uid}/mobileDayLogs`) for an owned public/unlisted path and writes a
+sanitized public entry. The mobile client still sends only
+`{ pathId, dayNumber, publicCaption }`. See
+[docs/mobile-public-progress-server-bridge.md](../../docs/mobile-public-progress-server-bridge.md).
+
 **Phase 6.13 — day sync, text/link proof and public progress.** Signed-in users
 can finish a local day, add private text/link proof, **sync** the finished day to
 their private cloud record (`users/{uid}/mobileDayLogs`, idempotent), and

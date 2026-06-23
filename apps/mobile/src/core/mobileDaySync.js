@@ -17,6 +17,9 @@ import { collectSubmittedProof } from './mobileProofMappers.js';
 
 const DAY_LOG_SCHEMA_VERSION = 1;
 
+// Deterministic day-log id. This MUST stay identical to the server bridge's
+// src/mobile-day-log-ids.js — a parity test enforces it. Kept self-contained so
+// the Metro bundle never imports outside apps/mobile.
 function sanitizeId(value, fallback) {
   const s = String(value == null ? '' : value).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
   return s || fallback;
