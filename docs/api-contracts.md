@@ -210,6 +210,12 @@ token via the mobile `apiClient`. The request body matches the web contract
 stored entry. Mobile day-log writes go to the user's private
 `users/{uid}/mobileDayLogs` space via the Firestore client SDK, not the API.
 
+Phase 6.15 adds profiles and path personalization purely through the Firestore
+client SDK (profile docs under `users/{uid}/profile/main`, username reservations
+under `usernames/{usernameLower}`, personalization on the path doc) and narrow
+Storage rules for profile/banner images. No new API route is added; the Vercel
+function count is unchanged.
+
 Phase 6.14 adds the **server bridge**: the same route now resolves the source day
 log as web enrollment first, then the mobile private day log when no enrollment
 exists (owned public/unlisted paths only). The server reads the trusted private

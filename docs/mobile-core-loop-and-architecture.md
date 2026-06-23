@@ -27,7 +27,12 @@ Phase 6.5 planning document. No mobile app is built yet.
 > `/api/publish-progress` accept mobile-origin publishes (web enrollment first,
 > then the mobile private day log for owned public/unlisted paths). See
 > [docs/mobile-public-progress-server-bridge.md](mobile-public-progress-server-bridge.md).
-> Next: **Phase 6.15 — Account, Profile and Path Personalization Foundation**.
+>
+> **Phase 6.15 update:** Shared **account/profile and path personalization** now
+> exists — profiles (display name, username, bio, avatar, cover), owned-path
+> banners, and public-safe shaping, with narrow profile-image Storage rules. See
+> [docs/account-profile-path-personalization.md](account-profile-path-personalization.md).
+> Next: **Phase 6.16 — Mobile Media Proof Upload and Offline Drafts**.
 
 ## Product intent
 

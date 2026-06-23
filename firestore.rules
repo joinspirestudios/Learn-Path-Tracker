@@ -116,9 +116,24 @@ service cloud.firestore {
     // Current code writes under:
     // users/{uid}/state/main
     // users/{uid}/renders/{renderId}
+    // users/{uid}/profile/main         (Phase 6.15 profile)
+    // users/{uid}/mobileDayLogs/{id}   (Phase 6.13 mobile day logs)
     match /users/{uid}/{document=**} {
       allow read, write: if signedIn()
         && request.auth.uid == uid;
+    }
+
+    // Username reservations (Phase 6.15). Uniqueness is enforced by create-only-
+    // when-absent semantics: a create succeeds only if the doc does not exist,
+    // and the claimer must own the uid. No updates; only the owner may release.
+    match /usernames/{usernameLower} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.usernameLower == usernameLower;
+      allow update: if false;
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
     }
 
     // Platform path metadata.

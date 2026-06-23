@@ -5,9 +5,16 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 import { AuroraCard } from '../components/AuroraCard.js';
 import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraStatusPill } from '../components/AuroraStatusPill.js';
+import { MobileProfileCard } from '../components/MobileProfileCard.js';
+import { MobileProfileEditor } from '../components/MobileProfileEditor.js';
 
-// Shows a safe signed-in account summary. Never exposes ID tokens.
-export function ProfileScreen({ user, configured, localMode, onSignOut }) {
+// Shows a safe signed-in account summary + profile preview/editor. Never exposes
+// ID tokens.
+export function ProfileScreen({
+  user, configured, localMode, profile, profileBusy, profileStatus, onSaveProfile, onSignOut,
+}) {
+  const merged = { ...(profile || {}), uid: user && user.uid, displayName: (profile && profile.displayName) || (user && user.displayName) || '' };
+
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>Profile</Text>
@@ -32,11 +39,24 @@ export function ProfileScreen({ user, configured, localMode, onSignOut }) {
         )}
       </AuroraCard>
 
+      {user ? <MobileProfileCard profile={merged} /> : null}
+
+      {user ? (
+        <AuroraCard>
+          <MobileProfileEditor
+            profile={merged}
+            busy={profileBusy}
+            status={profileStatus}
+            onSave={onSaveProfile}
+          />
+        </AuroraCard>
+      ) : null}
+
       {user ? <AuroraButton label="Sign out" variant="secondary" onPress={onSignOut} /> : null}
 
       <Text style={styles.note}>
-        We never display or store your ID token. Cloud path data is read-only in this version, and
-        proof/reflection text stays on this device.
+        We never display or store your ID token. Profile pictures and covers are uploaded on web for now.
+        Bio and reflections stay private unless you publish a public profile or progress.
       </Text>
     </ScrollView>
   );

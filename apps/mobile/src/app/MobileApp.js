@@ -27,6 +27,7 @@ import { createDiscoveryRepository } from '../services/discoveryRepository.js';
 import { createRoadmapRepository } from '../services/roadmapRepository.js';
 import { createDayLogRepository } from '../services/dayLogRepository.js';
 import { createMobilePublicProgressRepository } from '../services/mobilePublicProgressRepository.js';
+import { createProfileRepository } from '../services/profileRepository.js';
 import { createApiClient } from '../services/apiClient.js';
 import { getMobileApiBaseUrl } from '../services/env.js';
 
@@ -52,6 +53,7 @@ export function MobileApp() {
   const roadmapRepo = useMemo(() => createRoadmapRepository({ gateway }), [gateway]);
   const userGateway = useMemo(() => client.createUserDataGateway(), [client]);
   const dayLogRepo = useMemo(() => createDayLogRepository({ gateway: userGateway }), [userGateway]);
+  const profileRepo = useMemo(() => createProfileRepository({ gateway: userGateway }), [userGateway]);
   const apiClient = useMemo(
     () => createApiClient({ baseUrl: getMobileApiBaseUrl(), getIdToken: () => authService.getIdToken() }),
     [authService],
@@ -91,6 +93,11 @@ export function MobileApp() {
   const [publicCaption, setPublicCaption] = useState('');
   const [lastDayLog, setLastDayLog] = useState(null);
 
+  // Profile state (Phase 6.15).
+  const [profile, setProfile] = useState(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileStatus, setProfileStatus] = useState('');
+
   useEffect(() => {
     let active = true;
     let unsub = () => {};
@@ -126,9 +133,33 @@ export function MobileApp() {
     }
   }, [discoveryRepo]);
 
+  const loadProfile = useCallback(async () => {
+    if (!authUser) return;
+    try {
+      const p = await profileRepo.getProfile(authUser.uid);
+      setProfile(p);
+    } catch {
+      setProfile(null);
+    }
+  }, [authUser, profileRepo]);
+
   useEffect(() => {
-    if (authStatus === AUTH_STATUS.SIGNED_IN) loadUserPaths();
-  }, [authStatus, loadUserPaths]);
+    if (authStatus === AUTH_STATUS.SIGNED_IN) { loadUserPaths(); loadProfile(); }
+  }, [authStatus, loadUserPaths, loadProfile]);
+
+  async function handleSaveProfile(fields) {
+    if (!authUser) { setProfileStatus('Please sign in again.'); return; }
+    setProfileBusy(true); setProfileStatus('');
+    try {
+      await profileRepo.saveProfileText(authUser.uid, fields);
+      await loadProfile();
+      setProfileStatus('Saved');
+    } catch {
+      setProfileStatus('Could not save profile yet.');
+    } finally {
+      setProfileBusy(false);
+    }
+  }
 
   // ── Auth handlers ──
   async function handleSignIn(email, password) {
@@ -359,6 +390,10 @@ export function MobileApp() {
           user={authUser}
           configured={configured}
           localMode={inLocalOnly}
+          profile={profile}
+          profileBusy={profileBusy}
+          profileStatus={profileStatus}
+          onSaveProfile={handleSaveProfile}
           onSignOut={handleSignOut}
         />
       );

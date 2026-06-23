@@ -158,7 +158,7 @@ pre-launch web polish:
 - **Phase 6.12 — Mobile Auth, Cloud Paths, Roadmap and Discovery**: read-only cloud connection.
 - **Phase 6.13 — Mobile Day Sync, Text/Link Proof and Public Progress**: first mobile write path.
 - **Phase 6.14 — Mobile Public Progress Server Bridge and Day-Log Compatibility**: publish from web or mobile day logs.
-- **Phase 6.15 — Account, Profile and Path Personalization Foundation**
+- **Phase 6.15 — Account, Profile and Path Personalization Foundation**: shared identity + path personalization.
 - **Phase 6.16 — Mobile Media Proof Upload and Offline Drafts**
 - **Phase 6.17 — Cross-Platform Notification System**
 - **Phase 6.18 — Mobile Store Readiness and Beta QA**

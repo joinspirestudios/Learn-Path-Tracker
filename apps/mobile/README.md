@@ -12,6 +12,13 @@ direction, but does **not** import any web DOM module (`src/views.js`,
 
 ## Status
 
+**Phase 6.15 — account, profile and path personalization.** The Profile screen
+shows a safe account summary (no token), a public profile card, and an editor for
+display name / bio / website / public-profile visibility (username changes happen
+on web). Path screens can display path banner images. No mobile image upload,
+proof media, camera/audio/file pickers, or notifications were added. See
+[docs/account-profile-path-personalization.md](../../docs/account-profile-path-personalization.md).
+
 **Phase 6.14 — public progress server bridge.** The existing
 `/api/publish-progress` route now accepts mobile-origin publishes: when there is
 no web enrollment, the server reads the user's private mobile day log
