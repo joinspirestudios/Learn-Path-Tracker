@@ -5,6 +5,7 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 import { AuroraCard } from '../components/AuroraCard.js';
 import { AuroraButton } from '../components/AuroraButton.js';
 import { MobileCompletionSummary } from '../components/MobileCompletionSummary.js';
+import { MobileProofSummaryCard } from '../components/MobileProofSummaryCard.js';
 import { MobileSyncBanner } from '../components/MobileSyncBanner.js';
 import { MobilePublishProgressCard } from '../components/MobilePublishProgressCard.js';
 import { getCompletionSummary } from '../core/mobileCoreLoop.js';
@@ -27,6 +28,10 @@ export function CompletionResultScreen({
       <AuroraCard>
         <MobileCompletionSummary summary={summary} />
       </AuroraCard>
+
+      {summary.proofSubmitted > 0 ? (
+        <MobileProofSummaryCard proofSubmittedCount={summary.proofSubmitted} typeLabels={['text/link']} />
+      ) : null}
 
       {showSync ? (
         <MobileSyncBanner status={syncStatus} error={syncError} onSync={onSync} />
