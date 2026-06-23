@@ -1550,6 +1550,42 @@
 .aurora-profile-avatar-preview{width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;margin-bottom:var(--lpt-space-sm);border:1px solid var(--lpt-color-border-subtle)}
 .aurora-profile-cover-preview{width:100%;max-height:120px;object-fit:cover;border-radius:var(--lpt-radius-card);display:block;margin-bottom:var(--lpt-space-sm);border:1px solid var(--lpt-color-border-subtle)}
 .aurora-profile-editor-status{margin-top:var(--lpt-space-sm);font-size:13px;color:var(--lpt-color-text-secondary);min-height:18px}
+
+/* ── Phase 6.15.3 proof archive / evidence cards ── */
+/* Completed proof task reads "Proof submitted" without a struck-through look. */
+.aurora-daily-task.is-done .aurora-chip-proof.is-submitted{text-decoration:none;opacity:1;color:var(--lpt-color-accent-proof);border-color:var(--lpt-color-accent-proof)}
+.aurora-chip-proof.is-submitted{color:var(--lpt-color-accent-proof);border-color:var(--lpt-color-accent-proof)}
+.proof-archive,.proof-strip,.public-proof-timeline{margin-top:var(--lpt-space-lg);display:block}
+.proof-archive-head{display:flex;align-items:center;justify-content:space-between;gap:var(--lpt-space-md);margin-bottom:var(--lpt-space-md)}
+.proof-archive-head h3,.proof-archive-head h4{margin:0;color:var(--lpt-color-text-primary)}
+.proof-archive-head span{color:var(--lpt-color-text-muted);font-size:12px;font-weight:800}
+.proof-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--lpt-space-md)}
+.proof-card-grid.is-compact{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.proof-card,.public-proof-artifact{
+  display:flex;flex-direction:column;gap:var(--lpt-space-xs);
+  border:1px solid var(--lpt-color-border-subtle);
+  border-radius:var(--lpt-radius-card);
+  padding:var(--lpt-layout-card-inset);
+  background:linear-gradient(180deg,var(--lpt-color-surface-panel),var(--lpt-color-surface-input));
+}
+.proof-card.is-url,.public-proof-artifact.is-url_public{border-left:3px solid var(--lpt-color-accent-progress)}
+.proof-card.is-image,.public-proof-artifact.is-image_public{border-left:3px solid var(--lpt-color-accent-proof)}
+.proof-card.is-file,.public-proof-artifact.is-file_public{border-left:3px solid var(--lpt-color-accent-trust)}
+.proof-card-meta{display:flex;align-items:center;justify-content:space-between;gap:var(--lpt-space-sm)}
+.proof-type-badge{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--lpt-color-text-muted);border:1px solid var(--lpt-color-border-subtle);border-radius:var(--lpt-radius-pill);padding:1px var(--lpt-space-sm)}
+.proof-card-day{font-size:11px;color:var(--lpt-color-text-muted);font-weight:700}
+.proof-card-title{color:var(--lpt-color-text-primary);font-size:14px;font-weight:700;overflow-wrap:anywhere}
+.proof-card-thumb{width:100%;max-height:120px;object-fit:cover;border-radius:var(--lpt-radius-medium);background:var(--lpt-color-surface-raised)}
+.proof-card-file{font-size:12px;color:var(--lpt-color-text-secondary);background:var(--lpt-color-surface-raised);border-radius:var(--lpt-radius-medium);padding:var(--lpt-space-sm) var(--lpt-space-md);overflow-wrap:anywhere}
+.proof-card-domain{font-size:12px;color:var(--lpt-color-accent-progress);font-weight:700;text-decoration:none}
+.proof-card-placeholder{font-size:12px;color:var(--lpt-color-text-muted);font-weight:700}
+.proof-card-note{margin:0;font-size:12.5px;color:var(--lpt-color-text-secondary);line-height:1.5;overflow-wrap:anywhere}
+.proof-card-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--lpt-space-sm);margin-top:auto;font-size:11px;color:var(--lpt-color-text-muted)}
+.proof-card-label{font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.proof-strip-more{margin-top:var(--lpt-space-sm);font-size:12px;color:var(--lpt-color-text-muted);font-weight:700}
+.public-proof-day-group{margin-top:var(--lpt-space-md)}
+.public-proof-day-group h4{margin:0 0 var(--lpt-space-sm);color:var(--lpt-color-text-secondary);font-size:13px}
+.public-proof-summary{display:flex;align-items:center;gap:var(--lpt-space-sm);color:var(--lpt-color-text-muted);font-size:12px;font-weight:700}
 .aurora-nav-item{
   display:flex;align-items:center;gap:var(--lpt-space-md);
   padding:var(--lpt-space-md) var(--lpt-space-lg);

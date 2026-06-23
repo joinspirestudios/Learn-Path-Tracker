@@ -105,6 +105,10 @@ import { renderDesignSystemGallery } from './ui/design-gallery.js';
 import { renderAppShell, renderAuroraShell } from './ui/core.js';
 import { profileSectionHTML } from './views/profile-editor.js';
 import { pathPersonalizationEditorHTML } from './views/path-personalization-editor.js';
+import {
+  proofArchiveHTML, compactProofStripHTML, dayProofArchiveHTML, publicProofTimelineHTML,
+} from './views/proof-archive.js';
+import { isProofPublicVisible, normalizeProofSubmissions } from './proof-archive-model.js';
 import { validateDisplayName, validateUsername, sanitizeBio, sanitizeWebsiteURL } from './user-profile-model.js';
 import {
   saveProfileText, claimUsername, loadProfile, checkUsernameAvailability,
@@ -2922,6 +2926,29 @@ function publicProgressInteractionsHTML(record, entry){
   return h + '</div>';
 }
 
+// Public proof timeline for a PUBLIC path — day-by-day public-safe proof cards
+// derived from published public progress entries. Signed-out visitors can see
+// this; private notes/reflections and raw storage paths are never included.
+function publicPathProofTimelineHTML(record){
+  const path = record.path || record;
+  if(path.visibility !== 'public') return '';
+  const entries = progressEntriesForPath(record.id, record);
+  if(!entries.length) return '';
+  // Map each public progress entry into a public-safe proof submission shape.
+  const submissions = entries.map(entry => ({
+    dayNumber: entry.dayNumber,
+    taskTitle: (entry.taskSummary && entry.taskSummary[0] && entry.taskSummary[0].title)
+      || ('Day ' + entry.dayNumber + ' proof'),
+    evidenceType: 'note',
+    note: '',
+    publicCaption: entry.publicCaption || ((entry.evidenceCount || 0) + ' proof submitted'),
+    visibility: 'public',
+    publicVisible: true,
+    createdAt: entry.publishedAt || entry.completedAt || null,
+  }));
+  return publicProofTimelineHTML(submissions, { title:'Public proof timeline' });
+}
+
 function publicProgressTimelineHTML(record){
   const entries = progressEntriesForPath(record.id, record);
   let h = '<section class="panel card public-progress-section" aria-label="Recent public progress">'
@@ -2995,14 +3022,37 @@ function publicProgressFeedHTML(){
   return h + '</div></section>';
 }
 
+// Collect cached evidence submissions across all enrollments in the store.
+function allCachedEvidence(){
+  const buckets = { ...(store.state.evidenceSubmissions || {}), ...(store.evidenceSubmissions || {}) };
+  const out = [];
+  for(const bucket of Object.values(buckets)){
+    if(bucket && typeof bucket === 'object') out.push(...Object.values(bucket));
+  }
+  return out.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+}
+
+function privateProofArchiveHTML(){
+  if(!store.currentUser) return '';
+  const submissions = allCachedEvidence();
+  if(!submissions.length){
+    return '<section class="proof-archive is-empty"><div class="proof-archive-head"><h3>Your Proof Archive</h3></div>'
+      + '<p class="muted">Your submitted proof will appear here as evidence cards. Complete a day with proof to start your archive.</p></section>';
+  }
+  return proofArchiveHTML(submissions, { title:'Your Proof Archive' });
+}
+
 export function renderProgress(){
   clearPendingPathRoute();
   focusScreenActive = false;
   store.route = { kind:'app', page:'progress' };
   store.state.current = null;
   store.editMode = false;
-  const body = '<div class="aurora-progress-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Progress</span><h2>Public proof updates</h2><p>No rankings, follower counts, or estimated activity. This page only uses public progress data already loaded by the app.</p></div></header>'
+  const body = '<div class="aurora-progress-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Progress</span><h2>Your proof and public updates</h2><p>No rankings, follower counts, or estimated activity. Your private proof archive is visible only to you; public proof updates use already-loaded public data.</p></div></header>'
+    + privateProofArchiveHTML()
+    + '<section class="aurora-progress-public" aria-label="Public proof updates"><h3>Public proof updates</h3>'
     + publicProgressFeedHTML()
+    + '</section>'
     + '</div>';
   $('content').innerHTML = appShellHTML('progress', body, { title:'Progress', className:'aurora-progress-route' });
   applyHeader();
@@ -3349,6 +3399,7 @@ function renderPathPreview(record){
     + '<article class="panel card"><h3>Proof expected</h3><p>' + esc(evidenceExpectationCopy(path, record)) + '</p></article>'
     + '<article class="panel card"><h3>Ownership</h3><p>The source path remains owned by ' + esc(creator) + '. Joiners get their own private enrollment and progress.</p></article>'
     + '</section>'
+    + publicPathProofTimelineHTML(record)
     + publicProgressTimelineHTML(record)
     + '<section class="panel card preview-scheme"><h3>Milestones</h3>' + milestonePreviewHTML(record) + '</section>'
     + '</div>';
@@ -3602,16 +3653,8 @@ function evidenceCountFor(enrollmentId, dayNumber){
 function evidenceListHTML(enrollmentId, dayNumber){
   const submissions = cachedEvidenceFor(enrollmentId, dayNumber);
   if(!submissions.length) return '<div class="hint">No proof submissions for this day yet.</div>';
-  return '<div class="evidence-list">' + submissions.map(s => {
-    const title = s.taskTitle || 'Task proof';
-    const label = s.evidenceType === 'file' ? (s.fileName || 'Uploaded file') : 'URL proof';
-    const href = safeExternalUrl(s.evidenceUrl);
-    return '<div class="evidence-item"><div><b>' + esc(title) + '</b>'
-      + '<span>' + esc(dateText(s.createdAt)) + '</span>'
-      + (s.note ? '<p>' + esc(s.note) + '</p>' : '') + '</div>'
-      + (href ? externalLinkHTML(href, label) : '<em>' + esc(label) + '</em>')
-      + '</div>';
-  }).join('') + '</div>';
+  // Card-based proof archive (owner/private view) instead of a plain list.
+  return proofArchiveHTML(submissions, { title:'Proof archive' });
 }
 
 function publishedProgressEntry(id, day){
@@ -4941,18 +4984,29 @@ function platformDailyFocusHTML(id, def){
     dayTasks.forEach(task => {
       const title = task.title || task.text || 'Task';
       const done = taskIsDone(task, log);
+      // Completed proof tasks read "Proof submitted" (not a struck-through
+      // "Proof required"); incomplete ones still read "Proof required".
+      let proofChip = '';
+      if(task.evidenceRequired){
+        proofChip = done
+          ? '<span class="aurora-chip aurora-chip-proof is-submitted">Proof submitted</span>'
+          : '<span class="aurora-chip aurora-chip-proof">Proof required</span>';
+      }
       h += '<div class="aurora-daily-task ' + (done ? 'is-done' : '') + '">'
         + '<span class="aurora-daily-task-check" aria-hidden="true">' + (done ? '&#10003;' : '') + '</span>'
         + '<span class="aurora-daily-task-title">' + esc(title) + '</span>'
-        + '<span class="aurora-daily-task-status">'
-        + (task.evidenceRequired ? '<span class="aurora-chip aurora-chip-proof">Proof required</span>' : '')
-        + '</span>'
+        + '<span class="aurora-daily-task-status">' + proofChip + '</span>'
         + '</div>';
     });
     h += '</div>';
     h += '<div class="aurora-daily-progress"><span>' + completedCount + ' / ' + dayTasks.length + ' tasks</span>'
       + (evidenceCount > 0 ? '<span>' + evidenceCount + ' proof submitted</span>' : '')
       + '</div>';
+  }
+  // Visible proof documentation: compact strip of the latest proof for this day.
+  const todayProof = cachedEvidenceFor(enrollment.id, day);
+  if(todayProof.length){
+    h += compactProofStripHTML(todayProof, { title:"Today's proof", max:3 });
   }
   if(proofNeeded) h += '<div class="aurora-daily-proof-note">This day requires proof before completion.</div>';
   if(status !== 'completed' && status !== 'locked'){
@@ -4988,6 +5042,10 @@ function selectedDayDetailRailCardHTML(id, def){
   });
   h += '</div>';
   h += '<div class="muted" style="font-size:11px">' + completedCount + ' / ' + dayTasks.length + ' tasks · ' + esc(statusLabel(status)) + '</div>';
+  const dayProof = cachedEvidenceFor(enrollment.id, day);
+  if(dayProof.length){
+    h += compactProofStripHTML(dayProof, { title:'Day proof', max:3 });
+  }
   h += '</article>';
   return h;
 }

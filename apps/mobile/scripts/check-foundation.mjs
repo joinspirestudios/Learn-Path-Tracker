@@ -49,6 +49,8 @@ const requiredFiles = [
   'src/components/MobileProfileCard.js',
   'src/components/MobileProfileEditor.js',
   'src/components/MobilePathBanner.js',
+  'src/components/MobileProofSummaryCard.js',
+  'src/components/MobileProofArchiveStrip.js',
   'src/services/firebaseConfig.js',
   'src/services/firebaseClient.js',
   'src/services/authService.js',

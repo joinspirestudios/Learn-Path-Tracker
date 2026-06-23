@@ -680,6 +680,14 @@ never `avatarURL`/`coverURL`/storage paths; images change only through the uploa
 helpers. Uploaded avatar/cover now persist across reloads and appear in the
 profile preview and side-nav.
 
+**Phase 6.15.3 — public proof timeline and evidence cards:** submitted proof is
+now visible documentation, not just a count. Today shows a proof strip, the right
+rail shows day proof, completed days show a card-based "Proof archive", Progress
+has "Your Proof Archive", and public paths show a signed-out-safe "Public proof
+timeline". Completed proof tasks read "Proof submitted". Public surfaces never
+expose private notes/reflections, raw storage paths, or private evidence URLs. See
+[`docs/proof-archive-evidence-visualization.md`](docs/proof-archive-evidence-visualization.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash
