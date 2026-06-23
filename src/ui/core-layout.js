@@ -15,7 +15,30 @@ export function renderAppShell({ title = '', body = '', className = '' } = {}){
     + '</main>';
 }
 
-export function renderShellNav({ active = 'today', compact = false, userLabel = '' } = {}){
+function navUserInitials(name, username) {
+  const src = String(name || username || '').trim();
+  if (!src) return '?';
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return src.slice(0, 2).toUpperCase();
+}
+
+// Renders the bottom-anchored signed-in identity block: avatar (image or
+// initials) + display name + @handle. Never includes tokens or private metadata.
+function navUserBlockHTML({ userLabel = '', displayName = '', username = '', avatarURL = '' } = {}) {
+  const name = displayName || userLabel;
+  if (!name && !username && !avatarURL) return '';
+  const avatar = avatarURL
+    ? '<img class="aurora-side-nav-avatar" src="' + esc(avatarURL) + '" alt=""/>'
+    : '<span class="aurora-side-nav-avatar is-empty" aria-hidden="true">' + esc(navUserInitials(name, username)) + '</span>';
+  return '<div class="aurora-side-nav-user">' + avatar
+    + '<span class="aurora-side-nav-user-text">'
+    + '<span class="aurora-side-nav-user-name">' + esc(name || 'Your account') + '</span>'
+    + (username ? '<span class="aurora-side-nav-user-handle">@' + esc(username) + '</span>' : '')
+    + '</span></div>';
+}
+
+export function renderShellNav({ active = 'today', compact = false, userLabel = '', user = null } = {}){
   if(compact){
     return '<nav class="aurora-bottom-nav" aria-label="App navigation">'
       + AURORA_APP_NAV.map(item => {
@@ -33,8 +56,9 @@ export function renderShellNav({ active = 'today', compact = false, userLabel = 
       + '<span class="aurora-nav-dot" aria-hidden="true"></span><span>' + esc(item.label) + '</span></a>';
   }).join('');
   nav += '</div>';
-  if(userLabel){
-    nav += '<div class="aurora-side-nav-user">' + esc(userLabel) + '</div>';
+  const userBlock = navUserBlockHTML(user || (userLabel ? { userLabel } : {}));
+  if(userBlock){
+    nav += userBlock;
   }
   nav += '</nav>';
   return nav;
@@ -47,10 +71,11 @@ export function renderAuroraShell({
   rightRail = '',
   className = '',
   userLabel = '',
+  user = null,
 } = {}){
   const railClass = rightRail ? ' has-right-rail' : '';
   return '<main class="lpt-shell aurora-app-shell' + railClass + ' ' + esc(className) + '" data-shell-active="' + esc(active) + '">'
-    + renderShellNav({ active, userLabel })
+    + renderShellNav({ active, userLabel, user })
     + '<section class="aurora-shell-content" aria-label="' + esc(title || 'Workspace') + '">'
     + '<div class="aurora-shell-content-inner">'
     + body

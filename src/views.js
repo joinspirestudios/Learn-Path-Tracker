@@ -106,7 +106,10 @@ import { renderAppShell, renderAuroraShell } from './ui/core.js';
 import { profileSectionHTML } from './views/profile-editor.js';
 import { pathPersonalizationEditorHTML } from './views/path-personalization-editor.js';
 import { validateDisplayName, validateUsername, sanitizeBio, sanitizeWebsiteURL } from './user-profile-model.js';
-import { saveProfileText, claimUsername, loadProfile } from './user-profile-db.js';
+import {
+  saveProfileText, claimUsername, loadProfile, checkUsernameAvailability,
+  uploadProfileAvatar, uploadProfileCover,
+} from './user-profile-db.js';
 
 /* ---- debounced save (formerly the file-level noteTimer pattern) ---- */
 let _noteTimer = null;
@@ -400,7 +403,15 @@ function appShellHTML(active, body, { title = '', rightRail = '', className = ''
   if(store.currentUser){
     document.body.classList.add('aurora-shell-mode');
     const label = store.currentUser.displayName || store.currentUser.email || '';
-    return renderAuroraShell({ active, title, body, rightRail, className, userLabel:label });
+    const profile = store.userProfile || {};
+    const user = {
+      userLabel:label,
+      displayName:profile.displayName || store.currentUser.displayName || '',
+      username:profile.username || profile.usernameLower || '',
+      avatarURL:profile.avatarURL || '',
+    };
+    if(store.currentUser.uid && store.userProfile === undefined) ensureProfileLoaded(store.currentUser.uid);
+    return renderAuroraShell({ active, title, body, rightRail, className, userLabel:label, user });
   }
   document.body.classList.remove('aurora-shell-mode');
   if(active === 'discover'){
@@ -3018,11 +3029,36 @@ export function renderProfile(){
   if(user) wireProfileEditor(user);
 }
 
+// Loads the signed-in user's profile into the store once, then re-renders so the
+// sidebar identity (avatar/name/handle) appears. Guarded to run a single time.
+function ensureProfileLoaded(uid){
+  if(store.userProfile !== undefined) return;
+  store.userProfile = null; // mark in-flight so we don't re-trigger
+  loadProfile(uid).then(profile => {
+    store.userProfile = profile || null;
+    if(profile && store.nav && typeof store.nav.switchTab === 'function' && store.activeTab){
+      try{ store.nav.switchTab(store.activeTab); }catch(e){ /* re-render best effort */ }
+    }
+  }).catch(() => { store.userProfile = null; });
+}
+
 function wireProfileEditor(user){
+  // Local image preview before upload (object URLs, never persisted).
+  let pendingAvatar = null, pendingCover = null;
+  const avatarInput = $('profileAvatarFile');
+  const coverInput = $('profileCoverFile');
+  const previewImg = (id, file) => {
+    const el = $(id); if(!el || !file) return;
+    try{ el.src = URL.createObjectURL(file); el.style.display = ''; }catch(e){ /* preview only */ }
+  };
+  if(avatarInput) avatarInput.onchange = () => { pendingAvatar = avatarInput.files && avatarInput.files[0]; previewImg('profileAvatarPreview', pendingAvatar); };
+  if(coverInput) coverInput.onchange = () => { pendingCover = coverInput.files && coverInput.files[0]; previewImg('profileCoverPreview', pendingCover); };
+
   const saveBtn = $('profileSave');
   if(!saveBtn) return;
   const status = $('profileSaveStatus');
   const setStatus = (msg) => { if(status) status.textContent = msg; };
+
   saveBtn.onclick = async () => {
     const nameResult = validateDisplayName($('profileDisplayName')?.value || '');
     if(!nameResult.ok){ setStatus(nameResult.error); return; }
@@ -3032,22 +3068,61 @@ function wireProfileEditor(user){
       usernameResult = validateUsername(usernameRaw);
       if(!usernameResult.ok){ setStatus(usernameResult.error); return; }
     }
-    setStatus('Saving...');
+
+    saveBtn.disabled = true;
     try{
+      // 1. Resolve username availability with accurate messaging (no false "taken").
+      const currentLower = (store.userProfile && store.userProfile.usernameLower) || '';
+      if(usernameResult && usernameResult.value !== currentLower){
+        const avail = await checkUsernameAvailability(usernameResult.value, user.uid);
+        if(avail.status === 'taken'){ setStatus('That username is already taken.'); saveBtn.disabled = false; return; }
+        if(avail.status === 'reserved'){ setStatus('This username is reserved.'); saveBtn.disabled = false; return; }
+        if(avail.status === 'invalid'){ setStatus(avail.error || 'Invalid username.'); saveBtn.disabled = false; return; }
+        if(avail.status === 'username_system_unavailable'){
+          setStatus('Username saving is blocked by Firebase rules or configuration. Deploy Firestore rules and try again.');
+          saveBtn.disabled = false; return;
+        }
+      }
+
+      // 2. Upload images if selected.
+      if(pendingAvatar){
+        setStatus('Uploading profile picture…');
+        await uploadProfileAvatar(user.uid, pendingAvatar);
+      }
+      if(pendingCover){
+        setStatus('Uploading cover image…');
+        await uploadProfileCover(user.uid, pendingCover);
+      }
+
+      // 3. Save text fields.
+      setStatus('Saving profile…');
       await saveProfileText(user.uid, {
         displayName:nameResult.value,
         bio:sanitizeBio($('profileBio')?.value || ''),
         websiteURL:sanitizeWebsiteURL($('profileWebsite')?.value || ''),
         publicProfileEnabled:!!($('profilePublicEnabled') && $('profilePublicEnabled').checked),
       });
+
+      // 4. Claim/update username.
       if(usernameResult){
-        const current = (store.userProfile && store.userProfile.usernameLower) || '';
-        await claimUsername(user.uid, usernameResult.value, { currentUsernameLower:current });
+        await claimUsername(user.uid, usernameResult.value, { currentUsernameLower:currentLower });
       }
+
       store.userProfile = await loadProfile(user.uid);
       setStatus('Saved');
+      pendingAvatar = null; pendingCover = null;
+      renderProfile();
     }catch(error){
-      setStatus(error && error.code === 'permission-denied' ? 'That username is taken.' : 'Could not save profile. Try again.');
+      const code = error && error.code;
+      if(code === 'username_taken') setStatus('That username is already taken.');
+      else if(code === 'reserved_username') setStatus('This username is reserved.');
+      else if(code === 'invalid_username') setStatus(error.message || 'Invalid username.');
+      else if(code === 'username_rules_blocked') setStatus('Username saving is blocked by Firebase rules or configuration. Deploy Firestore rules and try again.');
+      else if(code === 'invalid_asset') setStatus(error.message || 'Only JPEG, PNG or WebP images are allowed.');
+      else if(code === 'storage_unavailable') setStatus('Image upload is not configured. Try again later.');
+      else setStatus('Could not save profile. Try again.');
+    }finally{
+      if($('profileSave')) $('profileSave').disabled = false;
     }
   };
 }

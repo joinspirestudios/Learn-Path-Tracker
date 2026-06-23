@@ -12,6 +12,12 @@ direction, but does **not** import any web DOM module (`src/views.js`,
 
 ## Status
 
+**Phase 6.15.1 — profile runtime repair.** Web avatar/cover upload now works and
+renders in the profile + side-nav; username errors are accurate (no false
+"taken"). Mobile displays saved `avatarURL`/`coverURL` by URL and edits text only
+(image upload is performed on web). Remember to deploy Firebase rules separately
+(`firebase deploy --only firestore:rules,storage`) — Vercel does not.
+
 **Phase 6.15 — account, profile and path personalization.** The Profile screen
 shows a safe account summary (no token), a public profile card, and an editor for
 display name / bio / website / public-profile visibility (username changes happen

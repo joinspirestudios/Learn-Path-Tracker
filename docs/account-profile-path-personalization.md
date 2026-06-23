@@ -114,6 +114,47 @@ in later phases:
 - **Phase 6.17 — Cross-Platform Notification System**
 - **Phase 6.18 — Mobile Store Readiness and Beta QA**
 
+## Phase 6.15.1 runtime repair
+
+Two production bugs were fixed:
+
+- **Image upload now works on web.** `uploadProfileAvatar` / `uploadProfileCover`
+  (in `src/user-profile-db.js`) validate the file (`validateAsset`), upload to the
+  user-owned Storage path (`users/{uid}/profile/avatar|cover/{assetId}`) via
+  `fb.uploadBytes`, read the download URL (`fb.getDownloadURL`), and save
+  `avatarURL`/`avatarStoragePath` (or cover equivalents) to `users/{uid}/profile/main`.
+  The Profile page shows a local preview on selection, uploads on Save, and
+  re-renders with the stored image. The avatar/name/handle also appear in the
+  left side-nav user block (with an initials fallback).
+- **Accurate username errors.** `checkUsernameAvailability` distinguishes
+  `available`, `owned_by_current_user`, `taken`, `reserved`, `invalid`, and
+  `username_system_unavailable` (permission-denied / rules-not-deployed).
+  `claimUsername` reuses an existing same-user reservation instead of recreating
+  it, and a permission-denied is reported as a rules/config problem — **never** as
+  "taken". "That username is taken" appears only when another user actually owns
+  the reservation.
+
+### Deploying rules (required)
+
+> **Vercel does not deploy Firebase rules.** After any profile/personalization
+> rule change — including the Phase 6.15 `usernames` collection and the profile/
+> banner Storage paths — deploy them separately:
+>
+> ```bash
+> firebase deploy --only firestore:rules,storage
+> ```
+>
+> If username save reports *"Username saving is blocked by Firebase rules or
+> configuration"*, the live rules are missing the `usernames` collection — run the
+> deploy above.
+
+### Path banner status
+
+Path banner metadata and the owner-only editor exist, but **web banner upload
+wiring is deferred** to a follow-up; the banner image input should be treated as
+coming-soon rather than a working upload. Profile avatar/cover upload is fully
+wired.
+
 ## Privacy / security constraints
 
 Email, ID tokens, and auth metadata are never public. Private bio/cover are

@@ -1527,7 +1527,29 @@
   background:linear-gradient(180deg,rgba(109,93,246,.04),rgba(21,19,28,.98));
 }
 .aurora-side-nav-links{display:grid;gap:var(--lpt-space-xs)}
-.aurora-side-nav-user{margin-top:auto;padding:var(--lpt-space-md) var(--lpt-space-lg);font-size:12px;color:var(--lpt-color-text-muted);font-weight:700}
+.aurora-side-nav-user{margin-top:auto;display:flex;align-items:center;gap:var(--lpt-space-md);padding:var(--lpt-space-md) var(--lpt-space-lg);font-size:12px;color:var(--lpt-color-text-muted);font-weight:700}
+.aurora-side-nav-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--lpt-color-surface-raised);display:grid;place-items:center;font-size:12px;font-weight:900;color:var(--lpt-color-text-primary);border:1px solid var(--lpt-color-border-subtle)}
+.aurora-side-nav-user-text{display:flex;flex-direction:column;min-width:0}
+.aurora-side-nav-user-name{color:var(--lpt-color-text-primary);font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aurora-side-nav-user-handle{color:var(--lpt-color-text-muted);font-size:11px;font-weight:700}
+
+/* ── Phase 6.15.1 profile identity ── */
+.aurora-profile-grid{display:grid;gap:var(--lpt-space-xl)}
+.aurora-profile-preview{overflow:hidden;padding:0}
+.aurora-profile-cover{display:block;width:100%;height:120px;object-fit:cover;background:var(--lpt-color-surface-raised)}
+.aurora-profile-cover.is-empty{height:96px;background:linear-gradient(120deg,rgba(109,93,246,.25),rgba(177,92,246,.18))}
+.aurora-profile-preview-head{display:flex;align-items:center;gap:var(--lpt-space-lg);padding:0 var(--lpt-layout-card-inset);margin-top:-28px}
+.aurora-profile-avatar{width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid var(--lpt-color-surface-panel);background:var(--lpt-color-surface-raised);display:grid;place-items:center;font-size:22px;font-weight:900;color:var(--lpt-color-text-primary)}
+.aurora-profile-avatar.is-empty{background:linear-gradient(135deg,var(--lpt-color-accent-progress),var(--lpt-color-accent-trust));color:#fff}
+.aurora-profile-identity{padding-top:32px;min-width:0}
+.aurora-profile-name{font-family:'Fraunces',serif;font-size:20px;color:var(--lpt-color-text-primary)}
+.aurora-profile-handle{color:var(--lpt-color-text-secondary);font-size:13px;font-weight:700}
+.aurora-profile-visibility{color:var(--lpt-color-text-muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;margin-top:2px}
+.aurora-profile-bio{padding:var(--lpt-space-md) var(--lpt-layout-card-inset) 0;color:var(--lpt-color-text-secondary);font-size:14px;line-height:1.6}
+.aurora-profile-website{display:inline-block;padding:var(--lpt-space-sm) var(--lpt-layout-card-inset) var(--lpt-layout-card-inset);color:var(--lpt-color-accent-progress);font-size:13px;font-weight:700}
+.aurora-profile-avatar-preview{width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;margin-bottom:var(--lpt-space-sm);border:1px solid var(--lpt-color-border-subtle)}
+.aurora-profile-cover-preview{width:100%;max-height:120px;object-fit:cover;border-radius:var(--lpt-radius-card);display:block;margin-bottom:var(--lpt-space-sm);border:1px solid var(--lpt-color-border-subtle)}
+.aurora-profile-editor-status{margin-top:var(--lpt-space-sm);font-size:13px;color:var(--lpt-color-text-secondary);min-height:18px}
 .aurora-nav-item{
   display:flex;align-items:center;gap:var(--lpt-space-md);
   padding:var(--lpt-space-md) var(--lpt-space-lg);
