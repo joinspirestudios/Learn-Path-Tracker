@@ -674,6 +674,12 @@ Mobile media proof upload and offline drafts are deferred to Phase 6.16.
 - Path banner upload is deferred (input disabled, "coming next") — avatar/cover
   upload is fully wired.
 
+**Phase 6.15.2 — profile asset persistence:** a text-only profile save no longer
+wipes uploaded images. `saveProfileText` writes only text/preference fields and
+never `avatarURL`/`coverURL`/storage paths; images change only through the upload
+helpers. Uploaded avatar/cover now persist across reloads and appear in the
+profile preview and side-nav.
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

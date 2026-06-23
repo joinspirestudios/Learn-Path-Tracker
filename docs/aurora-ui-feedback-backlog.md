@@ -24,7 +24,7 @@ under a dedicated web-polish phase before public launch:
   skin with its own visual baseline. Phases 6.11 (mobile core loop MVP), 6.12
   (mobile auth, cloud paths and discovery), 6.13 (mobile day sync, proof and
   public progress), 6.14 (public progress server bridge), 6.15 (account/
-  profile/path personalization) and 6.15.1 (profile runtime repair) explicitly
-  left this web polish deferred.
+  profile/path personalization), 6.15.1 (profile runtime repair) and 6.15.2
+  (profile asset persistence) explicitly left this web polish deferred.
 - When the web-polish phase begins, convert each item above into concrete,
   testable changes with before/after references.

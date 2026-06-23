@@ -109,6 +109,23 @@ export function buildProfileDocument(input = {}, { uid, now = new Date() } = {})
   };
 }
 
+// Text/preference-only profile update. CRITICAL: this must NEVER contain image
+// asset fields (avatarURL/avatarStoragePath/coverURL/coverStoragePath) so a
+// text-only save merged into Firestore can never wipe an uploaded image.
+export function buildProfileTextUpdate(input = {}, { uid, now = new Date() } = {}) {
+  const id = str(uid || input.uid).trim();
+  return {
+    uid: id,
+    displayName: sanitizeDisplayName(input.displayName),
+    bio: sanitizeBio(input.bio),
+    websiteURL: sanitizeWebsiteURL(input.websiteURL),
+    locationLabel: sanitizeLocation(input.locationLabel),
+    publicProfileEnabled: input.publicProfileEnabled !== false,
+    updatedAt: now,
+    schemaVersion: normalizeDocumentSchemaVersion('userProfile', input, USER_PROFILE_SCHEMA_VERSION) || USER_PROFILE_SCHEMA_VERSION,
+  };
+}
+
 // Public-safe profile: only fields that may appear publicly. Never email/tokens/paths.
 export function safePublicProfile(profile = {}) {
   if (!profile || typeof profile !== 'object') return null;
@@ -166,6 +183,7 @@ export default {
   sanitizeUsername,
   isOwnProfileAssetPath,
   buildProfileDocument,
+  buildProfileTextUpdate,
   safePublicProfile,
   safeAuthorProfile,
   buildUsernameReservation,

@@ -11,7 +11,7 @@
 
 import { fb as defaultFb } from './firebase.js';
 import {
-  buildProfileDocument, buildUsernameReservation, sanitizeUsername, safePublicProfile,
+  buildProfileTextUpdate, buildUsernameReservation, sanitizeUsername, safePublicProfile,
   validateUsername, isReservedUsername, normalizeUsername,
 } from './user-profile-model.js';
 import { validateAsset, avatarStoragePath, coverStoragePath } from './profile-assets.js';
@@ -43,11 +43,12 @@ export async function loadPublicProfile(uid, { fb = defaultFb } = {}) {
   return profile ? safePublicProfile(profile) : null;
 }
 
+// Text/preference-only save. Never writes avatar/cover URL or Storage path
+// fields, so a text save can never wipe an uploaded image (the 6.15.2 bug).
 export async function saveProfileText(uid, input, { fb = defaultFb, now = new Date() } = {}) {
-  const doc = buildProfileDocument({ ...input, uid }, { uid, now });
-  const { username, usernameLower, avatarStoragePath: _a, coverStoragePath: _c, ...rest } = doc;
-  await fb.setDoc(profileRef(fb, uid), rest, { merge: true });
-  return rest;
+  const update = buildProfileTextUpdate({ ...input, uid }, { uid, now });
+  await fb.setDoc(profileRef(fb, uid), update, { merge: true });
+  return update;
 }
 
 // ── Asset uploads ──────────────────────────────────────────────────────────

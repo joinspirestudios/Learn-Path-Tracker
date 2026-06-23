@@ -148,6 +148,32 @@ Two production bugs were fixed:
 > configuration"*, the live rules are missing the `usernames` collection — run the
 > deploy above.
 
+### Phase 6.15.2 — profile asset persistence
+
+Earlier, a text-only profile save wiped uploaded images: `saveProfileText` built a
+full profile document (defaulting `avatarURL`/`coverURL` to `""`) and merged it,
+overwriting the uploaded URLs. Fixed by a strict rule:
+
+> **A text-only profile save must never write image fields.** `saveProfileText`
+> now writes only `displayName, bio, websiteURL, locationLabel,
+> publicProfileEnabled, updatedAt, schemaVersion` (via `buildProfileTextUpdate`).
+> It never writes `avatarURL`, `avatarStoragePath`, `coverURL`, or
+> `coverStoragePath`. Those change only through `uploadProfileAvatar` /
+> `uploadProfileCover` (or an explicit remove operation, which is not yet
+> implemented).
+
+Save order: validate → save text → claim username → **upload images last** so the
+stored avatar/cover URLs are final. After save, the profile reloads and the
+preview + side-nav avatar re-render. The avatar appears in the profile preview
+card and the left side-nav user block; the cover appears at the top of the
+preview card.
+
+**How to verify persistence:** in Firestore, `users/{uid}/profile/main` should
+keep non-empty `avatarURL`/`coverURL` (and `avatarStoragePath`/`coverStoragePath`)
+after a text save; in Storage, files should exist under
+`users/{uid}/profile/avatar|cover/{assetId}`. Remember to deploy rules
+(`firebase deploy --only firestore:rules,storage`) — Vercel does not.
+
 ### Path banner status
 
 Path banner metadata and the owner-only editor exist, but **web banner upload
