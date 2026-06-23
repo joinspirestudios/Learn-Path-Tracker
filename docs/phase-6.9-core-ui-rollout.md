@@ -156,8 +156,10 @@ pre-launch web polish:
 - **Phase 6.10 — Expo Mobile App Foundation**: isolated `apps/mobile` scaffold.
 - **Phase 6.11 — Mobile Core Loop MVP**: local Today → Daily Focus → Completion.
 - **Phase 6.12 — Mobile Auth, Cloud Paths, Roadmap and Discovery**: read-only cloud connection.
-- **Phase 6.13 — Mobile Proof Capture, Day Sync and Public Progress**
-- **Phase 6.14 — Mobile Offline Drafts, Retention, Notifications and Store Readiness**
+- **Phase 6.13 — Mobile Day Sync, Text/Link Proof and Public Progress**: first mobile write path.
+- **Phase 6.14 — Mobile Media Proof Upload and Offline Drafts**
+- **Phase 6.15 — Cross-Platform Notification System**
+- **Phase 6.16 — Mobile Store Readiness and Beta QA**
 - **Phase 6.9.12 — Aurora / Proof Ledger Visual System Decision and Web UI Final Polish** (parked web visual feedback; see [aurora-ui-feedback-backlog.md](aurora-ui-feedback-backlog.md))
 - **Phase 7.0 — Rolling Adaptive Planning**
 - **Phase 8.0 — Evidence Intelligence**

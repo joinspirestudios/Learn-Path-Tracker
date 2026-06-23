@@ -62,7 +62,7 @@ export function localDemoPath() {
 export function createInitialTaskState(tasks) {
   const taskState = {};
   for (const task of tasks) {
-    taskState[task.id] = { done: false, proofText: '', reflection: '' };
+    taskState[task.id] = { done: false, proofText: '', proofUrl: '', reflection: '' };
   }
   return taskState;
 }

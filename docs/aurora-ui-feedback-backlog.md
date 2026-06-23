@@ -21,8 +21,8 @@ under a dedicated web-polish phase before public launch:
 - These are presentation-only refinements. They do not change product behavior,
   scoring, data models, APIs, Firebase rules, authentication, or privacy rules.
 - Do not address these inside mobile phases (6.10–6.14). Mobile is a separate
-  skin with its own visual baseline. Phases 6.11 (mobile core loop MVP) and 6.12
-  (mobile auth, cloud paths and discovery) explicitly left this web polish
-  deferred.
+  skin with its own visual baseline. Phases 6.11 (mobile core loop MVP), 6.12
+  (mobile auth, cloud paths and discovery) and 6.13 (mobile day sync, proof and
+  public progress) explicitly left this web polish deferred.
 - When the web-polish phase begins, convert each item above into concrete,
   testable changes with before/after references.

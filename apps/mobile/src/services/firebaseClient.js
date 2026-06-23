@@ -54,7 +54,48 @@ export function createFirebaseClient({ env, config, sdkLoader = defaultSdkLoader
     createFirestoreGateway() {
       return createFirestoreGateway({ ensure });
     },
+    // User-owned data gateway (users/{uid}/...). Used for the signed-in user's
+    // own private mobile day logs only — never another user's data.
+    createUserDataGateway() {
+      return createUserDataGateway({ ensure });
+    },
   };
+}
+
+// Reads/writes documents under users/{uid}/{sub}/{id}. Firestore rules already
+// restrict this subtree to the owning user. No public/shared writes here.
+export function createUserDataGateway({ ensure }) {
+  function docToRecord(d) {
+    const exists = typeof d.exists === 'function' ? d.exists() : d.exists;
+    if (!exists) return null;
+    return { id: d.id, data: typeof d.data === 'function' ? d.data() : {} };
+  }
+
+  async function getUserDoc(uid, sub, id) {
+    const { sdk, db } = await ensure();
+    const ref = sdk.doc(db, 'users', uid, sub, id);
+    const snap = await sdk.getDoc(ref);
+    return docToRecord(snap);
+  }
+
+  async function setUserDoc(uid, sub, id, data) {
+    const { sdk, db } = await ensure();
+    const ref = sdk.doc(db, 'users', uid, sub, id);
+    const stamped = { ...data, updatedAt: sdk.serverTimestamp ? sdk.serverTimestamp() : Date.now() };
+    // merge:true keeps the write idempotent (upsert, no duplicate doc).
+    await sdk.setDoc(ref, stamped, { merge: true });
+    return { id, ...data };
+  }
+
+  async function listUserDocs(uid, sub, max = 30) {
+    const { sdk, db } = await ensure();
+    const col = sdk.collection(db, 'users', uid, sub);
+    const q = sdk.limit ? sdk.query(col, sdk.limit(max)) : col;
+    const snap = await sdk.getDocs(q);
+    return (snap.docs || []).map(docToRecord).filter(Boolean);
+  }
+
+  return { getUserDoc, setUserDoc, listUserDocs };
 }
 
 // Read-only Firestore gateway. Returns plain { id, data } records so mappers can

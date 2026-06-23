@@ -11,7 +11,7 @@ import { AuroraEmptyState } from '../components/AuroraEmptyState.js';
 import { ASYNC_STATUS } from '../core/mobileCloudState.js';
 
 // Read-only cloud roadmap. No invented dates/progress/completion.
-export function PathRoadmapScreen({ roadmapState, selectedPath, onBack, onOpenToday }) {
+export function PathRoadmapScreen({ roadmapState, selectedPath, activeDaySynced, onBack, onOpenToday }) {
   const state = roadmapState || { status: ASYNC_STATUS.IDLE, items: [], error: '' };
   const roadmap = state.items && state.items[0];
 
@@ -32,8 +32,11 @@ export function PathRoadmapScreen({ roadmapState, selectedPath, onBack, onOpenTo
       ) : (
         <>
           {roadmap.description ? <Text style={styles.desc}>{roadmap.description}</Text> : null}
+          {activeDaySynced ? (
+            <Text style={styles.synced}>Your active day for this path is synced to your private cloud record.</Text>
+          ) : null}
           <MobileRoadmapList roadmap={roadmap} />
-          <Text style={styles.note}>Cloud daily sessions are coming next. This roadmap is read-only.</Text>
+          <Text style={styles.note}>Cloud daily sessions are coming next. This roadmap is read-only and shows no invented progress.</Text>
         </>
       )}
 
@@ -50,6 +53,7 @@ const styles = StyleSheet.create({
   headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { color: c.text.primary, fontSize: 22, fontWeight: '700', flexShrink: 1 },
   desc: { color: c.text.secondary, fontSize: 14, lineHeight: 20 },
+  synced: { color: c.accent.proof, fontSize: 13, lineHeight: 19 },
   note: { color: c.text.muted, fontSize: 12, lineHeight: 18 },
 });
 

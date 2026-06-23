@@ -5,6 +5,11 @@ brain: Firebase client auth, read-only cloud path loading, a read-only roadmap
 view, public discovery, and public path preview. It stays **read-only** for path
 data — no proof upload, no day-log writes, no public-progress publish.
 
+> **Phase 6.13 update:** The first mobile write path now exists — finished-day
+> sync to the user's private cloud record, private text/link proof, and explicit
+> sanitized public progress publishing. See
+> [mobile-day-sync-proof-public-progress.md](mobile-day-sync-proof-public-progress.md).
+
 ## Scope
 
 - An auth gate: signed-out users see a real `AuthWelcome`; signed-in users reach

@@ -224,10 +224,11 @@ test('Phase 6.11 DailyFocusScreen renders one task at a time, not the whole list
   assert.doesNotMatch(src, /session\.taskState\)\.map/);
 });
 
-test('Phase 6.11 DailyFocusScreen shows proof input only when required', () => {
+test('Phase 6.11 DailyFocusScreen shows a proof input gated by proof requirement', () => {
+  // Phase 6.13 swapped the inline input for MobileProofInput (text/link proof).
   const src = read('apps/mobile/src/screens/DailyFocusScreen.js');
-  assert.match(src, /proofRequired\s*\?/);
-  assert.match(src, /AuroraTextInput/);
+  assert.match(src, /proofRequired/);
+  assert.match(src, /MobileProofInput/);
 });
 
 test('Phase 6.11 CompletionResultScreen shows score, tier and proof submitted count', () => {
