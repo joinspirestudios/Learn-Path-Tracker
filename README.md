@@ -631,7 +631,21 @@ public progress summary.
 - No mobile comments/reactions/moderation/join, no notifications, no media upload, no fake metrics.
 
 See [`docs/mobile-day-sync-proof-public-progress.md`](docs/mobile-day-sync-proof-public-progress.md).
-Media proof upload and offline drafts are deferred to Phase 6.14; notifications to Phase 6.15.
+Media proof upload and offline drafts are deferred to Phase 6.16; notifications to Phase 6.17.
+
+## Mobile public progress server bridge (Phase 6.14)
+
+Phase 6.14 lets the existing `/api/publish-progress` route publish from **either**
+the web enrollment day log or the new mobile private day log — closing the server
+gap from Phase 6.13. No new API route is added and web publishing is unchanged.
+
+- Source resolver: web enrollment first; mobile private day log (`users/{uid}/mobileDayLogs`) only when no enrollment exists and the user owns the public/unlisted path.
+- The server fetches the trusted private day log itself; the mobile client still sends only `{ pathId, dayNumber, publicCaption }`.
+- Public entries are sanitized (day result only — never private proof/reflection/evidence URLs); "submitted", never "verified".
+- Idempotent (same `uid_day_N` entry); `publicProgressCount`/`proofSubmissionCount` never double-count.
+- Shared deterministic id (`src/mobile-day-log-ids.js`) with a parity test; Firestore/Storage rules unchanged; Vercel function count unchanged.
+
+See [`docs/mobile-public-progress-server-bridge.md`](docs/mobile-public-progress-server-bridge.md).
 
 ## Deferred work
 

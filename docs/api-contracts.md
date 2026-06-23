@@ -200,7 +200,7 @@ added and the Vercel function count is unchanged. The mobile API client seam
 (`apiClient`) remains available for future protected calls; the auth service
 exposes `getIdToken()` for when those calls are wired in a later phase.
 
-### Mobile public progress publishing (Phase 6.13)
+### Mobile public progress publishing (Phase 6.13–6.14)
 
 Phase 6.13 publishes public progress from mobile through the **existing**
 `/api/publish-progress` route (no new route, function count unchanged), using the
@@ -209,3 +209,10 @@ token via the mobile `apiClient`. The request body matches the web contract
 (`{ pathId, dayNumber, publicCaption }`); the server builds and sanitizes the
 stored entry. Mobile day-log writes go to the user's private
 `users/{uid}/mobileDayLogs` space via the Firestore client SDK, not the API.
+
+Phase 6.14 adds the **server bridge**: the same route now resolves the source day
+log as web enrollment first, then the mobile private day log when no enrollment
+exists (owned public/unlisted paths only). The server reads the trusted private
+day log itself; the entry stays sanitized (day result only) and idempotent
+(`publicProgressEntryId(uid, dayNumber)`). Still no new route; function count
+unchanged. See [mobile-public-progress-server-bridge.md](mobile-public-progress-server-bridge.md).

@@ -17,9 +17,11 @@ import {
 import {
   cleanPublicCaption,
   createSanitizedPublicProgressEntry,
+  createSanitizedPublicProgressEntryFromMobileDayLog,
   isPublishablePath,
   publicProgressEntryId,
 } from '../../src/public-progress.js';
+import { resolvePublishProgressSource } from '../public-progress-source-resolver.js';
 
 function cleanPathId(value){
   const id = boundedText(value, 'pathId', 180, { required:true });
@@ -100,33 +102,35 @@ export function createPublishProgressHandler({
           throw apiError('path_not_publishable', 'Public progress can only be published on public or unlisted paths.', 403);
         }
 
-        const enrollmentSnap = await transaction.get(enrollmentRef);
-        if(!enrollmentSnap.exists) throw apiError('enrollment_not_found', 'Start or join this path before publishing progress.', 404);
-        const enrollment = enrollmentSnap.data() || {};
-        if(enrollment.id !== enrollmentId || enrollment.userId !== auth.uid || enrollment.pathId !== pathId){
-          throw apiError('forbidden', 'You can only publish your own progress.', 403);
-        }
-
-        const dayLogSnap = await transaction.get(dayLogRef);
-        if(!dayLogSnap.exists) throw apiError('day_log_not_found', 'This completed day could not be found.', 404);
-        const dayLog = dayLogSnap.data() || {};
-        if(dayLog.status !== 'completed'){
-          throw apiError('day_not_completed', 'Only completed days can be published.', 409);
-        }
+        // Resolve the source day log: existing web enrollment first, then the
+        // mobile private day log when no web enrollment exists.
+        const resolved = await resolvePublishProgressSource({
+          firestore, transaction, path, pathId, auth, dayNumber, enrollmentIdFor,
+        });
+        const dayLog = resolved.dayLog;
 
         const entrySnap = await transaction.get(entryRef);
         const previousEntry = entrySnap.exists ? (entrySnap.data() || {}) : {};
         const alreadyPublished = entrySnap.exists && previousEntry.visibility === 'public';
-        const entry = createSanitizedPublicProgressEntry({
-          pathId,
-          user:publicUser(auth),
-          dayNumber,
-          dayLog,
-          tasks,
-          evidenceSubmissions:submissions,
-          caption,
-          now:stamp,
-        });
+        const entry = resolved.source === 'mobile_private_day_log'
+          ? createSanitizedPublicProgressEntryFromMobileDayLog({
+              pathId,
+              user:publicUser(auth),
+              dayNumber,
+              mobileDayLog:dayLog,
+              caption,
+              now:stamp,
+            })
+          : createSanitizedPublicProgressEntry({
+              pathId,
+              user:publicUser(auth),
+              dayNumber,
+              dayLog,
+              tasks,
+              evidenceSubmissions:submissions,
+              caption,
+              now:stamp,
+            });
         const previousProofCount = alreadyPublished ? publicProofCount(previousEntry) : 0;
         const nextProofCount = publicProofCount(entry);
         const proofDelta = nextProofCount - previousProofCount;
