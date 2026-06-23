@@ -3084,17 +3084,7 @@ function wireProfileEditor(user){
         }
       }
 
-      // 2. Upload images if selected.
-      if(pendingAvatar){
-        setStatus('Uploading profile picture…');
-        await uploadProfileAvatar(user.uid, pendingAvatar);
-      }
-      if(pendingCover){
-        setStatus('Uploading cover image…');
-        await uploadProfileCover(user.uid, pendingCover);
-      }
-
-      // 3. Save text fields.
+      // 2. Save text fields first (text-only update never touches image fields).
       setStatus('Saving profile…');
       await saveProfileText(user.uid, {
         displayName:nameResult.value,
@@ -3103,15 +3093,37 @@ function wireProfileEditor(user){
         publicProfileEnabled:!!($('profilePublicEnabled') && $('profilePublicEnabled').checked),
       });
 
-      // 4. Claim/update username.
+      // 3. Claim/update username.
       if(usernameResult){
         await claimUsername(user.uid, usernameResult.value, { currentUsernameLower:currentLower });
       }
 
+      // 4. Upload images last so the stored avatar/cover URLs are final.
+      let imageUploadFailed = false;
+      try{
+        if(pendingAvatar){
+          setStatus('Uploading profile picture…');
+          await uploadProfileAvatar(user.uid, pendingAvatar);
+        }
+        if(pendingCover){
+          setStatus('Uploading cover image…');
+          await uploadProfileCover(user.uid, pendingCover);
+        }
+      }catch(uploadError){
+        imageUploadFailed = true;
+        if(uploadError && uploadError.code === 'invalid_asset'){ throw uploadError; }
+      }
+
       store.userProfile = await loadProfile(user.uid);
-      setStatus('Saved');
       pendingAvatar = null; pendingCover = null;
-      renderProfile();
+      renderProfile(); // rebuilds preview + sidebar with the stored image
+      // renderProfile rebuilt the DOM, so re-query the status element.
+      const freshStatus = $('profileSaveStatus');
+      if(freshStatus){
+        freshStatus.textContent = imageUploadFailed
+          ? 'Profile text saved, but image upload failed. Try uploading the image again.'
+          : 'Saved';
+      }
     }catch(error){
       const code = error && error.code;
       if(code === 'username_taken') setStatus('That username is already taken.');
