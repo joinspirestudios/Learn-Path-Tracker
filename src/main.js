@@ -31,6 +31,14 @@ import {
 } from './views.js';
 import { trackOperation } from './sync.js';
 import { appHash, hashRouteUrl, initialRouteIntent, parseAppRoute, parsePathRoute } from './routes.js';
+import {
+  listNotifications, getUnreadNotificationCount, markNotificationRead,
+  markAllNotificationsRead, archiveNotification, loadNotificationPreferences,
+  saveNotificationPreferences, saveWebPushSubscription,
+} from './notification-db.js';
+import { notificationPublicSafeView } from './notification-model.js';
+import { browserSupportsPush, requestWebPushPermission, currentPushPermission } from './web-push-permissions.js';
+import { subscribeToWebPush } from './web-push-client.js';
 
 let preflightPromise = null;
 let platformSyncPromise = null;
@@ -321,6 +329,8 @@ async function onSignIn(){
       if(result && result.status === 'permission_denied' && store.currentUser) runCloudPreflight(true);
     });
   }
+  // Load notifications in the background; never blocks the signed-in render.
+  loadNotificationsForCurrentUser();
 }
 
 function armAuthSoftTimeout(){
@@ -339,6 +349,8 @@ setSignInHandler(onSignIn);
 setSignOutHandler(() => {
   reconciledUserId = null;
   platformSyncKey = null;
+  store.notifications = []; store.notificationUnreadCount = 0;
+  store.notificationsOpen = false; store.notificationPreferences = null;
   applyHeader();
   if(store.state.current == null){
     if(hasPendingPathRoute() || parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search })) handleHashRoute();
@@ -346,6 +358,84 @@ setSignOutHandler(() => {
   }
   if(cloudAvailable()) startPlatformSync();
 });
+
+/* ---- Phase 6.17 notifications controller ---- */
+const WEB_PUSH_PUBLIC_VAPID_KEY = String(import.meta.env?.VITE_WEB_PUSH_PUBLIC_VAPID_KEY || '').trim();
+
+function notificationUid(){
+  return store.currentUser && store.currentUser.uid;
+}
+
+async function loadNotificationsForCurrentUser(){
+  const uid = notificationUid();
+  if(!uid || !fb.firestoreReady){
+    store.notifications = []; store.notificationUnreadCount = 0; store.notificationPreferences = null;
+    return;
+  }
+  store.webPushConfigured = browserSupportsPush() && !!WEB_PUSH_PUBLIC_VAPID_KEY;
+  store.webPushState = browserSupportsPush() ? currentPushPermission() : 'unsupported';
+  try{
+    const [items, unread, prefs] = await Promise.all([
+      listNotifications(uid, {}),
+      getUnreadNotificationCount(uid, {}),
+      loadNotificationPreferences(uid, {}),
+    ]);
+    store.notifications = items.map(notificationPublicSafeView);
+    store.notificationUnreadCount = unread;
+    store.notificationPreferences = prefs;
+  }catch(error){
+    // Notifications are non-critical chrome; never block the app on failure.
+    store.notifications = store.notifications || [];
+  }
+  refreshVisibleRoute();
+}
+
+function readPreferenceForm(){
+  const out = {};
+  document.querySelectorAll('[data-pref]').forEach(el => {
+    const key = el.getAttribute('data-pref');
+    if(el.type === 'checkbox') out[key] = !!el.checked;
+    else out[key] = el.value;
+  });
+  return out;
+}
+
+async function enableWebPushFromClick(){
+  const uid = notificationUid();
+  if(!uid) return;
+  if(!browserSupportsPush()){ store.webPushState = 'unsupported'; refreshVisibleRoute(); return; }
+  if(!WEB_PUSH_PUBLIC_VAPID_KEY){ store.webPushConfigured = false; refreshVisibleRoute(); return; }
+  const permission = await requestWebPushPermission();
+  store.webPushState = permission;
+  if(permission !== 'granted'){ refreshVisibleRoute(); return; }
+  const subscription = await subscribeToWebPush({ publicVapidKey: WEB_PUSH_PUBLIC_VAPID_KEY });
+  if(subscription){
+    try{
+      await saveWebPushSubscription(uid, subscription, {});
+      const prefs = await saveNotificationPreferences(uid, { ...(store.notificationPreferences || {}), webPushEnabled:true }, {});
+      store.notificationPreferences = prefs;
+    }catch(error){ /* surfaced via UI state */ }
+  }
+  refreshVisibleRoute();
+}
+
+async function handleNotificationAction(action, id){
+  const uid = notificationUid();
+  if(!uid) return;
+  if(action === 'open-notifications'){ store.notificationsOpen = !store.notificationsOpen; refreshVisibleRoute(); return; }
+  if(action === 'close-notifications-overlay'){ store.notificationsOpen = false; refreshVisibleRoute(); return; }
+  if(action === 'mark-read' && id){ await markNotificationRead(uid, id, {}); await loadNotificationsForCurrentUser(); return; }
+  if(action === 'mark-all-read'){ await markAllNotificationsRead(uid, {}); await loadNotificationsForCurrentUser(); return; }
+  if(action === 'archive-notification' && id){ await archiveNotification(uid, id, {}); await loadNotificationsForCurrentUser(); return; }
+  if(action === 'enable-web-push'){ await enableWebPushFromClick(); return; }
+  if(action === 'save-notification-preferences'){
+    try{
+      const prefs = await saveNotificationPreferences(uid, readPreferenceForm(), {});
+      store.notificationPreferences = prefs;
+    }catch(error){ /* best effort */ }
+    return;
+  }
+}
 
 /* ---- bootstrap ---- */
 async function init(){
@@ -358,6 +448,20 @@ async function init(){
   document.addEventListener('click', e => {
     const retry = e.target.closest('[data-retry-cloud]');
     if(retry){ e.preventDefault(); retryCloudConnection(); }
+    const notify = e.target.closest('[data-action]');
+    if(notify){
+      const action = notify.getAttribute('data-action');
+      const NOTIFICATION_ACTIONS = [
+        'open-notifications', 'close-notifications-overlay', 'mark-read', 'mark-all-read',
+        'archive-notification', 'enable-web-push', 'save-notification-preferences',
+      ];
+      // Ignore overlay backdrop clicks that bubble from inner controls.
+      if(action === 'close-notifications-overlay' && e.target !== notify) return;
+      if(NOTIFICATION_ACTIONS.includes(action)){
+        e.preventDefault();
+        handleNotificationAction(action, notify.getAttribute('data-notification-id') || '');
+      }
+    }
   });
   window.addEventListener('hashchange', () => { if(store.nav.handleHash) store.nav.handleHash(); });
   $('startDate').addEventListener('change', e => {

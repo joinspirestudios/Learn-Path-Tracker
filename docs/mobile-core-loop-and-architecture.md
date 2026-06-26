@@ -38,6 +38,13 @@ Phase 6.5 planning document. No mobile app is built yet.
 > implemented. No camera/audio. See
 > [docs/mobile-media-proof-offline-drafts.md](mobile-media-proof-offline-drafts.md).
 >
+> **Phase 6.17 update:** a cross-platform notification system ships — in-app
+> notification center + per-category preferences (incl. quiet hours), opt-in
+> browser push (web) and opt-in local reminders (mobile, `expo-notifications`).
+> Remote mobile push is deferred. Notifications are owner-only and never carry
+> private proof/reflections/evidence/tokens. See
+> [docs/cross-platform-notification-system.md](cross-platform-notification-system.md).
+>
 > **Phase 6.16.1 update:** media proof is fully wired into Daily Focus
 > (library/camera image proof, persisted drafts, owner-scoped upload, sync
 > blocked while pending) and scoped to images only.

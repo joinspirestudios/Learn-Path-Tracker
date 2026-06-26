@@ -53,6 +53,13 @@ export const MOBILE_PRIVACY_RULES = [
   'Offline drafts store only a local file URI + target task/day, never file bytes, base64 or tokens.',
   'Day-log proof includes uploaded storagePath/downloadURL only — never a local URI or draft-only proof.',
   'Uploaded download URLs and storage paths are owner-private and are not rendered publicly.',
+  // Phase 6.17 — cross-platform notifications:
+  'Notifications never include private proof bodies or private reflections.',
+  'Notifications never include raw evidence URLs, Storage paths, tokens or passwords.',
+  'Notifications live in the owner-only space users/{uid}/notifications and are never public.',
+  'Mobile local notifications are opt-in; OS permission is requested only when reminders are enabled.',
+  'Daily reminders and quiet hours are opt-in and stored per user.',
+  'Remote mobile push is deferred; no Expo push token or store credentials are used.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

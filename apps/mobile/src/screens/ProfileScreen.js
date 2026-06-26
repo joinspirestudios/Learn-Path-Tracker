@@ -7,11 +7,13 @@ import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraStatusPill } from '../components/AuroraStatusPill.js';
 import { MobileProfileCard } from '../components/MobileProfileCard.js';
 import { MobileProfileEditor } from '../components/MobileProfileEditor.js';
+import { MobileNotificationBadge } from '../components/MobileNotificationBadge.js';
 
 // Shows a safe signed-in account summary + profile preview/editor. Never exposes
 // ID tokens.
 export function ProfileScreen({
-  user, configured, localMode, profile, profileBusy, profileStatus, onSaveProfile, onSignOut,
+  user, configured, localMode, profile, profileBusy, profileStatus,
+  notificationUnreadCount = 0, onOpenNotifications, onSaveProfile, onSignOut,
 }) {
   const merged = { ...(profile || {}), uid: user && user.uid, displayName: (profile && profile.displayName) || (user && user.displayName) || '' };
 
@@ -38,6 +40,17 @@ export function ProfileScreen({
           </Text>
         )}
       </AuroraCard>
+
+      {user ? (
+        <AuroraCard>
+          <View style={styles.headRow}>
+            <Text style={styles.title}>Notifications</Text>
+            <MobileNotificationBadge count={notificationUnreadCount} />
+          </View>
+          <Text style={styles.rowMuted}>In-app notifications, reminders and quiet hours.</Text>
+          <AuroraButton label="Open notifications" variant="secondary" onPress={onOpenNotifications} />
+        </AuroraCard>
+      ) : null}
 
       {user ? <MobileProfileCard profile={merged} /> : null}
 

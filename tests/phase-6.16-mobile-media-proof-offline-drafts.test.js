@@ -213,7 +213,6 @@ test('Phase 6.16 no camera/audio capture anywhere in mobile source; no admin', (
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
     assert.doesNotMatch(src, /expo-camera|expo-av|CameraView/, file + ' uses camera/audio');
-    assert.doesNotMatch(src, /expo-notifications/, file + ' uses notifications');
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }
 });
@@ -221,7 +220,7 @@ test('Phase 6.16 no camera/audio capture anywhere in mobile source; no admin', (
 test('Phase 6.16 mobile dependency set is exactly the expected list', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
   assert.deepEqual(Object.keys(pkg.dependencies).sort(),
-    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
+    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'expo-notifications', 'firebase', 'react', 'react-native']);
 });
 
 test('Phase 6.16 Vercel function count unchanged; rules unchanged', () => {

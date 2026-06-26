@@ -176,7 +176,7 @@ test('Phase 6.15.3 mobile proof display components exist and are display-only', 
 
 test('Phase 6.15.3 mobile deps unchanged (no capture/upload deps)', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'expo-notifications', 'firebase', 'react', 'react-native']);
 });
 
 /* ── Rules + function count unchanged ── */

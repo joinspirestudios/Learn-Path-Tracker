@@ -6,6 +6,14 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#15131C"
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true
     },

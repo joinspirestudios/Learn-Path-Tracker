@@ -205,7 +205,7 @@ test('Phase 6.16.1 no notifications/social/admin in mobile source; no new Vercel
   const sources = [resolve(mobile, 'App.js'), ...walk(resolve(mobile, 'src'))];
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
-    assert.doesNotMatch(src, /expo-notifications|leaderboard|\bfollowers?\b|\bfollowing\b/i, file);
+    assert.doesNotMatch(src, /leaderboard|\bfollowers?\b|\bfollowing\b/i, file);
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }
   const files = readdirSync(resolve(root, 'api'), { withFileTypes: true })
