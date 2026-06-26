@@ -6,48 +6,80 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 import { AuroraButton } from './AuroraButton.js';
 import { validateMediaAsset, normalizeMediaAsset } from '../core/mobileMediaProofMappers.js';
 
-// Picks an image/file from the device LIBRARY (no camera, no audio) for proof.
-// Validates type/size before handing the asset to onPicked. Never uploads here.
+// Image proof picker. Library selection OR camera capture (image-only — no
+// audio/video/PDF). Permissions are requested ONLY inside the relevant user
+// action, never at app launch. Validates before handing the asset upward; never
+// uploads here.
 export function MobileMediaProofPicker({ onPicked, busy = false }) {
   const [error, setError] = useState('');
 
-  async function pickFromLibrary() {
+  function imageMediaTypes() {
+    return ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : undefined;
+  }
+
+  function handleResult(result, onError) {
+    if (result.canceled) return;
+    const picked = (result.assets && result.assets[0]) || null;
+    if (!picked) return;
+    const asset = normalizeMediaAsset({
+      uri: picked.uri,
+      fileName: picked.fileName,
+      mimeType: picked.mimeType || picked.type,
+      size: picked.fileSize || picked.size,
+      width: picked.width,
+      height: picked.height,
+    });
+    const check = validateMediaAsset(asset);
+    if (!check.ok) { setError(check.error); return; }
+    onPicked && onPicked(asset);
+  }
+
+  async function chooseFromLibrary() {
     setError('');
     try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { setError('Photo library permission is needed to choose proof images.'); return; }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : undefined,
-        quality: 0.85,
-        allowsMultipleSelection: false,
+        mediaTypes: imageMediaTypes(), quality: 0.85, allowsMultipleSelection: false,
       });
-      if (result.canceled) return;
-      const picked = (result.assets && result.assets[0]) || null;
-      if (!picked) return;
-      const asset = normalizeMediaAsset({
-        uri: picked.uri,
-        fileName: picked.fileName,
-        mimeType: picked.mimeType || picked.type,
-        size: picked.fileSize || picked.size,
-      });
-      const check = validateMediaAsset(asset);
-      if (!check.ok) { setError(check.error); return; }
-      onPicked && onPicked(asset);
+      handleResult(result);
     } catch {
-      setError('Could not open your photo library.');
+      setError('Could not select image.');
+    }
+  }
+
+  async function takePhoto() {
+    setError('');
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { setError('Camera permission is needed to take proof photos.'); return; }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: imageMediaTypes(), quality: 0.85,
+      });
+      handleResult(result);
+    } catch {
+      setError('Could not take photo.');
     }
   }
 
   return (
     <View style={styles.wrap}>
-      <AuroraButton label={busy ? 'Please wait…' : 'Add photo or file proof'} variant="secondary" disabled={busy} onPress={pickFromLibrary} />
+      <Text style={styles.label}>Image proof</Text>
+      <View style={styles.row}>
+        <AuroraButton label={busy ? 'Please wait…' : 'Choose photo'} variant="secondary" disabled={busy} onPress={chooseFromLibrary} />
+        <AuroraButton label="Take photo" variant="secondary" disabled={busy} onPress={takePhoto} />
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Text style={styles.note}>From your library only. JPEG, PNG, WebP or PDF, up to 10 MB. Proof stays private until you publish.</Text>
+      <Text style={styles.note}>Only JPEG, PNG or WebP images are supported, up to 10 MB. Proof stays private until you publish.</Text>
     </View>
   );
 }
 
 const c = auroraTheme.colors;
 const styles = StyleSheet.create({
-  wrap: { gap: auroraTheme.spacing.xs },
+  wrap: { gap: auroraTheme.spacing.xs, marginTop: auroraTheme.spacing.sm },
+  label: { color: c.text.muted, fontSize: 12, fontWeight: '700' },
+  row: { flexDirection: 'row', gap: auroraTheme.spacing.sm },
   error: { color: c.accent.danger, fontSize: 13 },
   note: { color: c.text.muted, fontSize: 11, lineHeight: 16 },
 });

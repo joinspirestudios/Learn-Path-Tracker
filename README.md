@@ -708,6 +708,15 @@ drafts** (AsyncStorage) that flush when back online.
 - Pure core (`mobileMediaProofMappers`, `mobileOfflineDrafts`, `mobileProofUploadState`) + DI services (`mobileProofStorageRepository`, `mobileMediaProofRepository`, `mobileOfflineDraftRepository`) + RN components.
 - Proof is private by default and "submitted", never "verified". No camera/audio, no notifications, no new Storage path, no rules changes.
 
+**Phase 6.16.1 — media proof runtime wiring:** the 6.16 foundation is now wired
+into the live flow. Daily Focus offers **image proof** (library or camera via
+`expo-image-picker`, permissions on tap), creates persisted offline drafts, and
+uploads to the owner-scoped path `users/{uid}/proofMedia/{pathId}/day-N/{taskId}/...`.
+Uploaded image proof satisfies proof-required tasks; draft-only local images never
+sync. Day sync is **blocked while uploads are pending**; the day log carries
+uploaded metadata only (no local URI/base64). Scope tightened to **images only**
+(no PDF/file/video/audio).
+
 See [`docs/mobile-media-proof-offline-drafts.md`](docs/mobile-media-proof-offline-drafts.md).
 
 > **Deploy Firebase rules separately — Vercel does not.** After profile/

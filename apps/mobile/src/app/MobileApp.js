@@ -12,7 +12,8 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 import { MOBILE_TABS } from '../navigation/mobileTabs.js';
 import {
   createInitialMobileLoopState, startTodaySession, markTaskDone, addTextProof,
-  addLinkProof, addTaskReflection, goToNextTask, goToPreviousTask, finishMobileDay,
+  addLinkProof, addTaskReflection, addUploadedMediaProof,
+  goToNextTask, goToPreviousTask, finishMobileDay,
 } from '../core/mobileCoreLoop.js';
 import {
   AUTH_STATUS, resolveAuthStatus, createAsyncState, asyncLoading, asyncLoaded, asyncError,
@@ -20,6 +21,10 @@ import {
 import { SYNC_STATUS } from '../core/mobileSyncStatus.js';
 import { buildDayLogPayload } from '../core/mobileDaySync.js';
 import { buildPublicSummary } from '../core/mobilePublicProgressMappers.js';
+import {
+  createProofDraft, addDraft, removeDraft, markDraftStatus, pendingDrafts,
+} from '../core/mobileOfflineDrafts.js';
+import { UPLOAD_STATUS } from '../core/mobileProofUploadState.js';
 import { createFirebaseClient } from '../services/firebaseClient.js';
 import { createMobileAuthService } from '../services/authService.js';
 import { createPathRepository } from '../services/pathRepository.js';
@@ -28,6 +33,9 @@ import { createRoadmapRepository } from '../services/roadmapRepository.js';
 import { createDayLogRepository } from '../services/dayLogRepository.js';
 import { createMobilePublicProgressRepository } from '../services/mobilePublicProgressRepository.js';
 import { createProfileRepository } from '../services/profileRepository.js';
+import { createMobileProofStorageRepository } from '../services/mobileProofStorageRepository.js';
+import { createMobileMediaProofRepository } from '../services/mobileMediaProofRepository.js';
+import { createMobileOfflineDraftRepository } from '../services/mobileOfflineDraftRepository.js';
 import { createApiClient } from '../services/apiClient.js';
 import { getMobileApiBaseUrl } from '../services/env.js';
 
@@ -54,6 +62,10 @@ export function MobileApp() {
   const userGateway = useMemo(() => client.createUserDataGateway(), [client]);
   const dayLogRepo = useMemo(() => createDayLogRepository({ gateway: userGateway }), [userGateway]);
   const profileRepo = useMemo(() => createProfileRepository({ gateway: userGateway }), [userGateway]);
+  const storageGateway = useMemo(() => client.createStorageGateway(), [client]);
+  const proofStorageRepo = useMemo(() => createMobileProofStorageRepository({ storageGateway }), [storageGateway]);
+  const mediaProofRepo = useMemo(() => createMobileMediaProofRepository({ storageRepo: proofStorageRepo }), [proofStorageRepo]);
+  const offlineDraftRepo = useMemo(() => createMobileOfflineDraftRepository({}), []);
   const apiClient = useMemo(
     () => createApiClient({ baseUrl: getMobileApiBaseUrl(), getIdToken: () => authService.getIdToken() }),
     [authService],
@@ -97,6 +109,10 @@ export function MobileApp() {
   const [profile, setProfile] = useState(null);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileStatus, setProfileStatus] = useState('');
+
+  // Media proof drafts + upload state (Phase 6.16.1).
+  const [proofDrafts, setProofDrafts] = useState([]);
+  const [proofUploadError, setProofUploadError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -198,10 +214,72 @@ export function MobileApp() {
   }
   function handleBackToToday() { setActiveTab('today'); setActiveFlow('today'); }
 
+  // ── Media proof drafts + upload (Phase 6.16.1) ──
+  const currentPathId = () => (selectedPath && selectedPath.id) || loopState.path.id;
+
+  const loadProofDrafts = useCallback(async () => {
+    try { setProofDrafts(await offlineDraftRepo.loadDrafts()); }
+    catch { setProofDrafts([]); }
+  }, [offlineDraftRepo]);
+
+  useEffect(() => { loadProofDrafts(); }, [loadProofDrafts]);
+
+  async function persistAndSet(drafts) {
+    setProofDrafts(drafts);
+    try { await offlineDraftRepo.clear(); for (const d of drafts) await offlineDraftRepo.saveDraft(d); } catch { /* best effort */ }
+  }
+
+  async function handleAddImageProofDraft(taskId, asset) {
+    if (!authUser) { setProofUploadError('Please sign in to attach proof.'); return; }
+    const draft = createProofDraft({
+      pathId: currentPathId(), dayNumber: loopState.path.dayNumber, taskId, asset, uid: authUser.uid,
+    });
+    const next = addDraft(proofDrafts, draft);
+    await persistAndSet(next);
+    handleUploadProofDraft(draft.id, next);
+  }
+
+  async function handleUploadProofDraft(draftId, source) {
+    const drafts = source || proofDrafts;
+    const draft = drafts.find(d => d.id === draftId);
+    if (!draft || !authUser) return;
+    setProofUploadError('');
+    await persistAndSet(markDraftStatus(drafts, draftId, UPLOAD_STATUS.UPLOADING));
+    try {
+      const record = await mediaProofRepo.submitMediaProof({
+        uid: authUser.uid, pathId: draft.pathId, dayNumber: draft.dayNumber, taskId: draft.taskId, asset: draft.asset,
+      });
+      // Attach the UPLOADED proof to the task (storagePath/downloadURL only).
+      setLoopState(s => addUploadedMediaProof(s, draft.taskId, record));
+      await persistAndSet(removeDraft(markDraftStatus(drafts, draftId, UPLOAD_STATUS.UPLOADED), draftId));
+    } catch (error) {
+      const offline = error && error.code === 'unauthenticated' ? false : true;
+      await persistAndSet(markDraftStatus(drafts, draftId,
+        offline ? UPLOAD_STATUS.FAILED : UPLOAD_STATUS.FAILED, 'Upload failed. Tap retry.'));
+      setProofUploadError('We could not upload that proof image. Tap retry.');
+    }
+  }
+
+  function handleRetryProofDraft(draftId) { handleUploadProofDraft(draftId); }
+
+  async function handleRemoveProofDraft(draftId) {
+    await persistAndSet(removeDraft(proofDrafts, draftId));
+  }
+
+  const proofDraftsForTask = (taskId) => proofDrafts.filter(d => d.taskId === taskId);
+  const pendingProofCount = pendingDrafts(proofDrafts).length;
+  const failedProofCount = proofDrafts.filter(d => d.status === UPLOAD_STATUS.FAILED).length;
+  const uploadingProofCount = proofDrafts.filter(d => d.status === UPLOAD_STATUS.UPLOADING).length;
+
   // ── Day sync + publish (Phase 6.13) ──
   async function handleSyncDay() {
     if (!authUser) { setSyncError('Please sign in again.'); return; }
-    const pathId = (selectedPath && selectedPath.id) || loopState.path.id;
+    // Block sync while required media proof is still pending/failed upload.
+    if (pendingProofCount > 0 || uploadingProofCount > 0) {
+      setSyncError('Upload your pending proof images before syncing the day.');
+      return;
+    }
+    const pathId = currentPathId();
     const payload = buildDayLogPayload(loopState, {
       pathId, uid: authUser.uid, dayNumber: loopState.path.dayNumber,
     });
@@ -293,6 +371,13 @@ export function MobileApp() {
       return (
         <DailyFocusScreen
           loopState={loopState}
+          signedIn={signedIn}
+          proofDraftsForTask={proofDraftsForTask}
+          proofUploadError={proofUploadError}
+          onAddImageProof={handleAddImageProofDraft}
+          onUploadDraft={handleRetryProofDraft}
+          onRetryDraft={handleRetryProofDraft}
+          onRemoveDraft={handleRemoveProofDraft}
           onProofChange={handleProofChange}
           onProofUrlChange={handleProofUrlChange}
           onReflectionChange={handleReflectionChange}
@@ -312,6 +397,10 @@ export function MobileApp() {
           syncStatus={syncStatus}
           syncError={syncError}
           onSync={handleSyncDay}
+          pendingProofCount={pendingProofCount}
+          failedProofCount={failedProofCount}
+          uploadingProofCount={uploadingProofCount}
+          onRetryUploads={() => pendingDrafts(proofDrafts).forEach(d => handleRetryProofDraft(d.id))}
           publishStatus={publishStatus}
           publishError={publishError}
           publicSummary={publicSummary}
@@ -329,6 +418,8 @@ export function MobileApp() {
         selectedCloudPath={selectedPath}
         signedIn={signedIn}
         syncStatus={syncStatus}
+        pendingProofCount={pendingProofCount}
+        failedProofCount={failedProofCount}
         onStartToday={handleStartToday}
         onContinueDay={handleContinueDay}
         onViewResult={handleViewResult}
@@ -345,6 +436,8 @@ export function MobileApp() {
           <PathRoadmapScreen
             roadmapState={roadmapState}
             selectedPath={selectedPath}
+            pendingProofCount={pendingProofCount}
+            failedProofCount={failedProofCount}
             onBack={() => setPathView('list')}
             onOpenToday={handleBackToToday}
           />

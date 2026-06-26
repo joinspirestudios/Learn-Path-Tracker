@@ -11,6 +11,7 @@ import { MobileSyncStatusPill } from '../components/MobileSyncStatusPill.js';
 
 export function TodayScreen({
   loopState, selectedCloudPath, signedIn, syncStatus = SYNC_STATUS.LOCAL_ONLY,
+  pendingProofCount = 0, failedProofCount = 0,
   onStartToday, onContinueDay, onViewResult, onReviewPath,
 }) {
   const summary = getTodaySummary(loopState);
@@ -60,6 +61,14 @@ export function TodayScreen({
           </View>
         ) : null}
       </AuroraCard>
+
+      {(pendingProofCount > 0 || failedProofCount > 0) ? (
+        <Text style={styles.note}>
+          {failedProofCount > 0
+            ? failedProofCount + ' proof upload failed'
+            : pendingProofCount + ' proof upload' + (pendingProofCount === 1 ? '' : 's') + ' pending'}
+        </Text>
+      ) : null}
 
       <AuroraButton label={cta.label} variant="primary" onPress={handlePrimary} />
       <AuroraButton label="View local roadmap" variant="ghost" onPress={onReviewPath} />

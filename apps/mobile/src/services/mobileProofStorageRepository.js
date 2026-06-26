@@ -4,7 +4,7 @@
 // and `fetchBlob` (uri -> Blob). Tests inject fakes so no live Storage/network is
 // touched. Never logs file contents or tokens.
 
-import { validateMediaAsset, mediaProofStoragePath, normalizeMediaAsset } from '../core/mobileMediaProofMappers.js';
+import { validateMediaAsset, mobileProofStoragePath, normalizeMediaAsset } from '../core/mobileMediaProofMappers.js';
 
 function newAssetId() {
   return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
@@ -20,12 +20,12 @@ export function createMobileProofStorageRepository({ storageGateway, fetchBlob =
   if (!storageGateway) throw new Error('createMobileProofStorageRepository requires a storageGateway');
 
   return {
-    async uploadMediaProof({ uid, enrollmentId, asset } = {}) {
+    async uploadMediaProof({ uid, pathId, dayNumber, taskId, asset } = {}) {
       if (!uid) throw Object.assign(new Error('Sign in required'), { code: 'unauthenticated' });
       const normalized = normalizeMediaAsset(asset || {});
       const check = validateMediaAsset(asset || {});
       if (!check.ok) throw Object.assign(new Error(check.error), { code: 'invalid_media' });
-      const path = mediaProofStoragePath({ uid, enrollmentId, assetId: newAssetId() });
+      const path = mobileProofStoragePath({ uid, pathId, dayNumber, taskId, assetId: newAssetId() });
       const blob = await fetchBlob(normalized.uri);
       const result = await storageGateway.uploadFile(path, blob, { contentType: normalized.contentType });
       return { storagePath: result.path || path, downloadURL: result.downloadURL || '' };

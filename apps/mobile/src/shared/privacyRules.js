@@ -45,12 +45,14 @@ export const MOBILE_PRIVACY_RULES = [
   'Bio and cover are hidden when the public profile is disabled.',
   'Profile/path-banner images use narrow Storage paths and image-only validation.',
   'Mobile 6.15 does not upload proof media, and does not add camera/audio/file pickers.',
-  // Phase 6.16 — media proof upload + offline drafts:
-  'Media proof is selected from the device library only — no camera or audio capture.',
-  'Media proof uploads to the owner-only evidence Storage path (evidence/{uid}/...).',
-  'Media proof is private by default; it is "submitted", never "verified".',
-  'Offline drafts store only a local file URI + target task/day, never file bytes or tokens.',
-  'Uploaded download URLs are owner-private and are not exposed publicly by default.',
+  // Phase 6.16 / 6.16.1 — image proof upload + offline drafts:
+  'Media proof is IMAGE only (JPEG/PNG/WebP) — no PDF/file/video/audio.',
+  'Image proof is selected from the library or camera; permissions are requested only on the relevant tap.',
+  'Image proof uploads to the owner-only path users/{uid}/proofMedia/{pathId}/day-N/{taskId}/{assetId}.',
+  'Image proof is private by default; it is "submitted", never "verified".',
+  'Offline drafts store only a local file URI + target task/day, never file bytes, base64 or tokens.',
+  'Day-log proof includes uploaded storagePath/downloadURL only — never a local URI or draft-only proof.',
+  'Uploaded download URLs and storage paths are owner-private and are not rendered publicly.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

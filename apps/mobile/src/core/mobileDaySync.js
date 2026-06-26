@@ -46,8 +46,11 @@ export function buildDayLogPayload(loopState, { pathId, uid, dayNumber } = {}) {
   const completedTaskIds = loopState.tasks
     .filter(t => loopState.session.taskState[t.id] && loopState.session.taskState[t.id].done)
     .map(t => t.id);
-  // Private proof records (kept private in the user's own space).
+  // Private proof records (kept private in the user's own space). Includes
+  // UPLOADED image proof (storagePath + downloadURL) but never a local URI or
+  // raw bytes, and never draft-only proof.
   const proof = collectSubmittedProof(loopState.session);
+  const uploadedMediaProofCount = proof.filter(p => p.type === 'image' && p.storagePath).length;
   const reflections = {};
   for (const [taskId, st] of Object.entries(loopState.session.taskState)) {
     if (st && st.reflection && String(st.reflection).trim()) reflections[taskId] = String(st.reflection);
@@ -64,8 +67,9 @@ export function buildDayLogPayload(loopState, { pathId, uid, dayNumber } = {}) {
     totalTaskCount: score.total,
     completedTaskCount: score.completed,
     completedTaskIds,
-    proofSubmittedCount: score.proofSubmitted, // submitted, not verified
-    proof, // private
+    proofSubmittedCount: proof.length, // submitted, not verified (text/link/image)
+    uploadedMediaProofCount,
+    proof, // private — storagePath/downloadURL only, never localUri/base64
     reflections, // private
     source: 'mobile',
     schemaVersion: DAY_LOG_SCHEMA_VERSION,

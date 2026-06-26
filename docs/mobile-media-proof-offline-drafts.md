@@ -73,8 +73,43 @@ in-memory AsyncStorage) and source-level checks for the RN components — no liv
 Expo/Firebase/Storage/network calls, and the test never imports the Expo-backed
 picker component.
 
+## Phase 6.16.1 — runtime wiring + image-only
+
+Phase 6.16 shipped the foundation modules but did not wire them into the live
+flow. Phase 6.16.1 completes the runtime and tightens scope:
+
+- **Image only.** `mobileMediaProofMappers` now allows `image/jpeg`, `image/png`,
+  `image/webp` only — **no PDF, file, video, audio, or document proof**.
+- **Library + camera.** `MobileMediaProofPicker` offers "Choose photo"
+  (`launchImageLibraryAsync`) and "Take photo" (`launchCameraAsync`) via
+  `expo-image-picker`. Permissions are requested **only inside the relevant tap**
+  (`requestMediaLibraryPermissionsAsync` / `requestCameraPermissionsAsync`), never
+  at app launch. No separate `expo-camera`/`expo-av` module is added.
+- **Owner-scoped Storage path.** Uploads go to
+  `users/{uid}/proofMedia/{pathId}/day-{dayNumber}/{taskId}/{assetId}` (segments
+  sanitized; no traversal). This replaces the enrollment-based path (mobile
+  enrollment is deferred). Storage rules allow only the owner to read/write this
+  path, image content types only, ≤ 10 MB — no generic or public path.
+- **MobileApp wiring.** Instantiates the storage gateway + proof storage / media
+  proof / offline-draft repositories and exposes `handleAddImageProofDraft`,
+  `handleUploadProofDraft`, `handleRetryProofDraft`, `handleRemoveProofDraft`, and
+  draft persistence to the screens. Screens never call Storage directly.
+- **Daily Focus.** Renders the picker for proof tasks, shows draft state
+  (pending/uploading/failed) via `MobileProofDraftCard`, and lets uploaded image
+  proof satisfy a proof-required task. A draft-only local image does **not** satisfy
+  it and is never synced.
+- **Sync blocking.** `buildDayLogPayload` includes uploaded image proof metadata
+  (storagePath + downloadURL, `submitted:true`/`verified:false`) but never a local
+  URI, base64, or draft-only proof. Completion Result shows
+  uploading/pending/failed counts and **blocks "Sync day" while uploads are
+  pending**; Today/Roadmap show a compact pending/failed status.
+- **Draft persistence.** Drafts persist via AsyncStorage and store only a local
+  URI + target task/day (never bytes/tokens). Copying picker files into
+  `FileSystem.documentDirectory` is **deferred**; drafts remain retryable while the
+  picker URI is valid (documented limitation).
+
 ## What remains deferred
 
-Camera/audio capture, video proof, background upload, and per-artifact public
-media projection remain deferred. Notifications are Phase 6.17; store readiness is
-Phase 6.18.
+PDF/file/video/audio/document proof, copying draft files into app-local storage,
+background upload, and per-artifact public media projection remain deferred.
+Notifications are Phase 6.17; store readiness is Phase 6.18.

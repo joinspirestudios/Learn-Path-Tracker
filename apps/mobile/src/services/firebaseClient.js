@@ -79,7 +79,13 @@ export function createStorageGateway({ ensure }) {
     const url = await sdk.getDownloadURL(ref);
     return { path, downloadURL: url };
   }
-  return { uploadFile };
+  async function getDownloadURL(path) {
+    const { sdk, storage } = await ensure();
+    if (!storage) throw new Error('Storage is not available');
+    const ref = sdk.ref(storage, path);
+    return sdk.getDownloadURL(ref);
+  }
+  return { uploadFile, getDownloadURL };
 }
 
 // Reads/writes documents under users/{uid}/{sub}/{id}. Firestore rules already
