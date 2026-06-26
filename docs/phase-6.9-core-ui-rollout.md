@@ -165,6 +165,7 @@ pre-launch web polish:
 - **Phase 6.15.4 — Proof Feed, Daily Documentation and Gallery UX**: proof as a daily documentation feed + gallery.
 - **Phase 6.16 — Mobile Media Proof Upload and Offline Drafts**: library image/PDF proof upload + offline draft queue.
 - **Phase 6.17 — Cross-Platform Notification System**
+- **Phase 6.17.1 — Browser Push Delivery and Notification Permission QA Repair**: real opt-in browser push delivery (`web-push`), send-test + interaction-trigger push, expired-subscription pruning.
 - **Phase 6.18 — Mobile Store Readiness and Beta QA**
 - **Phase 6.9.12 — Aurora / Proof Ledger Visual System Decision and Web UI Final Polish** (parked web visual feedback; see [aurora-ui-feedback-backlog.md](aurora-ui-feedback-backlog.md))
 - **Phase 7.0 — Rolling Adaptive Planning**

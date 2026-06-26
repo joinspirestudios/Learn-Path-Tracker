@@ -313,9 +313,10 @@ test('Mobile: CSS collapses side nav and shows bottom nav on small screens', () 
 
 test('No new dependencies added', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  const deps = Object.keys(pkg.dependencies || {});
+  const deps = Object.keys(pkg.dependencies || {}).sort();
   const devDeps = Object.keys(pkg.devDependencies || {});
-  assert.ok(deps.length <= 3, 'should have at most 3 runtime deps');
+  // Phase 6.17.1 adds `web-push` for real browser push delivery (server-side).
+  assert.deepEqual(deps, ['@anthropic-ai/sdk', 'firebase', 'firebase-admin', 'web-push']);
   assert.ok(devDeps.length <= 3, 'should have at most 3 dev deps');
   assert.equal(pkg.dependencies['firebase-admin'], '13.10.0');
 });

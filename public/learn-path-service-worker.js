@@ -2,9 +2,8 @@
  *
  * Renders incoming push notifications (title/body/icon/badge/actionUrl) and
  * opens the in-app actionUrl on click. It shows ONLY the public-safe fields the
- * server sends; it never has access to private proof, reflections, evidence
- * URLs, Storage paths, or tokens. No app-asset caching is performed in this
- * phase. */
+ * server sends (sanitized server-side) and never any private user content. No
+ * app-asset caching is performed in this phase. */
 
 self.addEventListener('install', () => {
   self.skipWaiting();

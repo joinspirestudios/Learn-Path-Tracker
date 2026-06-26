@@ -6,7 +6,6 @@
 
 import { esc } from '../helpers.js';
 import { normalizeNotificationPreferences } from '../notification-preferences-model.js';
-import { pushPermissionMessage } from '../web-push-permissions.js';
 
 function toggleRow(key, label, description, checked) {
   return '<label class="aurora-pref-row" for="pref-' + esc(key) + '">'
@@ -28,27 +27,44 @@ function timeRow(key, label, value) {
 
 // pushState: 'unsupported' | 'denied' | 'granted' | 'default'
 // pushConfigured: whether server VAPID keys are present.
+// Distinguishes every browser-push state with clear, safe copy:
+//   unsupported           → not available in this browser
+//   client VAPID missing  → not configured yet (no enable button)
+//   server not configured → not configured yet (no enable button)
+//   permission denied     → blocked in browser settings (no enable button)
+//   granted + enabled     → on, with a "Turn off browser push" button
+//   granted/not-requested → off, with an "Enable browser push" button
 export function renderPushSection({ preferences, pushState = 'default', pushConfigured = true } = {}) {
   const p = normalizeNotificationPreferences(preferences || {});
   let note = '';
-  let controlDisabled = false;
+  let blocked = false; // no action possible
+  let action = '';
+  const enabledOn = p.webPushEnabled && pushState === 'granted' && pushConfigured;
+
   if (pushState === 'unsupported') {
     note = 'Browser notifications are not available in this browser.';
-    controlDisabled = true;
+    blocked = true;
   } else if (!pushConfigured) {
+    // Covers both a missing client VITE_WEB_PUSH_PUBLIC_VAPID_KEY and a server
+    // that has no VAPID keys configured.
     note = 'Browser push is not configured yet.';
-    controlDisabled = true;
+    blocked = true;
   } else if (pushState === 'denied') {
-    note = 'Notifications are blocked in your browser settings.';
-    controlDisabled = true;
+    note = 'Browser notifications are blocked in your browser settings.';
+    blocked = true;
+  } else if (enabledOn) {
+    note = 'Browser notifications are on.';
+    action = '<button type="button" class="aurora-pref-push-disable" data-action="disable-web-push">Turn off browser push</button>';
   } else {
-    note = pushPermissionMessage(pushState);
+    note = 'Browser notifications are off.';
+    action = '<button type="button" class="aurora-pref-push-enable" data-action="enable-web-push">Enable browser push</button>';
   }
-  return '<div class="aurora-pref-push">'
+
+  return '<div class="aurora-pref-push" data-push-state="' + esc(pushState) + '" data-push-configured="' + (pushConfigured ? 'true' : 'false') + '">'
     + toggleRow('webPushEnabled', 'Browser push notifications',
-      'Get reminders even when the tab is closed.', p.webPushEnabled && !controlDisabled)
-    + '<p class="aurora-pref-push-note"' + (controlDisabled ? ' data-push-blocked="true"' : '') + '>' + esc(note) + '</p>'
-    + (controlDisabled ? '' : '<button type="button" class="aurora-pref-push-enable" data-action="enable-web-push">Enable browser push</button>')
+      'Get reminders even when the tab is closed.', enabledOn)
+    + '<p class="aurora-pref-push-note"' + (blocked ? ' data-push-blocked="true"' : '') + '>' + esc(note) + '</p>'
+    + action
     + '</div>';
 }
 

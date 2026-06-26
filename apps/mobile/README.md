@@ -143,6 +143,9 @@ Expo push token, no store credentials). Notifications live in owner-only
 evidence URLs, Storage paths or tokens. See
 [`docs/cross-platform-notification-system.md`](../../docs/cross-platform-notification-system.md).
 
+Phase 6.17.1 added **web** browser-push delivery (`web-push` on the server) — it
+does not touch the mobile app. Remote **mobile** push remains deferred.
+
 ## Deferred to later mobile phases
 
 Remote push notifications and Expo push tokens, AI builder, voice transcription,

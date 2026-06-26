@@ -70,20 +70,63 @@ timezone is sanitized.
 ## Browser push setup (VAPID)
 
 Browser push is **off by default** and only requested after an explicit user
-action (Settings toggle / "Enable browser push") — never on signup or import.
+action (the "Enable browser push" button in Profile → Notifications) — **never on
+app open, login, signup, import, or when opening the notification center.** The
+preferences panel shows the exact state: not configured, blocked in browser
+settings, off, or on (with a "Turn off browser push" control).
 
-Server env (never commit secrets):
+**Phase 6.17.1** completes the actual delivery path: `web-push` is now a root
+dependency, and `send-test-notification` plus the public-progress
+reaction/comment triggers send real browser pushes (best-effort) via
+`deliverUserPushNotifications` in `server/notification-service.js`.
+
+Client build-time env (browser bundle):
 
 ```
-WEB_PUSH_PUBLIC_VAPID_KEY    # safe to expose to the browser
+VITE_WEB_PUSH_PUBLIC_VAPID_KEY   # public VAPID key — required to subscribe
+```
+
+Server runtime env (never commit secrets):
+
+```
+WEB_PUSH_PUBLIC_VAPID_KEY    # same public key; safe to expose to the browser
 WEB_PUSH_PRIVATE_VAPID_KEY   # server-only secret — never client-side
-WEB_PUSH_SUBJECT             # mailto: or https: contact
+WEB_PUSH_SUBJECT             # mailto: or https: contact — server-only
+CRON_SECRET                  # server-only; secures the scheduler entry point
 ```
 
-The browser reads the public key from `VITE_WEB_PUSH_PUBLIC_VAPID_KEY`. If keys
-are missing, the optional `web-push` package is not installed, or the browser
-lacks support, push is **disabled gracefully** and in-app notifications keep
-working. To enable real sending: `npm install web-push` and set the env vars.
+`VITE_WEB_PUSH_PUBLIC_VAPID_KEY` and `WEB_PUSH_PUBLIC_VAPID_KEY` must hold the
+**same** public key. The browser reads the public key from
+`VITE_WEB_PUSH_PUBLIC_VAPID_KEY`; if it is missing the UI shows "Browser push is
+not configured yet" and offers no enable button. If the server `WEB_PUSH_*` vars
+are missing, the server still creates in-app notifications and **skips push
+safely**. The private key and `CRON_SECRET` are never exposed client-side.
+
+### Deployment checklist
+
+```
+1. Generate VAPID keys (e.g. `npx web-push generate-vapid-keys`).
+2. Set VITE_WEB_PUSH_PUBLIC_VAPID_KEY in Vercel (public key).
+3. Set WEB_PUSH_PUBLIC_VAPID_KEY in Vercel (same public key).
+4. Set WEB_PUSH_PRIVATE_VAPID_KEY in Vercel (private key — server only).
+5. Set WEB_PUSH_SUBJECT in Vercel (mailto: or https: contact).
+6. Redeploy the web app (over HTTPS).
+7. Open Profile → Notifications.
+8. Click "Enable browser push" and accept the browser permission.
+9. Click "Send test notification" — the in-app notification always appears; the
+   browser push appears too when the browser/OS allows it.
+```
+
+### Testing send-test-notification
+
+`send-test-notification` (current user only, rate-limited) always creates an
+in-app notification and returns a safe push summary: `webPushConfigured`,
+`pushAttempted`, `pushSent`, `pushExpired`, `pushDisabledReason`,
+`publicVapidKey`. It never returns raw subscription endpoints/keys. Push is
+attempted only when the user has `webPushEnabled`, a stored subscription, server
+VAPID configured, and quiet hours allow it. Gone/expired subscriptions (404/410)
+are pruned from `users/{uid}/pushSubscriptions`. In-app notifications work even
+when push is unavailable.
 
 Subscriptions are stored under `users/{uid}/pushSubscriptions/{id}` (endpoint +
 public keys only — never a token or password). On a gone/expired endpoint

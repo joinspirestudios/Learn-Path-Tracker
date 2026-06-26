@@ -730,6 +730,17 @@ and degrades gracefully when VAPID keys are absent. Mobile adds opt-in
 Notifications live in owner-only `users/{uid}/notifications` and never expose
 private proof, reflections, evidence URLs, Storage paths, tokens or emails. All
 endpoints run through the existing `community` router (no new Vercel function).
+**Phase 6.17.1 — browser push delivery:** `web-push` is now a root dependency and
+the delivery path is real. `send-test-notification` and the public-progress
+reaction/comment triggers send actual browser pushes (best-effort) to the owner's
+stored subscriptions when `webPushEnabled` is on, a subscription exists, server
+VAPID env is set, and quiet hours allow it; gone/expired subscriptions are pruned.
+Permission is still requested **only** on an explicit "Enable browser push" click,
+and the preferences panel clearly shows unsupported / not-configured / blocked /
+off / on. In-app notifications keep working when push is unavailable. Set
+`VITE_WEB_PUSH_PUBLIC_VAPID_KEY` (client) and `WEB_PUSH_PUBLIC_VAPID_KEY` /
+`WEB_PUSH_PRIVATE_VAPID_KEY` / `WEB_PUSH_SUBJECT` (server) to enable it.
+
 See [`docs/cross-platform-notification-system.md`](docs/cross-platform-notification-system.md).
 
 > **Deploy Firebase rules separately — Vercel does not.** After profile/

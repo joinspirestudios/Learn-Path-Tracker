@@ -25,7 +25,7 @@ import { normalizeNotification, notificationIsUnread, notificationPublicSafeView
 import {
   normalizeNotificationPreferences, defaultNotificationPreferences,
 } from '../../src/notification-preferences-model.js';
-import { createUserNotification, markNotificationServerRead } from '../notification-service.js';
+import { createUserNotification, markNotificationServerRead, deliverUserPushNotifications } from '../notification-service.js';
 import { getPublicVapidKey, webPushConfigured } from '../web-push-service.js';
 
 function userCol(db, uid, sub) {
@@ -197,7 +197,7 @@ export function createDeletePushSubscriptionHandler({ authenticate = requireAuth
 
 // POST send-test-notification — creates an in-app notification for the CURRENT
 // user only. Never targets another user. Reports whether push is configured.
-export function createSendTestNotificationHandler({ authenticate = requireAuth, rateLimit = enforceRateLimit, db = null, env = process.env } = {}) {
+export function createSendTestNotificationHandler({ authenticate = requireAuth, rateLimit = enforceRateLimit, db = null, env = process.env, webpush = null } = {}) {
   return async function handler(req, res) {
     const requestId = createRequestId();
     setPrivateNoStore(res, requestId);
@@ -206,6 +206,7 @@ export function createSendTestNotificationHandler({ authenticate = requireAuth, 
       if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); throw apiError('method_not_allowed', 'POST only.', 405); }
       await rateLimit(auth.uid, 'notificationTest');
       const firestore = db || getAdminFirestore();
+      // Always create the in-app notification (works even without push config).
       const notification = await createUserNotification({
         adminDb: firestore,
         uid: auth.uid,
@@ -216,10 +217,19 @@ export function createSendTestNotificationHandler({ authenticate = requireAuth, 
           uniqueSuffix: Date.now().toString(36),
         },
       });
+      // Best-effort browser push to the CURRENT user only — honors their
+      // preferences, quiet hours, stored subscription and server VAPID config.
+      const push = await deliverUserPushNotifications({
+        adminDb: firestore, uid: auth.uid, notification, env, webpush,
+      });
       return sendPrivateJson(res, 200, {
         ok: true,
         notification: notificationPublicSafeView(notification),
         webPushConfigured: webPushConfigured(env),
+        pushAttempted: push.disabledReason == null || push.sent > 0,
+        pushSent: push.sent,
+        pushExpired: push.expired,
+        pushDisabledReason: push.disabledReason,
         publicVapidKey: getPublicVapidKey(env),
       }, requestId);
     } catch (error) {
