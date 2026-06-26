@@ -61,12 +61,35 @@ export function normalizeProof(raw = {}) {
   return mapTextProof({ taskId: raw.taskId, body: raw.body, createdAt: raw.createdAt });
 }
 
-// Collect submitted private proof from a finished session's task state.
+// Map an UPLOADED media proof (from taskState.mediaProof) to a private proof
+// record. Includes storagePath + downloadURL (owner-private), never a local URI.
+export function mapUploadedMediaProof({ taskId, mediaProof = {} } = {}) {
+  return {
+    taskId: str(taskId),
+    type: 'image',
+    body: '',
+    url: '', // not a user-entered link
+    storagePath: str(mediaProof.storagePath),
+    downloadURL: str(mediaProof.downloadURL),
+    fileName: str(mediaProof.fileName),
+    fileType: str(mediaProof.fileType),
+    fileSize: Number(mediaProof.fileSize) || 0,
+    privacy: 'private',
+    submitted: true,
+    verified: false,
+  };
+}
+
+// Collect submitted private proof from a finished session's task state. Includes
+// uploaded image proof; never includes draft-only/local-URI media.
 export function collectSubmittedProof(session = {}) {
   const taskState = (session && session.taskState) || {};
   const out = [];
   for (const [taskId, st] of Object.entries(taskState)) {
     if (!st || !st.done) continue;
+    if (st.mediaProof && st.mediaProof.storagePath) {
+      out.push(mapUploadedMediaProof({ taskId, mediaProof: st.mediaProof }));
+    }
     if (st.proofUrl && isValidProofUrl(st.proofUrl)) {
       out.push(mapLinkProof({ taskId, url: st.proofUrl }));
     } else if (st.proofText && str(st.proofText)) {
@@ -81,6 +104,7 @@ export default {
   normalizeProofUrl,
   mapTextProof,
   mapLinkProof,
+  mapUploadedMediaProof,
   normalizeProof,
   collectSubmittedProof,
 };

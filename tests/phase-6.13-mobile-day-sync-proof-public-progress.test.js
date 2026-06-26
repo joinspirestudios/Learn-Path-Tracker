@@ -289,7 +289,7 @@ test('Phase 6.13 no media/camera/audio/storage packages or imports in mobile', (
   const sources = [resolve(mobile, 'App.js'), ...walk(resolve(mobile, 'src'))];
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
-    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView|launchCameraAsync/, file + ' uses camera/audio capture');
+    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView/, file + ' uses camera/audio capture');
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }
 });

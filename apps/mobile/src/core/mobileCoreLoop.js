@@ -163,6 +163,37 @@ export function addTaskReflection(state, taskId, reflection) {
   return next;
 }
 
+// Attach an UPLOADED media proof record (image) to a task. Only call this after
+// a successful Storage upload — it stores storagePath + downloadURL, never the
+// local URI or raw bytes. Draft-only/local proof must never be set here.
+export function addUploadedMediaProof(state, taskId, record = {}) {
+  const idx = indexOfTask(state, taskId);
+  if (idx < 0) return state;
+  const next = cloneState(state);
+  const id = state.tasks[idx].id;
+  next.session.taskState[id] = {
+    ...next.session.taskState[id],
+    mediaProof: {
+      proofKind: 'image',
+      storagePath: String(record.storagePath || ''),
+      downloadURL: String(record.evidenceUrl || record.downloadURL || ''),
+      fileName: String(record.fileName || ''),
+      fileType: String(record.fileType || ''),
+      fileSize: Number(record.fileSize) || 0,
+      submitted: true,
+      verified: false,
+    },
+  };
+  return next;
+}
+
+export function taskHasUploadedMediaProof(state, taskId) {
+  const idx = indexOfTask(state, taskId);
+  if (idx < 0) return false;
+  const st = state.session.taskState[state.tasks[idx].id] || {};
+  return !!(st.mediaProof && st.mediaProof.storagePath);
+}
+
 // Marks a task done. If the task requires text proof and none is stored (nor
 // supplied in payload), the task is NOT marked done and state is returned
 // unchanged — proof is required first.
@@ -175,9 +206,11 @@ export function markTaskDone(state, taskId, payload = {}) {
   const proofText = payload.proofText != null ? String(payload.proofText) : existing.proofText || '';
   const proofUrl = payload.proofUrl != null ? String(payload.proofUrl) : existing.proofUrl || '';
   const reflection = payload.reflection != null ? String(payload.reflection) : existing.reflection || '';
+  const hasUploadedMedia = !!(existing.mediaProof && existing.mediaProof.storagePath);
 
-  // A proof task needs either non-empty text proof or a valid link proof.
-  if (task.requiresProof && !String(proofText).trim() && !isValidProofUrl(proofUrl)) {
+  // A proof task is satisfied by text proof OR a valid link OR uploaded image
+  // proof. A draft-only/local image (no storagePath) does NOT satisfy it.
+  if (task.requiresProof && !String(proofText).trim() && !isValidProofUrl(proofUrl) && !hasUploadedMedia) {
     return state;
   }
 
@@ -257,6 +290,8 @@ export default {
   taskRequiresProofText,
   addTextProof,
   addTaskReflection,
+  addUploadedMediaProof,
+  taskHasUploadedMediaProof,
   markTaskDone,
   markTaskNotDone,
   goToNextTask,

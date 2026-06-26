@@ -247,7 +247,7 @@ test('Phase 6.15 no camera/audio capture or admin in mobile source', () => {
   const sources = [resolve(mobile, 'App.js'), ...walk(resolve(mobile, 'src'))];
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
-    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView|launchCameraAsync/, file);
+    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView/, file);
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }
 });

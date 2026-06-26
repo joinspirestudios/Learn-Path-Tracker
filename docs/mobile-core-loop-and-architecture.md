@@ -37,6 +37,10 @@ Phase 6.5 planning document. No mobile app is built yet.
 > owner-only evidence Storage) and **offline drafts** (AsyncStorage queue) are
 > implemented. No camera/audio. See
 > [docs/mobile-media-proof-offline-drafts.md](mobile-media-proof-offline-drafts.md).
+>
+> **Phase 6.16.1 update:** media proof is fully wired into Daily Focus
+> (library/camera image proof, persisted drafts, owner-scoped upload, sync
+> blocked while pending) and scoped to images only.
 > Next: **Phase 6.17 — Cross-Platform Notification System**.
 
 ## Product intent

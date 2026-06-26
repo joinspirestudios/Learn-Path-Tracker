@@ -12,10 +12,10 @@ export function createMobileMediaProofRepository({ storageRepo, now = () => Date
     validate(asset) {
       return validateMediaAsset(asset || {});
     },
-    async submitMediaProof({ uid, pathId, enrollmentId, dayNumber, taskId, asset } = {}) {
+    async submitMediaProof({ uid, pathId, dayNumber, taskId, asset } = {}) {
       const check = validateMediaAsset(asset || {});
       if (!check.ok) throw Object.assign(new Error(check.error), { code: 'invalid_media' });
-      const { storagePath, downloadURL } = await storageRepo.uploadMediaProof({ uid, enrollmentId, asset });
+      const { storagePath, downloadURL } = await storageRepo.uploadMediaProof({ uid, pathId, dayNumber, taskId, asset });
       return mediaProofRecord({
         taskId, dayNumber, pathId, uid, asset, storagePath, downloadURL, now: now(),
       });

@@ -11,7 +11,9 @@ import { AuroraEmptyState } from '../components/AuroraEmptyState.js';
 import { ASYNC_STATUS } from '../core/mobileCloudState.js';
 
 // Read-only cloud roadmap. No invented dates/progress/completion.
-export function PathRoadmapScreen({ roadmapState, selectedPath, activeDaySynced, onBack, onOpenToday }) {
+export function PathRoadmapScreen({
+  roadmapState, selectedPath, activeDaySynced, pendingProofCount = 0, failedProofCount = 0, onBack, onOpenToday,
+}) {
   const state = roadmapState || { status: ASYNC_STATUS.IDLE, items: [], error: '' };
   const roadmap = state.items && state.items[0];
 
@@ -39,6 +41,12 @@ export function PathRoadmapScreen({ roadmapState, selectedPath, activeDaySynced,
           <Text style={styles.note}>Cloud daily sessions are coming next. This roadmap is read-only and shows no invented progress.</Text>
         </>
       )}
+
+      {(pendingProofCount > 0 || failedProofCount > 0) ? (
+        <Text style={styles.note}>
+          {failedProofCount > 0 ? failedProofCount + ' proof upload failed' : pendingProofCount + ' proof upload pending'}
+        </Text>
+      ) : null}
 
       <AuroraButton label="Back to paths" variant="ghost" onPress={onBack} />
     </ScrollView>

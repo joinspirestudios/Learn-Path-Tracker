@@ -81,7 +81,8 @@ test('Phase 6.16 test is registered in root npm test', () => {
 
 test('Phase 6.16 media type/size validation (image+pdf, <=10MB)', () => {
   assert.equal(isAllowedMediaType('image/png'), true);
-  assert.equal(isAllowedMediaType('application/pdf'), true);
+  // Phase 6.16.1: image-only — PDF is no longer allowed.
+  assert.equal(isAllowedMediaType('application/pdf'), false);
   assert.equal(isAllowedMediaType('video/mp4'), false);
   assert.equal(isAllowedMediaSize(1000), true);
   assert.equal(isAllowedMediaSize(MEDIA_PROOF_MAX_BYTES + 1), false);
@@ -90,15 +91,15 @@ test('Phase 6.16 media type/size validation (image+pdf, <=10MB)', () => {
   assert.equal(validateMediaAsset({ uri: 'x', mimeType: 'image/png', size: 99 * 1024 * 1024 }).ok, false);
 });
 
-test('Phase 6.16 media kind + storage path under owner evidence path', () => {
+test('Phase 6.16 media kind is image; storage path is owner-scoped proofMedia', () => {
   assert.equal(mediaProofKind(imageAsset), 'image');
-  assert.equal(mediaProofKind(pdfAsset), 'file');
-  const path = mediaProofStoragePath({ uid: 'u1', enrollmentId: 'e1', assetId: 'x' });
-  assert.match(path, /^evidence\/u1\/e1\//);
+  // Phase 6.16.1: owner-scoped path (no enrollmentId dependency).
+  const path = mediaProofStoragePath({ uid: 'u1', pathId: 'p1', dayNumber: 2, taskId: 't1', assetId: 'x' });
+  assert.match(path, /^users\/u1\/proofMedia\/p1\/day-2\/t1\//);
 });
 
 test('Phase 6.16 media proof record is private/submitted, never verified', () => {
-  const rec = mediaProofRecord({ taskId: 't', dayNumber: 2, pathId: 'p', uid: 'u', asset: imageAsset, storagePath: 'evidence/u/e/x', downloadURL: 'https://dl/x' });
+  const rec = mediaProofRecord({ taskId: 't', dayNumber: 2, pathId: 'p', uid: 'u', asset: imageAsset, storagePath: 'users/u/proofMedia/p/day-2/t/x', downloadURL: 'https://dl/x' });
   assert.equal(rec.privacy, 'private');
   assert.equal(rec.submitted, true);
   assert.equal(rec.verified, false);
@@ -141,12 +142,12 @@ test('Phase 6.16 upload status transitions + offline queue', () => {
 
 /* ── 6. Repositories (DI, no live services) ── */
 
-test('Phase 6.16 storage repo uploads to evidence path via injected gateway', async () => {
+test('Phase 6.16 storage repo uploads to owner proofMedia path via injected gateway', async () => {
   const calls = [];
   const storageGateway = { uploadFile: async (path, blob, meta) => { calls.push({ path, meta }); return { path, downloadURL: 'https://dl/' + path }; } };
   const repo = createMobileProofStorageRepository({ storageGateway, fetchBlob: async () => ({ fake: 'blob' }) });
-  const res = await repo.uploadMediaProof({ uid: 'u1', enrollmentId: 'e1', asset: imageAsset });
-  assert.match(res.storagePath, /^evidence\/u1\/e1\//);
+  const res = await repo.uploadMediaProof({ uid: 'u1', pathId: 'p1', dayNumber: 2, taskId: 't1', asset: imageAsset });
+  assert.match(res.storagePath, /^users\/u1\/proofMedia\/p1\/day-2\/t1\//);
   assert.match(res.downloadURL, /^https:\/\/dl\//);
   assert.equal(calls[0].meta.contentType, 'image/png');
 });
@@ -154,16 +155,16 @@ test('Phase 6.16 storage repo uploads to evidence path via injected gateway', as
 test('Phase 6.16 storage repo rejects invalid media before upload', async () => {
   const storageGateway = { uploadFile: async () => { throw new Error('should not be called'); } };
   const repo = createMobileProofStorageRepository({ storageGateway, fetchBlob: async () => ({}) });
-  await assert.rejects(() => repo.uploadMediaProof({ uid: 'u1', enrollmentId: 'e1', asset: { uri: 'x', mimeType: 'video/mp4', size: 10 } }), e => e.code === 'invalid_media');
+  await assert.rejects(() => repo.uploadMediaProof({ uid: 'u1', pathId: 'p', dayNumber: 1, taskId: 't', asset: { uri: 'x', mimeType: 'video/mp4', size: 10 } }), e => e.code === 'invalid_media');
 });
 
 test('Phase 6.16 media proof repo orchestrates validate->upload->record', async () => {
-  const storageRepo = { uploadMediaProof: async () => ({ storagePath: 'evidence/u/e/x', downloadURL: 'https://dl/x' }) };
+  const storageRepo = { uploadMediaProof: async () => ({ storagePath: 'users/u/proofMedia/p/day-1/t/x', downloadURL: 'https://dl/x' }) };
   const repo = createMobileMediaProofRepository({ storageRepo });
-  const rec = await repo.submitMediaProof({ uid: 'u', pathId: 'p', enrollmentId: 'e', dayNumber: 1, taskId: 't', asset: imageAsset });
+  const rec = await repo.submitMediaProof({ uid: 'u', pathId: 'p', dayNumber: 1, taskId: 't', asset: imageAsset });
   assert.equal(rec.verified, false);
   assert.equal(rec.privacy, 'private');
-  assert.equal(rec.storagePath, 'evidence/u/e/x');
+  assert.equal(rec.storagePath, 'users/u/proofMedia/p/day-1/t/x');
   await assert.rejects(() => repo.submitMediaProof({ uid: 'u', asset: { uri: 'x', mimeType: 'video/mp4', size: 1 } }), e => e.code === 'invalid_media');
 });
 
@@ -192,7 +193,7 @@ test('Phase 6.16 media picker uses library only (no camera/audio)', () => {
   const src = read('apps/mobile/src/components/MobileMediaProofPicker.js');
   assert.match(src, /expo-image-picker/);
   assert.match(src, /launchImageLibraryAsync/);
-  assert.doesNotMatch(src, /launchCameraAsync|expo-camera|expo-av|CameraView/);
+  assert.doesNotMatch(src, /expo-camera|expo-av|CameraView/);
   assert.match(src, /validateMediaAsset/);
 });
 
@@ -211,7 +212,7 @@ test('Phase 6.16 no camera/audio capture anywhere in mobile source; no admin', (
   const sources = [resolve(mobile, 'App.js'), ...walk(resolve(mobile, 'src'))];
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
-    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView|launchCameraAsync/, file + ' uses camera/audio');
+    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView/, file + ' uses camera/audio');
     assert.doesNotMatch(src, /expo-notifications/, file + ' uses notifications');
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }

@@ -55,5 +55,15 @@ service firebase.storage {
         && request.auth.uid == userId
         && validProfileImage(5 * 1024 * 1024);
     }
+
+    // Phase 6.16.1: mobile media proof. Owner-scoped, IMAGE-only (no PDF/video/
+    // audio/document), <= 10 MB. Private — only the owner may read or write.
+    // No generic upload path and no public wildcard.
+    match /users/{userId}/proofMedia/{pathId}/{dayFolder}/{taskId}/{assetId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if signedIn()
+        && request.auth.uid == userId
+        && validProfileImage(10 * 1024 * 1024);
+    }
   }
 }

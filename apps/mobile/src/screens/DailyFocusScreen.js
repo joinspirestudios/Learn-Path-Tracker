@@ -5,16 +5,24 @@ import { auroraTheme } from '../theme/auroraTheme.js';
 import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraTaskCard } from '../components/AuroraTaskCard.js';
 import { AuroraProgressBar } from '../components/AuroraProgressBar.js';
+import { AuroraStatusPill } from '../components/AuroraStatusPill.js';
 import { MobileProofInput } from '../components/MobileProofInput.js';
+import { MobileMediaProofPicker } from '../components/MobileMediaProofPicker.js';
+import { MobileProofDraftCard } from '../components/MobileProofDraftCard.js';
 import {
   getCurrentTask, getCompletionSummary, canFinishMobileDay,
 } from '../core/mobileCoreLoop.js';
 import { isValidProofUrl } from '../core/mobileProofMappers.js';
+import { UPLOAD_STATUS } from '../core/mobileProofUploadState.js';
 
 // Daily Focus shows exactly ONE task at a time — never the whole task list.
-// Proof is text or link only (no files/camera/audio), saved privately.
+// Proof is text, link, or UPLOADED image (library/camera). Draft-only local
+// images are shown as pending and do not satisfy the task until uploaded.
 export function DailyFocusScreen({
-  loopState, onProofChange, onProofUrlChange, onReflectionChange,
+  loopState, signedIn,
+  proofDraftsForTask, proofUploadError = '',
+  onAddImageProof, onUploadDraft, onRetryDraft, onRemoveDraft,
+  onProofChange, onProofUrlChange, onReflectionChange,
   onMarkDone, onNext, onPrevious, onFinishDay, onExit,
 }) {
   const current = getCurrentTask(loopState);
@@ -35,7 +43,12 @@ export function DailyFocusScreen({
   const proofUrl = st.proofUrl || '';
   const reflection = st.reflection || '';
   const proofRequired = !!current.requiresProof;
-  const hasValidProof = proofText.trim() !== '' || isValidProofUrl(proofUrl);
+  const drafts = (typeof proofDraftsForTask === 'function' ? proofDraftsForTask(current.id) : []) || [];
+  const hasUploadedMedia = !!(st.mediaProof && st.mediaProof.storagePath);
+  const hasPendingDraft = drafts.some(d =>
+    d.status === UPLOAD_STATUS.QUEUED || d.status === UPLOAD_STATUS.OFFLINE_QUEUED ||
+    d.status === UPLOAD_STATUS.UPLOADING || d.status === UPLOAD_STATUS.FAILED);
+  const hasValidProof = proofText.trim() !== '' || isValidProofUrl(proofUrl) || hasUploadedMedia;
   const proofMissing = proofRequired && !hasValidProof;
   const doneLabel = proofRequired ? 'Save proof and mark done' : 'Mark as done';
 
@@ -66,6 +79,24 @@ export function DailyFocusScreen({
             onReflectionChange={text => onReflectionChange(current.id, text)}
           />
         ) : null}
+
+        {/* Image proof (library or camera) — uploaded proof satisfies the task. */}
+        {signedIn ? (
+          <MobileMediaProofPicker onPicked={asset => onAddImageProof && onAddImageProof(current.id, asset)} />
+        ) : (
+          <Text style={styles.note}>Sign in to add image proof.</Text>
+        )}
+        {hasUploadedMedia ? <AuroraStatusPill label="Image proof submitted" tone="proof" /> : null}
+        {drafts.map(d => (
+          <MobileProofDraftCard
+            key={d.id}
+            draft={d}
+            onRetry={() => onRetryDraft && onRetryDraft(d.id)}
+            onRemove={() => onRemoveDraft && onRemoveDraft(d.id)}
+          />
+        ))}
+        {hasPendingDraft ? <Text style={styles.pending}>Upload proof before syncing — upload pending.</Text> : null}
+        {proofUploadError ? <Text style={styles.error}>{proofUploadError}</Text> : null}
       </AuroraTaskCard>
 
       <View style={styles.actions}>
@@ -82,7 +113,7 @@ export function DailyFocusScreen({
       <AuroraButton label="Finish day" variant="secondary" disabled={!canFinish} onPress={onFinishDay} />
       <AuroraButton label="Back to Today" variant="ghost" onPress={onExit} />
 
-      <Text style={styles.note}>Proof and reflections stay private on this device until you sync.</Text>
+      <Text style={styles.note}>Proof and reflections stay private on this device until you sync. Proof is submitted, not verified.</Text>
     </ScrollView>
   );
 }
@@ -96,6 +127,8 @@ const styles = StyleSheet.create({
   position: { color: c.text.muted, fontSize: 12, fontWeight: '700' },
   title: { color: c.text.primary, fontSize: 18, fontWeight: '700' },
   actions: { flexDirection: 'row', gap: auroraTheme.spacing.sm, justifyContent: 'space-between' },
+  pending: { color: c.accent.warning, fontSize: 12 },
+  error: { color: c.accent.danger, fontSize: 12 },
   note: { color: c.text.muted, fontSize: 12, lineHeight: 18 },
 });
 

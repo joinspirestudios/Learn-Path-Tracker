@@ -13,12 +13,14 @@ import { SYNC_STATUS, canPublish } from '../core/mobileSyncStatus.js';
 
 export function CompletionResultScreen({
   loopState, signedIn, syncStatus, syncError, onSync,
+  pendingProofCount = 0, failedProofCount = 0, uploadingProofCount = 0, onRetryUploads,
   publishStatus, publishError, publicSummary, caption, onCaptionChange, onPublish,
   onBackToToday, onReviewPath,
 }) {
   const summary = getCompletionSummary(loopState);
   const showSync = !!signedIn;
-  const showPublish = showSync && canPublish(syncStatus);
+  const uploadsPending = (pendingProofCount + uploadingProofCount) > 0;
+  const showPublish = showSync && !uploadsPending && canPublish(syncStatus);
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -30,11 +32,28 @@ export function CompletionResultScreen({
       </AuroraCard>
 
       {summary.proofSubmitted > 0 ? (
-        <MobileProofSummaryCard proofSubmittedCount={summary.proofSubmitted} typeLabels={['text/link']} />
+        <MobileProofSummaryCard proofSubmittedCount={summary.proofSubmitted} typeLabels={['text/link/image']} />
+      ) : null}
+
+      {(pendingProofCount > 0 || failedProofCount > 0 || uploadingProofCount > 0) ? (
+        <AuroraCard>
+          <Text style={styles.proofHead}>Media proof uploads</Text>
+          <Text style={styles.proofRow}>{uploadingProofCount} uploading · {pendingProofCount} pending · {failedProofCount} failed</Text>
+          {(pendingProofCount > 0 || failedProofCount > 0) ? (
+            <AuroraButton label={failedProofCount > 0 ? 'Retry failed uploads' : 'Upload pending proof'} variant="secondary" onPress={onRetryUploads} />
+          ) : null}
+        </AuroraCard>
       ) : null}
 
       {showSync ? (
-        <MobileSyncBanner status={syncStatus} error={syncError} onSync={onSync} />
+        uploadsPending ? (
+          <AuroraCard>
+            <Text style={styles.proofHead}>Sync blocked</Text>
+            <Text style={styles.proofRow}>Upload your pending proof images before syncing this day.</Text>
+          </AuroraCard>
+        ) : (
+          <MobileSyncBanner status={syncStatus} error={syncError} onSync={onSync} />
+        )
       ) : (
         <Text style={styles.note}>Sign in to sync this day to your private cloud record.</Text>
       )}
@@ -66,6 +85,8 @@ const styles = StyleSheet.create({
   content: { padding: auroraTheme.layout.screenPadding, gap: auroraTheme.spacing.md },
   kicker: { color: c.text.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { color: c.text.primary, fontSize: 20, fontWeight: '700' },
+  proofHead: { color: c.text.primary, fontSize: 14, fontWeight: '800' },
+  proofRow: { color: c.text.secondary, fontSize: 13 },
   note: { color: c.text.muted, fontSize: 12, lineHeight: 18 },
 });
 
