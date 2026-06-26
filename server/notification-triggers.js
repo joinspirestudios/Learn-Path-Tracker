@@ -8,7 +8,7 @@
 // never raw evidence. Uses neutral verbs like "respected" / "commented" and
 // avoids any social-status or game-economy vocabulary.
 
-import { createUserNotification, buildNotificationId } from './notification-service.js';
+import { createUserNotification, buildNotificationId, deliverUserPushNotifications } from './notification-service.js';
 
 function cleanName(value) {
   const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
@@ -101,31 +101,41 @@ export function buildModerationNotification({ ownerUid, kind = 'received', pathI
   };
 }
 
-// Thin async wiring: persist a built notification. Safe to call from existing
-// handlers; swallows errors so a notification failure never breaks the event.
-export async function deliverBuiltNotification({ adminDb, built, logger = null } = {}) {
+// Thin async wiring: persist a built notification, then best-effort browser push
+// to the owner. Safe to call from existing handlers; swallows errors so a
+// notification/push failure never breaks the underlying event.
+export async function deliverBuiltNotification({ adminDb, built, env = process.env, webpush = null, logger = null } = {}) {
   if (!adminDb || !built || !built.uid || !built.notification) return null;
+  let stored = null;
   try {
-    return await createUserNotification({ adminDb, uid: built.uid, notification: built.notification });
+    stored = await createUserNotification({ adminDb, uid: built.uid, notification: built.notification });
   } catch (error) {
     if (logger && typeof logger.warn === 'function') {
       logger.warn('notification_trigger_failed', { type: built.notification.type });
     }
     return null;
   }
+  // Best-effort push (honors preferences + quiet hours + config; never throws).
+  try {
+    await deliverUserPushNotifications({ adminDb, uid: built.uid, notification: stored, env, webpush });
+  } catch { /* push is best-effort */ }
+  return stored;
 }
 
+function forward(args) {
+  return { adminDb: args.adminDb, env: args.env, webpush: args.webpush, logger: args.logger };
+}
 export async function notifyProgressReaction(args = {}) {
-  return deliverBuiltNotification({ adminDb: args.adminDb, built: buildReactionNotification(args), logger: args.logger });
+  return deliverBuiltNotification({ ...forward(args), built: buildReactionNotification(args) });
 }
 export async function notifyProgressComment(args = {}) {
-  return deliverBuiltNotification({ adminDb: args.adminDb, built: buildCommentNotification(args), logger: args.logger });
+  return deliverBuiltNotification({ ...forward(args), built: buildCommentNotification(args) });
 }
 export async function notifyProgressPublished(args = {}) {
-  return deliverBuiltNotification({ adminDb: args.adminDb, built: buildPublishedNotification(args), logger: args.logger });
+  return deliverBuiltNotification({ ...forward(args), built: buildPublishedNotification(args) });
 }
 export async function notifyModerationUpdate(args = {}) {
-  return deliverBuiltNotification({ adminDb: args.adminDb, built: buildModerationNotification(args), logger: args.logger });
+  return deliverBuiltNotification({ ...forward(args), built: buildModerationNotification(args) });
 }
 
 export default {

@@ -14,6 +14,7 @@ import {
   normalizeNotificationPreferences, notificationTypeEnabled,
 } from '../src/notification-preferences-model.js';
 import { reminderFallsInQuietHours } from '../src/notification-scheduler.js';
+import { webPushConfigured, sendWebPushToSubscriptions } from './web-push-service.js';
 
 function safeSegment(value, max = 200) {
   return String(value == null ? '' : value).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, max);
@@ -90,10 +91,76 @@ export function notificationShouldSendPush({ preferences, notification, now = ne
   return true;
 }
 
+// Load the user's stored web push subscriptions (owner-only space). Returns an
+// array of { subscriptionId, endpoint, keys, ... } — never exposed to clients.
+async function loadUserPushSubscriptions(adminDb, uid) {
+  const snap = await adminDb.collection('users').doc(uid).collection('pushSubscriptions').get();
+  const docs = snap && Array.isArray(snap.docs) ? snap.docs : [];
+  return docs.map(d => {
+    const data = typeof d.data === 'function' ? d.data() : (d.data || {});
+    return { subscriptionId: d.id, ...data };
+  });
+}
+
+// Load the user's notification preferences (owner-only). Falls back to safe
+// defaults (push OFF) when absent.
+async function loadUserPreferences(adminDb, uid) {
+  try {
+    const snap = await adminDb.collection('users').doc(uid).collection('notificationPreferences').doc('main').get();
+    const data = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : {}) : null;
+    return normalizeNotificationPreferences({ ...(data || {}), uid }, uid);
+  } catch {
+    return normalizeNotificationPreferences({ uid }, uid);
+  }
+}
+
+async function deleteExpiredSubscriptions(adminDb, uid, expiredIds) {
+  for (const subscriptionId of expiredIds || []) {
+    if (!subscriptionId) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await adminDb.collection('users').doc(uid).collection('pushSubscriptions').doc(String(subscriptionId)).delete();
+    } catch { /* best effort cleanup */ }
+  }
+}
+
+// Attempt to deliver a browser push for `notification` to the user's stored
+// subscriptions. Honors preferences + quiet hours via notificationShouldSendPush
+// and graceful-degrades when web push is not configured. NEVER throws and never
+// exposes subscription details. Returns { sent, expired, disabledReason }.
+export async function deliverUserPushNotifications({
+  adminDb, uid, notification, preferences = null, env = process.env, webpush = null, now = new Date(),
+} = {}) {
+  const result = { sent: 0, expired: 0, disabledReason: null };
+  try {
+    if (!adminDb || !uid || !notification) { result.disabledReason = 'invalid_request'; return result; }
+    const prefs = preferences || await loadUserPreferences(adminDb, uid);
+    if (!prefs.webPushEnabled) { result.disabledReason = 'web_push_disabled'; return result; }
+    if (!notificationShouldSendPush({ preferences: prefs, notification, now })) {
+      // Either a disabled category or quiet hours suppressed the push.
+      result.disabledReason = reminderFallsInQuietHours({ preferences: prefs, now }) ? 'quiet_hours' : 'preference_off';
+      return result;
+    }
+    if (!webPushConfigured(env)) { result.disabledReason = 'not_configured'; return result; }
+    const subscriptions = await loadUserPushSubscriptions(adminDb, uid);
+    if (!subscriptions.length) { result.disabledReason = 'no_subscription'; return result; }
+    const { sent, expired } = await sendWebPushToSubscriptions({ subscriptions, notification, env, webpush });
+    result.sent = sent;
+    result.expired = (expired || []).length;
+    if (expired && expired.length) await deleteExpiredSubscriptions(adminDb, uid, expired);
+    return result;
+  } catch {
+    // Push is best-effort; never let delivery failures bubble up.
+    result.disabledReason = result.disabledReason || 'error';
+    return result;
+  }
+}
+
 export default {
   buildNotificationId,
   createUserNotification,
   createManyUserNotifications,
   markNotificationServerRead,
   notificationShouldSendPush,
+  deliverUserPushNotifications,
 };

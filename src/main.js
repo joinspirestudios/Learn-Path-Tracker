@@ -38,7 +38,7 @@ import {
 } from './notification-db.js';
 import { notificationPublicSafeView } from './notification-model.js';
 import { browserSupportsPush, requestWebPushPermission, currentPushPermission } from './web-push-permissions.js';
-import { subscribeToWebPush } from './web-push-client.js';
+import { subscribeToWebPush, getExistingPushSubscription, unsubscribeFromWebPush } from './web-push-client.js';
 
 let preflightPromise = null;
 let platformSyncPromise = null;
@@ -419,6 +419,20 @@ async function enableWebPushFromClick(){
   refreshVisibleRoute();
 }
 
+// Turn off browser push: flip the preference and unsubscribe locally. Never
+// requests permission. Keeps in-app notifications working.
+async function disableWebPushFromClick(){
+  const uid = notificationUid();
+  if(!uid) return;
+  try{
+    const prefs = await saveNotificationPreferences(uid, { ...(store.notificationPreferences || {}), webPushEnabled:false }, {});
+    store.notificationPreferences = prefs;
+    const existing = await getExistingPushSubscription();
+    if(existing) await unsubscribeFromWebPush(existing);
+  }catch(error){ /* best effort */ }
+  refreshVisibleRoute();
+}
+
 async function handleNotificationAction(action, id){
   const uid = notificationUid();
   if(!uid) return;
@@ -428,6 +442,7 @@ async function handleNotificationAction(action, id){
   if(action === 'mark-all-read'){ await markAllNotificationsRead(uid, {}); await loadNotificationsForCurrentUser(); return; }
   if(action === 'archive-notification' && id){ await archiveNotification(uid, id, {}); await loadNotificationsForCurrentUser(); return; }
   if(action === 'enable-web-push'){ await enableWebPushFromClick(); return; }
+  if(action === 'disable-web-push'){ await disableWebPushFromClick(); return; }
   if(action === 'save-notification-preferences'){
     try{
       const prefs = await saveNotificationPreferences(uid, readPreferenceForm(), {});
@@ -453,7 +468,7 @@ async function init(){
       const action = notify.getAttribute('data-action');
       const NOTIFICATION_ACTIONS = [
         'open-notifications', 'close-notifications-overlay', 'mark-read', 'mark-all-read',
-        'archive-notification', 'enable-web-push', 'save-notification-preferences',
+        'archive-notification', 'enable-web-push', 'disable-web-push', 'save-notification-preferences',
       ];
       // Ignore overlay backdrop clicks that bubble from inner controls.
       if(action === 'close-notifications-overlay' && e.target !== notify) return;
