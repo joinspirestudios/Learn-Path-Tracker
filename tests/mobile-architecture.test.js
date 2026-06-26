@@ -162,7 +162,13 @@ test('Expo foundation lives under apps/mobile, not at the repo root (Phase 6.10)
 
 test('no EAS config or mobile signing credentials exist', () => {
   assert.equal(existsSync(resolve(root, 'eas.json')), false);
-  assert.equal(existsSync(resolve(root, 'apps', 'mobile', 'eas.json')), false, 'no mobile eas.json');
+  // Phase 6.18 adds a SAFE, credential-free apps/mobile/eas.json (build profiles
+  // only). It must never carry secrets/keystores/service accounts.
+  const mobileEas = resolve(root, 'apps', 'mobile', 'eas.json');
+  if (existsSync(mobileEas)) {
+    const raw = readFileSync(mobileEas, 'utf8');
+    assert.doesNotMatch(raw, /keystore|serviceAccount|service_account|password|p12|p8|certificate|EXPO_TOKEN|private_key/i, 'eas.json must be credential-free');
+  }
   assert.equal(existsSync(resolve(root, 'android')), false, 'no android project');
   assert.equal(existsSync(resolve(root, 'ios')), false, 'no ios project');
   assert.equal(existsSync(resolve(root, 'apps', 'mobile', 'android')), false, 'no mobile android project');

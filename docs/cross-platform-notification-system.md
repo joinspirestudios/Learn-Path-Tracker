@@ -178,7 +178,8 @@ mobile reminders. In-app notifications may still be stored so nothing is lost.
 - Automatic cron delivery of reminders (needs Vercel Cron + user index).
 - App-asset caching in the service worker.
 
-Next: **Phase 6.18 — Mobile Store Readiness and Beta QA** (documented, not
-implemented here). Later: Phase 6.9.12 (Aurora/Proof Ledger web UI), Phase 7.0
-(Rolling Adaptive Planning), Phase 8.0 (Evidence Intelligence), Phase 9.0
-(Research and Resource Intelligence), Phase 10.0 (Launch, Growth, Beta Ops).
+Phase 6.18 (Mobile Store Readiness and Beta QA) shipped after this — see
+[mobile-store-readiness-beta-qa.md](mobile-store-readiness-beta-qa.md). Next:
+Phase 6.9.12 (Aurora/Proof Ledger web UI), Phase 7.0 (Rolling Adaptive Planning),
+Phase 8.0 (Evidence Intelligence), Phase 9.0 (Research and Resource Intelligence),
+Phase 10.0 (Launch, Growth, Beta Ops).

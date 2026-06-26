@@ -89,7 +89,8 @@ test('Phase 6.12 Vercel API function count unchanged (ai/community/voice)', () =
 
 test('Phase 6.12 no committed node_modules, env files, or credentials in mobile', () => {
   assert.equal(existsSync(resolve(mobile, 'node_modules')), false);
-  for (const b of ['.env', '.env.local', '.env.production', 'eas.json',
+  // Phase 6.18 adds a safe credential-free eas.json (no longer banned).
+  for (const b of ['.env', '.env.local', '.env.production',
     'google-services.json', 'GoogleService-Info.plist']) {
     assert.equal(existsSync(resolve(mobile, b)), false, 'must not commit ' + b);
   }

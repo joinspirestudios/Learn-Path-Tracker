@@ -20,4 +20,6 @@ web-build/
 *.cer
 google-services.json
 GoogleService-Info.plist
-eas.json
+# eas.json is tracked (safe, credential-free build profiles only — Phase 6.18).
+# EAS credentials live in the credential store / CI secrets, never here.
+credentials.json

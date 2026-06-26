@@ -112,4 +112,5 @@ flow. Phase 6.16.1 completes the runtime and tightens scope:
 
 PDF/file/video/audio/document proof, copying draft files into app-local storage,
 background upload, and per-artifact public media projection remain deferred.
-Notifications are Phase 6.17; store readiness is Phase 6.18.
+Notifications shipped in Phase 6.17; mobile store readiness + beta QA shipped in
+Phase 6.18 (see [mobile-store-readiness-beta-qa.md](mobile-store-readiness-beta-qa.md)).

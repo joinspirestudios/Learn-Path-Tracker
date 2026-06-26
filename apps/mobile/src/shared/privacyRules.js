@@ -60,6 +60,13 @@ export const MOBILE_PRIVACY_RULES = [
   'Mobile local notifications are opt-in; OS permission is requested only when reminders are enabled.',
   'Daily reminders and quiet hours are opt-in and stored per user.',
   'Remote mobile push is deferred; no Expo push token or store credentials are used.',
+  // Phase 6.18 — store readiness + beta QA:
+  'Diagnostics show status labels only — never API keys, ID tokens, Storage paths or private proof.',
+  'Diagnostics are never sent to a server and never logged.',
+  'Deep links accept only a fixed allowlist of routes; javascript:/data:/file: schemes are rejected.',
+  'Deep links never parse tokens or private evidence URLs; unknown routes fall back to Today.',
+  'The error boundary never renders stack traces, tokens or private data to normal users.',
+  'No store credentials, keystores, certificates or service-account files are committed.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

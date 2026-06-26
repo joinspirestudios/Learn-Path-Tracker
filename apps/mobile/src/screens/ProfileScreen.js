@@ -13,7 +13,7 @@ import { MobileNotificationBadge } from '../components/MobileNotificationBadge.j
 // ID tokens.
 export function ProfileScreen({
   user, configured, localMode, profile, profileBusy, profileStatus,
-  notificationUnreadCount = 0, onOpenNotifications, onSaveProfile, onSignOut,
+  notificationUnreadCount = 0, onOpenNotifications, onOpenDiagnostics, onSaveProfile, onSignOut,
 }) {
   const merged = { ...(profile || {}), uid: user && user.uid, displayName: (profile && profile.displayName) || (user && user.displayName) || '' };
 
@@ -62,6 +62,16 @@ export function ProfileScreen({
             status={profileStatus}
             onSave={onSaveProfile}
           />
+        </AuroraCard>
+      ) : null}
+
+      {user ? (
+        <AuroraCard>
+          <View style={styles.headRow}>
+            <Text style={styles.title}>App diagnostics</Text>
+          </View>
+          <Text style={styles.rowMuted}>Check configuration and beta readiness. No keys or private data are shown.</Text>
+          <AuroraButton label="App diagnostics" variant="secondary" onPress={onOpenDiagnostics} />
         </AuroraCard>
       ) : null}
 

@@ -743,6 +743,16 @@ off / on. In-app notifications keep working when push is unavailable. Set
 
 See [`docs/cross-platform-notification-system.md`](docs/cross-platform-notification-system.md).
 
+**Phase 6.18 — mobile store readiness & beta QA:** production-minded Expo config
+(stable name/slug/`learnpathtracker` scheme, iOS bundle id + Android package,
+accurate camera/photo/notification permission copy, no unrelated permissions), a
+safe deep-link parser, an in-app **App diagnostics** screen (status labels only —
+no keys/tokens/private data), an app-level **error boundary**, store-readiness
+gate model, a safe credential-free `eas.json`, and a full manual beta QA matrix.
+No store submission, no credentials/keystores committed. See
+[`docs/mobile-store-readiness-beta-qa.md`](docs/mobile-store-readiness-beta-qa.md)
+and [`apps/mobile/eas-readiness.md`](apps/mobile/eas-readiness.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

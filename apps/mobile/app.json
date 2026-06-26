@@ -5,8 +5,16 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "scheme": "learnpathtracker",
     "assetBundlePatterns": ["**/*"],
     "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Learn Path Tracker uses your photo library only when you choose an image as proof for a task.",
+          "cameraPermission": "Learn Path Tracker uses your camera only when you choose to take a proof photo for a task."
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -15,12 +23,23 @@
       ]
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.joinspirestudios.learnpathtracker",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Learn Path Tracker uses your camera only when you choose to take a proof photo for a task.",
+        "NSPhotoLibraryUsageDescription": "Learn Path Tracker uses your photo library only when you choose an image as proof for a task."
+      }
     },
     "android": {
+      "package": "com.joinspirestudios.learnpathtracker",
       "adaptiveIcon": {
         "backgroundColor": "#15131C"
-      }
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "extra": {
       "apiBaseUrlEnv": "EXPO_PUBLIC_LEARN_PATH_API_BASE_URL",
@@ -31,6 +50,11 @@
         "storageBucket": "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET",
         "messagingSenderId": "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
         "appId": "EXPO_PUBLIC_FIREBASE_APP_ID"
+      },
+      "permissionDescriptions": {
+        "camera": "Learn Path Tracker uses your camera only when you choose to take a proof photo for a task.",
+        "photoLibrary": "Learn Path Tracker uses your photo library only when you choose an image as proof for a task.",
+        "notifications": "Learn Path Tracker sends reminders and progress alerts only when you enable notifications."
       }
     }
   }

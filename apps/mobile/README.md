@@ -146,6 +146,20 @@ evidence URLs, Storage paths or tokens. See
 Phase 6.17.1 added **web** browser-push delivery (`web-push` on the server) — it
 does not touch the mobile app. Remote **mobile** push remains deferred.
 
+## Store readiness & beta QA (Phase 6.18)
+
+Production-minded Expo config (stable name/slug, `learnpathtracker` scheme, iOS
+bundle id `com.joinspirestudios.learnpathtracker`, matching Android package,
+camera/photo/notification permission copy, no location/contacts/microphone). New
+modules: a safe deep-link parser (`mobileDeepLinks`), environment/readiness checks
++ runtime diagnostics, an **App diagnostics** screen (Profile → App diagnostics;
+status labels only), an app-level **error boundary**, and a store-readiness gate
+model. A credential-free `eas.json` and [`eas-readiness.md`](eas-readiness.md)
+document EAS builds; the manual matrix lives in
+[`docs/mobile-store-readiness-beta-qa.md`](../../docs/mobile-store-readiness-beta-qa.md).
+**No store submission and no credentials are committed.** Copy
+[`.env.example`](.env.example) → `.env` (public `EXPO_PUBLIC_*` values only).
+
 ## Deferred to later mobile phases
 
 Remote push notifications and Expo push tokens, AI builder, voice transcription,
