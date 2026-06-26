@@ -99,7 +99,9 @@ test('Phase 6.10 root Vercel function count is unchanged (community/ai/voice onl
 test('Phase 6.10 no apps/mobile/node_modules or env/credentials committed', () => {
   // node_modules should not be present in the working tree as committed content.
   assert.equal(existsSync(resolve(mobile, 'node_modules')), false, 'no committed node_modules');
-  const banned = ['.env', '.env.local', '.env.production', 'eas.json',
+  // Phase 6.18 adds a SAFE credential-free eas.json, so it is no longer banned;
+  // real secrets/credentials remain banned below.
+  const banned = ['.env', '.env.local', '.env.production',
     'google-services.json', 'GoogleService-Info.plist'];
   for (const b of banned) {
     assert.equal(existsSync(resolve(mobile, b)), false, 'must not commit ' + b);

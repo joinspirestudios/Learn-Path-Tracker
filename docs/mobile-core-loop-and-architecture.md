@@ -38,6 +38,12 @@ Phase 6.5 planning document. No mobile app is built yet.
 > implemented. No camera/audio. See
 > [docs/mobile-media-proof-offline-drafts.md](mobile-media-proof-offline-drafts.md).
 >
+> **Phase 6.18 update:** mobile store-readiness + beta QA — production Expo config
+> (scheme/bundle id/package, permission copy), safe deep links, in-app App
+> diagnostics (status labels only), an app-level error boundary, store-readiness
+> gates, a credential-free `eas.json`, and a manual beta QA matrix. No store
+> submission. See [docs/mobile-store-readiness-beta-qa.md](mobile-store-readiness-beta-qa.md).
+>
 > **Phase 6.17 update:** a cross-platform notification system ships — in-app
 > notification center + per-category preferences (incl. quiet hours), opt-in
 > browser push (web) and opt-in local reminders (mobile, `expo-notifications`).

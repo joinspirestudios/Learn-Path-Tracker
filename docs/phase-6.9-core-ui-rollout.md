@@ -166,8 +166,8 @@ pre-launch web polish:
 - **Phase 6.16 — Mobile Media Proof Upload and Offline Drafts**: library image/PDF proof upload + offline draft queue.
 - **Phase 6.17 — Cross-Platform Notification System**
 - **Phase 6.17.1 — Browser Push Delivery and Notification Permission QA Repair**: real opt-in browser push delivery (`web-push`), send-test + interaction-trigger push, expired-subscription pruning.
-- **Phase 6.18 — Mobile Store Readiness and Beta QA**
-- **Phase 6.9.12 — Aurora / Proof Ledger Visual System Decision and Web UI Final Polish** (parked web visual feedback; see [aurora-ui-feedback-backlog.md](aurora-ui-feedback-backlog.md))
+- **Phase 6.18 — Mobile Store Readiness and Beta QA**: production Expo config, permission copy, deep links, in-app diagnostics, error boundary, store-readiness gates, EAS readiness docs + beta QA matrix (no store submission). See [mobile-store-readiness-beta-qa.md](mobile-store-readiness-beta-qa.md).
+- **Phase 6.9.12 — Aurora / Proof Ledger Visual System Decision and Web UI Final Polish** (parked web visual feedback; see [aurora-ui-feedback-backlog.md](aurora-ui-feedback-backlog.md)) — **next**
 - **Phase 7.0 — Rolling Adaptive Planning**
 - **Phase 8.0 — Evidence Intelligence**
 - **Phase 9.0 — Research and Resource Intelligence**

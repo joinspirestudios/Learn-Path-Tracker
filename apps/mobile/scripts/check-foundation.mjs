@@ -99,6 +99,15 @@ const requiredFiles = [
   'src/components/MobileNotificationPreferences.js',
   'src/components/MobileNotificationBadge.js',
   'src/screens/NotificationsScreen.js',
+  // Phase 6.18 — store readiness + beta QA.
+  'src/components/MobileErrorBoundary.js',
+  'src/components/MobileDiagnosticsCard.js',
+  'src/screens/MobileDiagnosticsScreen.js',
+  'src/core/mobileEnvironmentChecks.js',
+  'src/core/mobileReadinessChecks.js',
+  'src/core/mobileStoreReadinessGates.js',
+  'src/services/mobileRuntimeDiagnostics.js',
+  'src/navigation/mobileDeepLinks.js',
 ];
 
 const problems = [];

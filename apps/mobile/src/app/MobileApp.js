@@ -6,7 +6,7 @@
 // via the existing API. No media/file upload, no auto-sync, no auto-publish.
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { SafeAreaView, View, Text, Pressable, StyleSheet } from 'react-native';
+import { SafeAreaView, View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 
 import { auroraTheme } from '../theme/auroraTheme.js';
 import { MOBILE_TABS } from '../navigation/mobileTabs.js';
@@ -35,6 +35,7 @@ import { createMobilePublicProgressRepository } from '../services/mobilePublicPr
 import { createProfileRepository } from '../services/profileRepository.js';
 import { createMobileNotificationRepository } from '../services/mobileNotificationRepository.js';
 import { createMobileLocalNotificationService } from '../services/mobileLocalNotificationService.js';
+import { createMobileRuntimeDiagnostics } from '../services/mobileRuntimeDiagnostics.js';
 import { createMobileProofStorageRepository } from '../services/mobileProofStorageRepository.js';
 import { createMobileMediaProofRepository } from '../services/mobileMediaProofRepository.js';
 import { createMobileOfflineDraftRepository } from '../services/mobileOfflineDraftRepository.js';
@@ -51,6 +52,7 @@ import { DiscoverScreen } from '../screens/DiscoverScreen.js';
 import { ProgressScreen } from '../screens/ProgressScreen.js';
 import { ProfileScreen } from '../screens/ProfileScreen.js';
 import { NotificationsScreen } from '../screens/NotificationsScreen.js';
+import { MobileDiagnosticsScreen } from '../screens/MobileDiagnosticsScreen.js';
 import { PublicPathPreviewScreen } from '../screens/PublicPathPreviewScreen.js';
 import { AuroraLoadingState } from '../components/AuroraLoadingState.js';
 
@@ -67,6 +69,7 @@ export function MobileApp() {
   const profileRepo = useMemo(() => createProfileRepository({ gateway: userGateway }), [userGateway]);
   const notificationRepo = useMemo(() => createMobileNotificationRepository({ gateway: userGateway }), [userGateway]);
   const localNotificationService = useMemo(() => createMobileLocalNotificationService({}), []);
+  const runtimeDiagnostics = useMemo(() => createMobileRuntimeDiagnostics({ platform: Platform.OS }), []);
   const storageGateway = useMemo(() => client.createStorageGateway(), [client]);
   const proofStorageRepo = useMemo(() => createMobileProofStorageRepository({ storageGateway }), [storageGateway]);
   const mediaProofRepo = useMemo(() => createMobileMediaProofRepository({ storageRepo: proofStorageRepo }), [proofStorageRepo]);
@@ -125,7 +128,7 @@ export function MobileApp() {
   const [notifPrefs, setNotifPrefs] = useState(null);
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [prefsStatus, setPrefsStatus] = useState('');
-  const [profileView, setProfileView] = useState('main'); // main | notifications
+  const [profileView, setProfileView] = useState('main'); // main | notifications | diagnostics
 
   useEffect(() => {
     let active = true;
@@ -546,6 +549,17 @@ export function MobileApp() {
     }
     if (activeTab === 'progress') return <ProgressScreen />;
     if (activeTab === 'profile') {
+      if (profileView === 'diagnostics') {
+        const notifStatus = notifPrefs
+          ? (notifPrefs.mobileLocalEnabled ? 'enabled' : 'disabled')
+          : 'unknown';
+        return (
+          <MobileDiagnosticsScreen
+            snapshot={runtimeDiagnostics.snapshot({ signedIn, notifications: notifStatus })}
+            onBack={() => setProfileView('main')}
+          />
+        );
+      }
       if (profileView === 'notifications') {
         return (
           <NotificationsScreen
@@ -573,6 +587,7 @@ export function MobileApp() {
           profileStatus={profileStatus}
           notificationUnreadCount={notifUnread}
           onOpenNotifications={() => setProfileView('notifications')}
+          onOpenDiagnostics={() => setProfileView('diagnostics')}
           onSaveProfile={handleSaveProfile}
           onSignOut={handleSignOut}
         />
