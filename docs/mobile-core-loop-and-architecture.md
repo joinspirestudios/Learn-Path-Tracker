@@ -32,7 +32,12 @@ Phase 6.5 planning document. No mobile app is built yet.
 > exists — profiles (display name, username, bio, avatar, cover), owned-path
 > banners, and public-safe shaping, with narrow profile-image Storage rules. See
 > [docs/account-profile-path-personalization.md](account-profile-path-personalization.md).
-> Next: **Phase 6.16 — Mobile Media Proof Upload and Offline Drafts**.
+>
+> **Phase 6.16 update:** Mobile **media proof upload** (library image/PDF →
+> owner-only evidence Storage) and **offline drafts** (AsyncStorage queue) are
+> implemented. No camera/audio. See
+> [docs/mobile-media-proof-offline-drafts.md](mobile-media-proof-offline-drafts.md).
+> Next: **Phase 6.17 — Cross-Platform Notification System**.
 
 ## Product intent
 

@@ -183,7 +183,7 @@ test('Phase 6.15.2 safePublicProfile preserves avatarURL, gates coverURL, hides 
 
 test('Phase 6.15.2 mobile deps unchanged; Vercel function count unchanged', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['expo', 'firebase', 'react', 'react-native']);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
   const files = readdirSync(resolve(root, 'api'), { withFileTypes: true })
     .filter(e => e.isFile() && e.name.endsWith('.js') && !e.name.startsWith('_'))
     .map(e => e.name).sort();

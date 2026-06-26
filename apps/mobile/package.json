@@ -11,7 +11,10 @@
     "check:foundation": "node ./scripts/check-foundation.mjs"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.0",
     "expo": "^53.0.0",
+    "expo-file-system": "^18.0.0",
+    "expo-image-picker": "^16.0.0",
     "firebase": "^11.10.0",
     "react": "^19.0.0",
     "react-native": "^0.79.0"

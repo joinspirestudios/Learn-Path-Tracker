@@ -303,15 +303,15 @@ test('Phase 6.11 no camera/file-picker/audio or new native deps added to mobile 
   const pkg = JSON.parse(read('apps/mobile/package.json'));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   for (const banned of [
-    'expo-camera', 'expo-image-picker', 'expo-document-picker', 'expo-av',
-    'expo-file-system', '@react-native-async-storage/async-storage',
+    'expo-camera', 'expo-document-picker', 'expo-av',
     'firebase-admin', '@react-navigation/native',
   ]) {
     assert.equal(deps[banned], undefined, banned + ' must not be added');
   }
-  // Phase 6.12 adds firebase (client SDK) for auth/cloud reads. No camera/
-  // picker/audio/native-storage/admin deps.
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['expo', 'firebase', 'react', 'react-native']);
+  // Phase 6.12 adds firebase; Phase 6.16 adds expo-image-picker/expo-file-system/
+  // async-storage for media proof + offline drafts. Still no camera/audio/admin.
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(),
+    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
 });
 
 /* ── 5. Components ── */
