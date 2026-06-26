@@ -20,12 +20,13 @@ import { resolveFirebaseConfig, isFirebaseConfigured } from './firebaseConfig.js
 
 // Default loader uses dynamic import so nothing loads until ensure() is called.
 async function defaultSdkLoader() {
-  const [appMod, authMod, firestoreMod] = await Promise.all([
+  const [appMod, authMod, firestoreMod, storageMod] = await Promise.all([
     import('firebase/app'),
     import('firebase/auth'),
     import('firebase/firestore'),
+    import('firebase/storage'),
   ]);
-  return { ...appMod, ...authMod, ...firestoreMod };
+  return { ...appMod, ...authMod, ...firestoreMod, ...storageMod };
 }
 
 export function createFirebaseClient({ env, config, sdkLoader = defaultSdkLoader } = {}) {
@@ -43,7 +44,8 @@ export function createFirebaseClient({ env, config, sdkLoader = defaultSdkLoader
     const app = apps && apps.length ? apps[0] : sdk.initializeApp(resolvedConfig);
     const auth = sdk.getAuth(app);
     const db = sdk.getFirestore(app);
-    cache = { sdk, app, auth, db };
+    const storage = typeof sdk.getStorage === 'function' ? sdk.getStorage(app) : null;
+    cache = { sdk, app, auth, db, storage };
     return cache;
   }
 
@@ -59,7 +61,25 @@ export function createFirebaseClient({ env, config, sdkLoader = defaultSdkLoader
     createUserDataGateway() {
       return createUserDataGateway({ ensure });
     },
+    // Storage gateway for the signed-in user's own media proof uploads only.
+    createStorageGateway() {
+      return createStorageGateway({ ensure });
+    },
   };
+}
+
+// Uploads a file/blob to a Storage path and returns its download URL. Used only
+// for the signed-in user's own evidence uploads (rules enforce owner-only).
+export function createStorageGateway({ ensure }) {
+  async function uploadFile(path, data, metadata = {}) {
+    const { sdk, storage } = await ensure();
+    if (!storage) throw new Error('Storage is not available');
+    const ref = sdk.ref(storage, path);
+    await sdk.uploadBytes(ref, data, metadata);
+    const url = await sdk.getDownloadURL(ref);
+    return { path, downloadURL: url };
+  }
+  return { uploadFile };
 }
 
 // Reads/writes documents under users/{uid}/{sub}/{id}. Firestore rules already

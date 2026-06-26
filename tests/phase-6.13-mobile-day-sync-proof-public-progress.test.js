@@ -278,18 +278,18 @@ test('Phase 6.13 DailyFocusScreen supports text/link proof, one task at a time',
 test('Phase 6.13 no media/camera/audio/storage packages or imports in mobile', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  // Camera/audio/document-picker/media-library/notifications/admin stay banned.
+  // (Media upload via expo-image-picker/expo-file-system + Storage arrives in 6.16.)
   for (const banned of [
-    'expo-camera', 'expo-image-picker', 'expo-document-picker', 'expo-av',
-    'expo-file-system', 'expo-media-library', 'expo-notifications',
-    '@react-native-async-storage/async-storage', 'firebase-admin',
+    'expo-camera', 'expo-document-picker', 'expo-av',
+    'expo-media-library', 'expo-notifications', 'firebase-admin',
   ]) {
     assert.equal(deps[banned], undefined, banned + ' must not be added');
   }
   const sources = [resolve(mobile, 'App.js'), ...walk(resolve(mobile, 'src'))];
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
-    assert.doesNotMatch(src, /firebase\/storage|getStorage|uploadBytes|uploadString/, file + ' uses Storage');
-    assert.doesNotMatch(src, /expo-camera|expo-image-picker|expo-av|ImagePicker|CameraView/, file + ' uses media capture');
+    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView|launchCameraAsync/, file + ' uses camera/audio capture');
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }
 });

@@ -697,6 +697,19 @@ public paths show a public daily-documentation timeline. Private notes/reflectio
 raw storage paths, and private evidence URLs are never exposed publicly. See
 [`docs/proof-feed-gallery-ux.md`](docs/proof-feed-gallery-ux.md).
 
+## Mobile media proof upload and offline drafts (Phase 6.16)
+
+Phase 6.16 lets mobile users attach **image/PDF proof** (from the device library —
+no camera/audio) to a day/task, upload it to the owner-only evidence Storage path
+(`evidence/{uid}/{enrollmentId}/...`, ≤10 MB), and queue uploads as **offline
+drafts** (AsyncStorage) that flush when back online.
+
+- Mobile-only deps added in `apps/mobile/package.json`: `expo-image-picker`, `expo-file-system`, `@react-native-async-storage/async-storage` (never the root).
+- Pure core (`mobileMediaProofMappers`, `mobileOfflineDrafts`, `mobileProofUploadState`) + DI services (`mobileProofStorageRepository`, `mobileMediaProofRepository`, `mobileOfflineDraftRepository`) + RN components.
+- Proof is private by default and "submitted", never "verified". No camera/audio, no notifications, no new Storage path, no rules changes.
+
+See [`docs/mobile-media-proof-offline-drafts.md`](docs/mobile-media-proof-offline-drafts.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

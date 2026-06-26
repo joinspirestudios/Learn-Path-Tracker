@@ -67,8 +67,7 @@ test('Phase 6.12 mobile package may include firebase, not firebase-admin', () =>
   const pkg = JSON.parse(read('apps/mobile/package.json'));
   assert.ok(pkg.dependencies.firebase, 'firebase present');
   assert.equal(pkg.dependencies['firebase-admin'], undefined, 'no firebase-admin');
-  assert.equal(pkg.dependencies['@react-native-async-storage/async-storage'], undefined,
-    'AsyncStorage deferred (persistence documented as limited)');
+  // AsyncStorage was deferred in 6.12 and added in 6.16 (offline drafts).
 });
 
 test('Phase 6.12 root package does not gain mobile Firebase/Auth deps', () => {

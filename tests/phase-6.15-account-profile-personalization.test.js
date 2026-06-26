@@ -229,20 +229,25 @@ test('Phase 6.15 mobile path banner component displays banner by URL only', () =
 test('Phase 6.15 mobile adds no image-picker/camera/audio/proof-upload deps', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  // Phase 6.15 itself added no media deps; camera/audio/etc. stay banned.
+  // (expo-image-picker/expo-file-system/async-storage arrive in Phase 6.16.)
   for (const banned of [
-    'expo-image-picker', 'expo-camera', 'expo-document-picker', 'expo-av',
-    'expo-file-system', 'expo-media-library', 'expo-notifications', 'firebase-admin',
+    'expo-camera', 'expo-document-picker', 'expo-av',
+    'expo-media-library', 'expo-notifications', 'firebase-admin',
   ]) {
     assert.equal(deps[banned], undefined, banned + ' must not be added');
   }
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['expo', 'firebase', 'react', 'react-native']);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(),
+    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
 });
 
-test('Phase 6.15 no media/camera/storage-upload code in mobile source', () => {
+test('Phase 6.15 no camera/audio capture or admin in mobile source', () => {
+  // Media upload (image-picker/Storage) arrives in Phase 6.16; camera/audio and
+  // the Admin SDK remain banned on mobile.
   const sources = [resolve(mobile, 'App.js'), ...walk(resolve(mobile, 'src'))];
   for (const file of sources) {
     const src = readFileSync(file, 'utf8');
-    assert.doesNotMatch(src, /firebase\/storage|getStorage|uploadBytes|ImagePicker|CameraView|launchImageLibrary/, file);
+    assert.doesNotMatch(src, /expo-camera|expo-av|CameraView|launchCameraAsync/, file);
     assert.doesNotMatch(src, /from\s+['"]firebase-admin/, file);
   }
 });
