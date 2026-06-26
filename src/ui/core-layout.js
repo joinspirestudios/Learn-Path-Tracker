@@ -1,4 +1,5 @@
 import { esc } from '../helpers.js';
+import { renderNotificationBell } from '../views/notification-center.js';
 
 export const AURORA_APP_NAV = [
   { id:'today', label:'Today', href:'#/today' },
@@ -72,11 +73,19 @@ export function renderAuroraShell({
   className = '',
   userLabel = '',
   user = null,
+  showBell = false,
+  unreadCount = 0,
 } = {}){
   const railClass = rightRail ? ' has-right-rail' : '';
+  // Signed-in notification bell (with unread badge). Sits in the shell header so
+  // it is reachable from every app page. Hidden when signed out.
+  const bell = showBell
+    ? '<div class="aurora-shell-utility">' + renderNotificationBell({ unreadCount }) + '</div>'
+    : '';
   return '<main class="lpt-shell aurora-app-shell' + railClass + ' ' + esc(className) + '" data-shell-active="' + esc(active) + '">'
     + renderShellNav({ active, userLabel, user })
     + '<section class="aurora-shell-content" aria-label="' + esc(title || 'Workspace') + '">'
+    + bell
     + '<div class="aurora-shell-content-inner">'
     + body
     + '</div>'

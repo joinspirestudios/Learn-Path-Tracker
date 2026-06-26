@@ -7,6 +7,16 @@ import reportPathHandler from '../server/api-handlers/report-path.js';
 import reportProgressCommentHandler from '../server/api-handlers/report-progress-comment.js';
 import syncPathMetricsHandler from '../server/api-handlers/sync-path-metrics.js';
 import unpublishProgressHandler from '../server/api-handlers/unpublish-progress.js';
+import {
+  listNotificationsHandler,
+  markNotificationReadHandler,
+  markAllNotificationsReadHandler,
+  notificationPreferencesHandler,
+  savePushSubscriptionHandler,
+  deletePushSubscriptionHandler,
+  sendTestNotificationHandler,
+  runNotificationSchedulerHandler,
+} from '../server/api-handlers/notifications.js';
 import { apiError, createRequestId, sendApiError, setPrivateNoStore } from './_lib/errors.js';
 
 const handlers = {
@@ -19,6 +29,15 @@ const handlers = {
   'report-path':reportPathHandler,
   'report-progress-comment':reportProgressCommentHandler,
   'sync-path-metrics':syncPathMetricsHandler,
+  // Phase 6.17 — notifications (mounted here; no new Vercel function file).
+  'list-notifications':listNotificationsHandler,
+  'mark-notification-read':markNotificationReadHandler,
+  'mark-all-notifications-read':markAllNotificationsReadHandler,
+  'notification-preferences':notificationPreferencesHandler,
+  'save-push-subscription':savePushSubscriptionHandler,
+  'delete-push-subscription':deletePushSubscriptionHandler,
+  'send-test-notification':sendTestNotificationHandler,
+  'run-notification-scheduler':runNotificationSchedulerHandler,
 };
 
 function routeNameFromRequest(req){

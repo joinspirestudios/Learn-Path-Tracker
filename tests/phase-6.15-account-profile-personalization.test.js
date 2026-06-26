@@ -233,12 +233,12 @@ test('Phase 6.15 mobile adds no image-picker/camera/audio/proof-upload deps', ()
   // (expo-image-picker/expo-file-system/async-storage arrive in Phase 6.16.)
   for (const banned of [
     'expo-camera', 'expo-document-picker', 'expo-av',
-    'expo-media-library', 'expo-notifications', 'firebase-admin',
+    'expo-media-library', 'firebase-admin',
   ]) {
     assert.equal(deps[banned], undefined, banned + ' must not be added');
   }
   assert.deepEqual(Object.keys(pkg.dependencies).sort(),
-    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
+    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'expo-notifications', 'firebase', 'react', 'react-native']);
 });
 
 test('Phase 6.15 no camera/audio capture or admin in mobile source', () => {

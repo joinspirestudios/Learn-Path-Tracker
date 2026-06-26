@@ -2089,3 +2089,40 @@ select option,
   .undo-toast{ left:16px; right:16px; bottom:16px; transform:translateY(18px); max-width:none; min-width:0; }
   .undo-toast.show{ transform:translateY(0); }
 }
+
+/* ── Phase 6.17 — notifications ────────────────────────────────────────────── */
+.aurora-shell-utility{ display:flex; justify-content:flex-end; padding:0 0 8px; }
+.aurora-bell{ position:relative; display:inline-flex; align-items:center; justify-content:center;
+  width:40px; height:40px; border-radius:var(--lpt-radius-large); border:1px solid var(--line, rgba(255,255,255,.12));
+  background:var(--panel, rgba(255,255,255,.04)); color:var(--cream, #f4efe7); cursor:pointer; }
+.aurora-bell:hover{ border-color:var(--gold, #d8b15a); }
+.aurora-bell-icon{ font-size:18px; line-height:1; }
+.aurora-bell-badge{ position:absolute; top:-4px; right:-4px; min-width:18px; height:18px; padding:0 5px;
+  border-radius:var(--lpt-radius-pill); background:var(--gold, #d8b15a); color:#1a1410; font-size:11px; font-weight:800;
+  display:inline-flex; align-items:center; justify-content:center; }
+.aurora-notification-overlay{ position:fixed; inset:0; background:rgba(8,6,12,.55); z-index:60;
+  display:flex; justify-content:flex-end; padding:16px; }
+.aurora-notification-panel{ width:min(420px, 100%); max-height:100%; overflow:auto;
+  background:var(--panel, #15131c); border:1px solid var(--line, rgba(255,255,255,.12)); border-radius:var(--lpt-radius-xl); padding:16px; }
+.aurora-notification-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.aurora-notification-header h2{ font-size:16px; margin:0; }
+.aurora-notification-markall, .aurora-notification-mark, .aurora-notification-archive,
+.aurora-pref-push-enable, .aurora-pref-save{ background:transparent; border:1px solid var(--line, rgba(255,255,255,.16));
+  color:var(--cream, #f4efe7); border-radius:var(--lpt-radius-medium); padding:6px 10px; font-size:12px; cursor:pointer; }
+.aurora-notification-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.aurora-notification-row{ display:flex; gap:10px; justify-content:space-between; padding:10px 12px;
+  border:1px solid var(--line, rgba(255,255,255,.10)); border-radius:var(--lpt-radius-large); background:rgba(255,255,255,.02); }
+.aurora-notification-row.is-unread{ border-color:var(--gold, #d8b15a); background:rgba(216,177,90,.08); }
+.aurora-notification-title{ margin:0; font-weight:700; font-size:14px; }
+.aurora-notification-body{ margin:2px 0 0; font-size:13px; color:var(--muted, #b6ada0); }
+.aurora-notification-meta{ margin:4px 0 0; font-size:11px; color:var(--muted, #8a8278); }
+.aurora-notification-controls{ display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
+.aurora-notification-empty{ text-align:center; padding:28px 12px; color:var(--muted, #b6ada0); }
+.aurora-notification-empty-title{ font-weight:800; margin:0 0 4px; }
+.aurora-notification-prefs{ display:flex; flex-direction:column; gap:14px; }
+.aurora-pref-group{ border:1px solid var(--line, rgba(255,255,255,.10)); border-radius:var(--lpt-radius-large); padding:10px 12px; }
+.aurora-pref-group legend{ font-size:12px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:var(--muted,#b6ada0); padding:0 6px; }
+.aurora-pref-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; }
+.aurora-pref-label{ display:block; font-size:14px; font-weight:600; }
+.aurora-pref-desc{ display:block; font-size:12px; color:var(--muted, #b6ada0); }
+.aurora-pref-push-note[data-push-blocked="true"]{ color:var(--gold, #d8b15a); }

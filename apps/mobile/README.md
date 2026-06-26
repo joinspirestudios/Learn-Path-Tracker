@@ -131,11 +131,21 @@ If `npm install` cannot run due to network/environment constraints, the
 contract header without touching Firebase, Vercel, Anthropic, Deepgram, or Expo
 services.
 
+## Notifications (Phase 6.17)
+
+In-app notification center + preferences (reached from Profile): mark read/all,
+clear, and per-category toggles (in-app, daily reminder + time, streak-risk,
+proof upload, public-progress interactions, quiet hours). Local reminders use
+`expo-notifications` and are **opt-in** — the OS permission prompt only appears
+when the user enables mobile reminders. **Remote mobile push is deferred** (no
+Expo push token, no store credentials). Notifications live in owner-only
+`users/{uid}/notifications` and never include private proof, reflections,
+evidence URLs, Storage paths or tokens. See
+[`docs/cross-platform-notification-system.md`](../../docs/cross-platform-notification-system.md).
+
 ## Deferred to later mobile phases
 
-Firebase Auth, real sign-in, path loading, daily session sync, proof upload,
-camera/photo/file pickers, offline drafts, push notifications, public progress
-interactions, comments/reactions, moderation, AI builder, voice transcription,
+Remote push notifications and Expo push tokens, AI builder, voice transcription,
 EAS build config, native credentials, analytics, and store submission.
 
 There are no leaderboards, followers, global feeds, or hearts/gems/shop economy.

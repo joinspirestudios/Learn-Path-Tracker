@@ -282,7 +282,7 @@ test('Phase 6.13 no media/camera/audio/storage packages or imports in mobile', (
   // (Media upload via expo-image-picker/expo-file-system + Storage arrives in 6.16.)
   for (const banned of [
     'expo-camera', 'expo-document-picker', 'expo-av',
-    'expo-media-library', 'expo-notifications', 'firebase-admin',
+    'expo-media-library', 'firebase-admin',
   ]) {
     assert.equal(deps[banned], undefined, banned + ' must not be added');
   }

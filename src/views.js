@@ -109,6 +109,8 @@ import {
   proofArchiveHTML, compactProofStripHTML, dayProofArchiveHTML, publicProofTimelineHTML,
 } from './views/proof-archive.js';
 import { isProofPublicVisible, normalizeProofSubmissions } from './proof-archive-model.js';
+import { renderNotificationCenter } from './views/notification-center.js';
+import { renderNotificationPreferences } from './views/notification-preferences.js';
 import { buildDailyDocumentationEntries, buildDailyDocumentationEntry } from './daily-documentation-model.js';
 import {
   dailyDocumentationFeedHTML, publicDailyDocumentationFeedHTML, compactDayProofPreviewHTML,
@@ -407,6 +409,16 @@ function appViewContext(){
   };
 }
 
+// Phase 6.17 — signed-in notification overlay (rendered above the shell when the
+// bell is toggled open). Public-safe notification views only.
+function notificationOverlayHTML(){
+  if(!store.notificationsOpen) return '';
+  return '<div class="aurora-notification-overlay" data-action="close-notifications-overlay">'
+    + '<div class="aurora-notification-panel" role="dialog" aria-label="Notifications">'
+    + renderNotificationCenter({ notifications:store.notifications || [], unreadCount:store.notificationUnreadCount || 0 })
+    + '</div></div>';
+}
+
 function appShellHTML(active, body, { title = '', rightRail = '', className = '' } = {}){
   if(store.currentUser){
     document.body.classList.add('aurora-shell-mode');
@@ -419,7 +431,10 @@ function appShellHTML(active, body, { title = '', rightRail = '', className = ''
       avatarURL:profile.avatarURL || '',
     };
     if(store.currentUser.uid && store.userProfile === undefined) ensureProfileLoaded(store.currentUser.uid);
-    return renderAuroraShell({ active, title, body, rightRail, className, userLabel:label, user });
+    return renderAuroraShell({
+      active, title, body, rightRail, className, userLabel:label, user,
+      showBell:true, unreadCount:store.notificationUnreadCount || 0,
+    }) + notificationOverlayHTML();
   }
   document.body.classList.remove('aurora-shell-mode');
   if(active === 'discover'){
@@ -3150,6 +3165,13 @@ export function renderProfile(){
     + (user
       ? '<section class="panel card"><h3>Account</h3><p class="muted">' + esc(user.email || user.uid || 'Signed-in user') + '</p></section>'
         + profileSectionHTML(profile)
+        + '<section class="panel card aurora-notification-prefs-card">'
+        + renderNotificationPreferences({
+            preferences:store.notificationPreferences || {},
+            pushState:store.webPushState || 'default',
+            pushConfigured:!!store.webPushConfigured,
+          })
+        + '</section>'
       : '<section class="panel card"><h3>Sign in required</h3><p class="muted">Profile tools are available after signing in.</p><button class="btn gold" id="signinCard" type="button">Sign in</button></section>')
     + '</div>';
   $('content').innerHTML = appShellHTML('profile', body, { title:'Profile', className:'aurora-profile-route' });

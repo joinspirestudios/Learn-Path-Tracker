@@ -91,6 +91,14 @@ const requiredFiles = [
   'src/screens/ProgressScreen.js',
   'src/screens/ProfileScreen.js',
   'src/screens/SettingsScreen.js',
+  // Phase 6.17 — notifications.
+  'src/core/mobileNotificationPreferences.js',
+  'src/services/mobileNotificationRepository.js',
+  'src/services/mobileLocalNotificationService.js',
+  'src/components/MobileNotificationCenter.js',
+  'src/components/MobileNotificationPreferences.js',
+  'src/components/MobileNotificationBadge.js',
+  'src/screens/NotificationsScreen.js',
 ];
 
 const problems = [];

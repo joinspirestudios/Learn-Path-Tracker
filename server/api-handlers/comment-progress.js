@@ -13,6 +13,7 @@ import {
   entryCounters,
   makeComment,
 } from '../../api/_lib/progress-interactions.js';
+import { notifyProgressComment } from '../notification-triggers.js';
 
 export function createCommentProgressHandler({
   authenticate = requireAuth,
@@ -43,12 +44,14 @@ export function createCommentProgressHandler({
       const entryRef = pathRef.collection('publicProgress').doc(entryId);
       const comment = makeComment({ pathId, entryId, auth, body:commentBody, now });
       const commentRef = entryRef.collection('comments').doc(comment.id);
+      let ownerUid = '';
       const result = await firestore.runTransaction(async transaction => {
         const [pathSnap, entrySnap] = await Promise.all([
           transaction.get(pathRef),
           transaction.get(entryRef),
         ]);
         const { entry } = ensureInteractable(pathSnap, entrySnap, pathId, entryId);
+        ownerUid = String(entry.userId || '');
         const counters = entryCounters(entry);
         counters.visibleCommentCount += 1;
         transaction.set(commentRef, comment, { merge:false });
@@ -64,6 +67,14 @@ export function createCommentProgressHandler({
         };
       });
 
+      // Best-effort: notify the progress owner of a new comment (never self,
+      // never the comment body). Failures never affect the comment response.
+      if(ownerUid && ownerUid !== auth.uid){
+        await notifyProgressComment({
+          adminDb:firestore, ownerUid, actorUid:auth.uid, actorDisplayName:auth.name || '',
+          pathId, entryId, commentId:comment.id, logger:log,
+        });
+      }
       log.event('comment_progress_response_sent', { status:200, result:'ok', commentLength:commentBody.length });
       return sendPrivateJson(res, 200, { ok:true, ...result }, requestId);
     }catch(error){

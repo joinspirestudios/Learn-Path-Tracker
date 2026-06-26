@@ -719,6 +719,19 @@ uploaded metadata only (no local URI/base64). Scope tightened to **images only**
 
 See [`docs/mobile-media-proof-offline-drafts.md`](docs/mobile-media-proof-offline-drafts.md).
 
+**Phase 6.17 — cross-platform notifications:** a behavior-supporting (not spammy)
+notification system on web + mobile. Signed-in users get an in-app notification
+center (unread/read, mark read, mark all, archive) and per-category preferences
+(in-app, browser push, daily reminder + time, streak-risk, missed-day, proof
+upload, public-progress interactions, moderation updates, quiet hours).
+**Browser push is opt-in** (Web Push + service worker, never requested on signup)
+and degrades gracefully when VAPID keys are absent. Mobile adds opt-in
+**local** reminders via `expo-notifications`; remote mobile push is deferred.
+Notifications live in owner-only `users/{uid}/notifications` and never expose
+private proof, reflections, evidence URLs, Storage paths, tokens or emails. All
+endpoints run through the existing `community` router (no new Vercel function).
+See [`docs/cross-platform-notification-system.md`](docs/cross-platform-notification-system.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

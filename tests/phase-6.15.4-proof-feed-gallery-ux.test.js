@@ -167,7 +167,7 @@ test('Phase 6.15.4 daily-doc styles exist', () => {
 
 test('Phase 6.15.4 mobile deps unchanged; no capture/upload', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'expo-notifications', 'firebase', 'react', 'react-native']);
 });
 
 test('Phase 6.15.4 Vercel function count unchanged; rules unchanged', () => {

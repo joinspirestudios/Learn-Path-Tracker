@@ -311,7 +311,7 @@ test('Phase 6.11 no camera/file-picker/audio or new native deps added to mobile 
   // Phase 6.12 adds firebase; Phase 6.16 adds expo-image-picker/expo-file-system/
   // async-storage for media proof + offline drafts. Still no camera/audio/admin.
   assert.deepEqual(Object.keys(pkg.dependencies).sort(),
-    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
+    ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'expo-notifications', 'firebase', 'react', 'react-native']);
 });
 
 /* ── 5. Components ── */

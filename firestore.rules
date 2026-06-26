@@ -116,8 +116,18 @@ service cloud.firestore {
     // Current code writes under:
     // users/{uid}/state/main
     // users/{uid}/renders/{renderId}
-    // users/{uid}/profile/main         (Phase 6.15 profile)
-    // users/{uid}/mobileDayLogs/{id}   (Phase 6.13 mobile day logs)
+    // users/{uid}/profile/main                    (Phase 6.15 profile)
+    // users/{uid}/mobileDayLogs/{id}              (Phase 6.13 mobile day logs)
+    // users/{uid}/notifications/{notificationId}  (Phase 6.17 notifications)
+    // users/{uid}/notificationPreferences/main    (Phase 6.17 preferences)
+    // users/{uid}/pushSubscriptions/{subId}       (Phase 6.17 web push)
+    //
+    // Owner-only read/write: another user can never read or write these docs and
+    // signed-out access is denied. Event notifications are created server-side
+    // (Firebase Admin bypasses these rules); clients in practice only flip
+    // read/archived on their own notifications and manage their own preferences
+    // and push subscriptions. Notification docs never contain tokens or private
+    // proof — see src/notification-model.js sanitization.
     match /users/{uid}/{document=**} {
       allow read, write: if signedIn()
         && request.auth.uid == uid;

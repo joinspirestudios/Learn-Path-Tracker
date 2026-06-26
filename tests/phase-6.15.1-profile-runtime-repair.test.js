@@ -190,7 +190,7 @@ test('Phase 6.15.1 mobile editor states image upload is on web (no fake upload)'
 
 test('Phase 6.15.1 no new mobile deps and no proof/camera/notification deps', () => {
   const pkg = JSON.parse(read('apps/mobile/package.json'));
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'firebase', 'react', 'react-native']);
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@react-native-async-storage/async-storage', 'expo', 'expo-file-system', 'expo-image-picker', 'expo-notifications', 'firebase', 'react', 'react-native']);
 });
 
 test('Phase 6.15.1 Vercel function count unchanged', () => {

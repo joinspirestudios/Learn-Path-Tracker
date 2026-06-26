@@ -150,6 +150,13 @@ export const store = {
   },
   currentUser:     null,
   authChecked:     false,
+  // Phase 6.17 — notifications. Loaded from users/{uid}/notifications on sign-in.
+  notifications:        [],
+  notificationUnreadCount: 0,
+  notificationsOpen:    false,
+  notificationPreferences: null,
+  webPushState:         'default', // default | granted | denied | unsupported
+  webPushConfigured:    false,
   activeTab:       'week',
   currentWeek:     1,
   editMode:        false,

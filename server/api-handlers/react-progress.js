@@ -5,6 +5,7 @@ import { getAdminFirestore } from '../../api/_lib/firebase-admin.js';
 import { enforceRateLimit } from '../../api/_lib/rate-limit.js';
 import { requireAuth } from '../../api/_lib/require-auth.js';
 import { withSchemaVersion } from '../../src/schema-versioning.js';
+import { notifyProgressReaction } from '../notification-triggers.js';
 import {
   cleanEntryId,
   cleanPathId,
@@ -48,6 +49,7 @@ export function createReactProgressHandler({
       const pathRef = firestore.collection('paths').doc(pathId);
       const entryRef = pathRef.collection('publicProgress').doc(entryId);
       const reactionRef = entryRef.collection('reactions').doc(auth.uid);
+      let ownerUid = '';
       const result = await firestore.runTransaction(async transaction => {
         const [pathSnap, entrySnap, reactionSnap] = await Promise.all([
           transaction.get(pathRef),
@@ -55,6 +57,7 @@ export function createReactProgressHandler({
           transaction.get(reactionRef),
         ]);
         const { entry } = ensureInteractable(pathSnap, entrySnap, pathId, entryId);
+        ownerUid = String(entry.userId || '');
         const previous = reactionSnap.exists ? cleanStoredReaction((reactionSnap.data() || {}).type) : null;
         const counters = entryCounters(entry);
 
@@ -84,6 +87,14 @@ export function createReactProgressHandler({
         return reactionResponse(pathId, entryId, requestedReaction, counters);
       });
 
+      // Best-effort: notify the progress owner of a new reaction (not the actor,
+      // never self). Failures here never affect the reaction response.
+      if(requestedReaction && ownerUid && ownerUid !== auth.uid){
+        await notifyProgressReaction({
+          adminDb:firestore, ownerUid, actorUid:auth.uid, actorDisplayName:auth.name || '',
+          pathId, entryId, logger:log,
+        });
+      }
       log.event('react_progress_response_sent', { status:200, result:'ok', reactionType:requestedReaction || 'none' });
       return sendPrivateJson(res, 200, { ok:true, ...result }, requestId);
     }catch(error){

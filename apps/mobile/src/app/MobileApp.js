@@ -33,6 +33,8 @@ import { createRoadmapRepository } from '../services/roadmapRepository.js';
 import { createDayLogRepository } from '../services/dayLogRepository.js';
 import { createMobilePublicProgressRepository } from '../services/mobilePublicProgressRepository.js';
 import { createProfileRepository } from '../services/profileRepository.js';
+import { createMobileNotificationRepository } from '../services/mobileNotificationRepository.js';
+import { createMobileLocalNotificationService } from '../services/mobileLocalNotificationService.js';
 import { createMobileProofStorageRepository } from '../services/mobileProofStorageRepository.js';
 import { createMobileMediaProofRepository } from '../services/mobileMediaProofRepository.js';
 import { createMobileOfflineDraftRepository } from '../services/mobileOfflineDraftRepository.js';
@@ -48,6 +50,7 @@ import { PathRoadmapScreen } from '../screens/PathRoadmapScreen.js';
 import { DiscoverScreen } from '../screens/DiscoverScreen.js';
 import { ProgressScreen } from '../screens/ProgressScreen.js';
 import { ProfileScreen } from '../screens/ProfileScreen.js';
+import { NotificationsScreen } from '../screens/NotificationsScreen.js';
 import { PublicPathPreviewScreen } from '../screens/PublicPathPreviewScreen.js';
 import { AuroraLoadingState } from '../components/AuroraLoadingState.js';
 
@@ -62,6 +65,8 @@ export function MobileApp() {
   const userGateway = useMemo(() => client.createUserDataGateway(), [client]);
   const dayLogRepo = useMemo(() => createDayLogRepository({ gateway: userGateway }), [userGateway]);
   const profileRepo = useMemo(() => createProfileRepository({ gateway: userGateway }), [userGateway]);
+  const notificationRepo = useMemo(() => createMobileNotificationRepository({ gateway: userGateway }), [userGateway]);
+  const localNotificationService = useMemo(() => createMobileLocalNotificationService({}), []);
   const storageGateway = useMemo(() => client.createStorageGateway(), [client]);
   const proofStorageRepo = useMemo(() => createMobileProofStorageRepository({ storageGateway }), [storageGateway]);
   const mediaProofRepo = useMemo(() => createMobileMediaProofRepository({ storageRepo: proofStorageRepo }), [proofStorageRepo]);
@@ -114,6 +119,14 @@ export function MobileApp() {
   const [proofDrafts, setProofDrafts] = useState([]);
   const [proofUploadError, setProofUploadError] = useState('');
 
+  // Notifications (Phase 6.17).
+  const [notifications, setNotifications] = useState([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [notifPrefs, setNotifPrefs] = useState(null);
+  const [prefsBusy, setPrefsBusy] = useState(false);
+  const [prefsStatus, setPrefsStatus] = useState('');
+  const [profileView, setProfileView] = useState('main'); // main | notifications
+
   useEffect(() => {
     let active = true;
     let unsub = () => {};
@@ -159,9 +172,64 @@ export function MobileApp() {
     }
   }, [authUser, profileRepo]);
 
+  const loadNotifications = useCallback(async () => {
+    if (!authUser) { setNotifications([]); setNotifUnread(0); setNotifPrefs(null); return; }
+    try {
+      const [items, unread, prefs] = await Promise.all([
+        notificationRepo.listNotifications({ uid: authUser.uid }),
+        notificationRepo.unreadCount({ uid: authUser.uid }),
+        notificationRepo.loadPreferences({ uid: authUser.uid }),
+      ]);
+      setNotifications(items);
+      setNotifUnread(unread);
+      setNotifPrefs(prefs);
+    } catch {
+      // Non-critical chrome; never block the app.
+    }
+  }, [authUser, notificationRepo]);
+
   useEffect(() => {
-    if (authStatus === AUTH_STATUS.SIGNED_IN) { loadUserPaths(); loadProfile(); }
-  }, [authStatus, loadUserPaths, loadProfile]);
+    if (authStatus === AUTH_STATUS.SIGNED_IN) { loadUserPaths(); loadProfile(); loadNotifications(); }
+  }, [authStatus, loadUserPaths, loadProfile, loadNotifications]);
+
+  // ── Notification handlers (Phase 6.17) ──
+  async function handleMarkNotificationRead(notificationId) {
+    if (!authUser) return;
+    await notificationRepo.markRead({ uid: authUser.uid, notificationId });
+    await loadNotifications();
+  }
+  async function handleMarkAllNotificationsRead() {
+    if (!authUser) return;
+    for (const n of notifications.filter(x => !x.read)) {
+      // eslint-disable-next-line no-await-in-loop
+      await notificationRepo.markRead({ uid: authUser.uid, notificationId: n.id });
+    }
+    await loadNotifications();
+  }
+  async function handleClearNotification(notificationId) {
+    if (!authUser) return;
+    await notificationRepo.archive({ uid: authUser.uid, notificationId });
+    await loadNotifications();
+  }
+  // OS permission is requested ONLY here, when the user enables mobile reminders.
+  async function handleEnableLocalNotifications() {
+    return localNotificationService.requestPermission();
+  }
+  async function handleSaveNotificationPreferences(draft) {
+    if (!authUser) { setPrefsStatus('Please sign in again.'); return; }
+    setPrefsBusy(true); setPrefsStatus('');
+    try {
+      const saved = await notificationRepo.savePreferences({ uid: authUser.uid, preferences: draft });
+      setNotifPrefs(saved);
+      // Reflect reminder changes on-device (schedules or cancels as needed).
+      await localNotificationService.scheduleDailyReminder({ preferences: saved });
+      setPrefsStatus('Saved');
+    } catch {
+      setPrefsStatus('Could not save preferences yet.');
+    } finally {
+      setPrefsBusy(false);
+    }
+  }
 
   async function handleSaveProfile(fields) {
     if (!authUser) { setProfileStatus('Please sign in again.'); return; }
@@ -478,6 +546,23 @@ export function MobileApp() {
     }
     if (activeTab === 'progress') return <ProgressScreen />;
     if (activeTab === 'profile') {
+      if (profileView === 'notifications') {
+        return (
+          <NotificationsScreen
+            notifications={notifications}
+            unreadCount={notifUnread}
+            preferences={notifPrefs}
+            prefsBusy={prefsBusy}
+            prefsStatus={prefsStatus}
+            onMarkRead={handleMarkNotificationRead}
+            onMarkAllRead={handleMarkAllNotificationsRead}
+            onClear={handleClearNotification}
+            onSavePreferences={handleSaveNotificationPreferences}
+            onEnableLocal={handleEnableLocalNotifications}
+            onBack={() => setProfileView('main')}
+          />
+        );
+      }
       return (
         <ProfileScreen
           user={authUser}
@@ -486,6 +571,8 @@ export function MobileApp() {
           profile={profile}
           profileBusy={profileBusy}
           profileStatus={profileStatus}
+          notificationUnreadCount={notifUnread}
+          onOpenNotifications={() => setProfileView('notifications')}
           onSaveProfile={handleSaveProfile}
           onSignOut={handleSignOut}
         />
@@ -507,6 +594,7 @@ export function MobileApp() {
               onPress={() => {
                 setActiveTab(tab.id);
                 if (tab.id === 'paths' || tab.id === 'discover') setPathView('list');
+                if (tab.id === 'profile') setProfileView('main');
               }}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
