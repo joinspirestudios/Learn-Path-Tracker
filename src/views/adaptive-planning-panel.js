@@ -5,6 +5,7 @@
 
 import { esc } from '../helpers.js';
 import { scoreRecommendationPriority, adaptivePlanSummary } from '../adaptive-planning-model.js';
+import { adaptiveCopyForTodayState } from '../today-state-model.js';
 
 const RECOMMENDATION_LABELS = {
   reduce_task_load: 'Reduce task load',
@@ -31,17 +32,22 @@ function sourceBadge(source) {
 
 // Compact card for surfaces like Today. `draft` is a normalized adaptation draft
 // (or null). Shows a summary + top recommendations + review/dismiss actions.
-export function renderAdaptivePlanningPanel({ draft = null, pathId = '' } = {}) {
+export function renderAdaptivePlanningPanel({ draft = null, pathId = '', todayState = null } = {}) {
   if (!draft || !Array.isArray(draft.recommendations) || !draft.recommendations.length) return '';
   const recs = [...draft.recommendations].sort((a, b) => scoreRecommendationPriority(b) - scoreRecommendationPriority(a));
   const onlyKeep = recs.length === 1 && recs[0].type === 'keep_plan_unchanged';
   const top = recs.slice(0, 3);
+  // Phase 8.1.1 — when a Today state is supplied, the summary copy is missed/
+  // recovery/proof aware so it never reads "steady" while the day is missed.
+  const summaryCopy = todayState
+    ? adaptiveCopyForTodayState(todayState, draft)
+    : (draft.summary || adaptivePlanSummary(recs));
   return '<section class="aurora-adapt-card" aria-label="Adaptive planning" data-path-id="' + esc(pathId || draft.pathId || '') + '">'
     + '<header class="aurora-adapt-head">'
     + '<span class="aurora-adapt-kicker">Adjust upcoming days</span>'
     + sourceBadge(draft.source)
     + '</header>'
-    + '<p class="aurora-adapt-summary">' + esc(draft.summary || adaptivePlanSummary(recs)) + '</p>'
+    + '<p class="aurora-adapt-summary">' + esc(summaryCopy) + '</p>'
     + '<ul class="aurora-adapt-list">'
     + top.map(r => '<li class="aurora-adapt-item" data-rec-type="' + esc(r.type) + '">'
       + '<span class="aurora-adapt-rec-label">' + esc(recommendationLabel(r.type)) + '</span>'

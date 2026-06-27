@@ -2091,7 +2091,7 @@ select option,
 }
 
 /* ── Phase 6.17 — notifications ────────────────────────────────────────────── */
-.aurora-shell-utility{ display:flex; justify-content:flex-end; padding:0 0 8px; }
+.aurora-shell-utility{ display:flex; justify-content:flex-end; align-items:center; }
 .aurora-bell{ position:relative; display:inline-flex; align-items:center; justify-content:center;
   width:40px; height:40px; border-radius:var(--lpt-radius-large); border:1px solid var(--line, rgba(255,255,255,.12));
   background:var(--panel, rgba(255,255,255,.04)); color:var(--cream, #f4efe7); cursor:pointer; }
@@ -2245,3 +2245,22 @@ select option,
 .aurora-vision-consent-actions{ display:flex; gap:8px; }
 .aurora-vision-confirm{ background:var(--gold,#d8b15a); color:#1a1410; border:none; border-radius:var(--lpt-radius-medium); padding:8px 12px; font-size:13px; font-weight:800; cursor:pointer; }
 .aurora-vision-cancel{ background:transparent; border:1px solid var(--line, rgba(255,255,255,.16)); color:var(--cream,#f4efe7); border-radius:var(--lpt-radius-medium); padding:8px 12px; font-size:13px; font-weight:700; cursor:pointer; }
+
+/* ── Phase 8.1.1 — Today state hierarchy + bell header ──────────────────────── */
+.aurora-shell-header{ width:100%; max-width:var(--lpt-layout-content-max); margin:0 auto 12px;
+  display:flex; align-items:center; gap:12px; }
+.aurora-shell-header-spacer{ flex:1 1 auto; }
+.aurora-shell-header .aurora-shell-utility{ flex:0 0 auto; }
+/* Daily Focus is the main action card; give it clear emphasis. */
+.aurora-today-route .aurora-daily-focus.aurora-today-state{ border:1px solid var(--gold, rgba(216,177,90,.35)); }
+.aurora-today-state-copy{ font-size:14px; color:var(--cream,#f4efe7); margin:6px 0 0; }
+.aurora-today-recovery-note{ font-size:13px; color:var(--gold,#d8b15a); margin:6px 0 0; }
+.aurora-today-proof-status{ font-size:13px; color:var(--muted,#b6ada0); margin:4px 0 0; }
+.aurora-today-primary-action{ margin-top:12px; }
+.aurora-today-state[data-today-state="missed"] .aurora-chip,
+.aurora-right-rail-status[data-today-state="missed"] b{ color:#e8896b; }
+.aurora-right-rail-status[data-today-state="recoverable"] b,
+.aurora-today-state[data-today-state="recoverable"] .aurora-chip{ color:var(--gold,#d8b15a); }
+.aurora-right-rail-status p{ margin:4px 0 0; font-size:13px; color:var(--muted,#b6ada0); }
+/* Adaptive Planning is supporting context — never overpower the main action. */
+.aurora-today-route .aurora-adapt-card{ background:rgba(255,255,255,.015); }

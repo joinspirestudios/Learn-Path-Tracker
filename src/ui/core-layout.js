@@ -81,16 +81,18 @@ export function renderAuroraShell({
   unreadCount = 0,
 } = {}){
   const railClass = rightRail ? ' has-right-rail' : '';
-  // Signed-in notification bell (with unread badge). Sits in the shell header so
-  // it is reachable from every app page. Hidden when signed out.
-  const bell = showBell
-    ? '<div class="aurora-shell-utility">' + renderNotificationBell({ unreadCount }) + '</div>'
+  // Phase 8.1.1 — the signed-in notification bell sits in a stable top header bar
+  // at the top-right of the CENTERED content column (not floating mid-canvas).
+  // Rendering it inside content-inner keeps it aligned to the content max-width.
+  const header = showBell
+    ? '<header class="aurora-shell-header"><div class="aurora-shell-header-spacer"></div>'
+      + '<div class="aurora-shell-utility">' + renderNotificationBell({ unreadCount }) + '</div></header>'
     : '';
   return '<main class="lpt-shell aurora-app-shell' + railClass + ' ' + esc(className) + '" data-shell-active="' + esc(active) + '">'
     + renderShellNav({ active, userLabel, user })
     + '<section class="aurora-shell-content" aria-label="' + esc(title || 'Workspace') + '">'
-    + bell
     + '<div class="aurora-shell-content-inner">'
+    + header
     + body
     + '</div>'
     + '</section>'

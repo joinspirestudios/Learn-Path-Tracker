@@ -133,6 +133,15 @@ proof source (nested `evidenceSubmissions` are now flattened/collected per path)
 without changing this integration. See
 [evidence-intelligence.md](evidence-intelligence.md).
 
+## Phase 8.1.1 — Today-state-aware adaptive copy
+
+The Today screen passes its normalized state (`src/today-state-model.js`) into
+`renderAdaptivePlanningPanel`, which uses `adaptiveCopyForTodayState` so the
+summary line is missed/recovery/proof aware — it never reads "Your plan looks
+steady — no changes suggested." while the visible day is missed. The underlying
+Phase 7.0 model is unchanged; without a Today state the panel renders exactly as
+before.
+
 ## Rollout after this phase
 
 - **Phase 8.0 — Evidence Intelligence**
