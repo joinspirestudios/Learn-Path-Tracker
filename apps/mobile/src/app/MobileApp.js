@@ -36,6 +36,7 @@ import { createProfileRepository } from '../services/profileRepository.js';
 import { createMobileNotificationRepository } from '../services/mobileNotificationRepository.js';
 import { createMobileLocalNotificationService } from '../services/mobileLocalNotificationService.js';
 import { createMobileRuntimeDiagnostics } from '../services/mobileRuntimeDiagnostics.js';
+import { createMobileAdaptivePlanningRepository } from '../services/mobileAdaptivePlanningRepository.js';
 import { createMobileProofStorageRepository } from '../services/mobileProofStorageRepository.js';
 import { createMobileMediaProofRepository } from '../services/mobileMediaProofRepository.js';
 import { createMobileOfflineDraftRepository } from '../services/mobileOfflineDraftRepository.js';
@@ -53,6 +54,7 @@ import { ProgressScreen } from '../screens/ProgressScreen.js';
 import { ProfileScreen } from '../screens/ProfileScreen.js';
 import { NotificationsScreen } from '../screens/NotificationsScreen.js';
 import { MobileDiagnosticsScreen } from '../screens/MobileDiagnosticsScreen.js';
+import { AdaptivePlanningScreen } from '../screens/AdaptivePlanningScreen.js';
 import { PublicPathPreviewScreen } from '../screens/PublicPathPreviewScreen.js';
 import { AuroraLoadingState } from '../components/AuroraLoadingState.js';
 
@@ -70,6 +72,7 @@ export function MobileApp() {
   const notificationRepo = useMemo(() => createMobileNotificationRepository({ gateway: userGateway }), [userGateway]);
   const localNotificationService = useMemo(() => createMobileLocalNotificationService({}), []);
   const runtimeDiagnostics = useMemo(() => createMobileRuntimeDiagnostics({ platform: Platform.OS }), []);
+  const adaptiveRepo = useMemo(() => createMobileAdaptivePlanningRepository({ apiClient }), [apiClient]);
   const storageGateway = useMemo(() => client.createStorageGateway(), [client]);
   const proofStorageRepo = useMemo(() => createMobileProofStorageRepository({ storageGateway }), [storageGateway]);
   const mediaProofRepo = useMemo(() => createMobileMediaProofRepository({ storageRepo: proofStorageRepo }), [proofStorageRepo]);
@@ -128,7 +131,11 @@ export function MobileApp() {
   const [notifPrefs, setNotifPrefs] = useState(null);
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [prefsStatus, setPrefsStatus] = useState('');
-  const [profileView, setProfileView] = useState('main'); // main | notifications | diagnostics
+  const [profileView, setProfileView] = useState('main'); // main | notifications | diagnostics | adaptive
+
+  // Adaptive planning (Phase 7.0) — review/dismiss only on mobile.
+  const [adaptiveDraft, setAdaptiveDraft] = useState(null);
+  const [adaptiveLoading, setAdaptiveLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -247,6 +254,29 @@ export function MobileApp() {
       setProfileBusy(false);
     }
   }
+
+  // ── Adaptive planning handlers (Phase 7.0) ──
+  async function loadAdaptiveDraft() {
+    if (!authUser) { setAdaptiveDraft(null); return; }
+    setAdaptiveLoading(true);
+    try {
+      const pid = (selectedPath && selectedPath.id) || loopState.path.id;
+      const draft = await adaptiveRepo.fetchDraft({
+        pathId: pid,
+        context: {
+          pathTitle: (selectedPath && selectedPath.title) || loopState.path.title,
+          currentDayNumber: loopState.path.dayNumber,
+          pendingProofCount,
+        },
+      });
+      setAdaptiveDraft(draft);
+    } catch {
+      setAdaptiveDraft(null);
+    } finally {
+      setAdaptiveLoading(false);
+    }
+  }
+  function handleDismissAdaptiveDraft() { setAdaptiveDraft(null); }
 
   // ── Auth handlers ──
   async function handleSignIn(email, password) {
@@ -549,6 +579,18 @@ export function MobileApp() {
     }
     if (activeTab === 'progress') return <ProgressScreen />;
     if (activeTab === 'profile') {
+      if (profileView === 'adaptive') {
+        return (
+          <AdaptivePlanningScreen
+            draft={adaptiveDraft}
+            loading={adaptiveLoading}
+            onRefresh={loadAdaptiveDraft}
+            onDismiss={handleDismissAdaptiveDraft}
+            onReviewOnWeb={handleDismissAdaptiveDraft}
+            onBack={() => setProfileView('main')}
+          />
+        );
+      }
       if (profileView === 'diagnostics') {
         const notifStatus = notifPrefs
           ? (notifPrefs.mobileLocalEnabled ? 'enabled' : 'disabled')
@@ -588,6 +630,7 @@ export function MobileApp() {
           notificationUnreadCount={notifUnread}
           onOpenNotifications={() => setProfileView('notifications')}
           onOpenDiagnostics={() => setProfileView('diagnostics')}
+          onOpenAdaptivePlanning={() => { setProfileView('adaptive'); loadAdaptiveDraft(); }}
           onSaveProfile={handleSaveProfile}
           onSignOut={handleSignOut}
         />

@@ -67,6 +67,11 @@ export const MOBILE_PRIVACY_RULES = [
   'Deep links never parse tokens or private evidence URLs; unknown routes fall back to Today.',
   'The error boundary never renders stack traces, tokens or private data to normal users.',
   'No store credentials, keystores, certificates or service-account files are committed.',
+  // Phase 7.0 — rolling adaptive planning:
+  'Adaptive planning uses only structured progress metadata (scores/counts/task labels), never proof bodies, reflections, evidence URLs or storage paths.',
+  'Adaptive recommendations are drafts only; nothing is applied automatically.',
+  'Completed and missed days are never rewritten; public/canonical paths are never mutated for participants.',
+  'AI-assisted recommendations only ever receive server-sanitized, value-free context.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

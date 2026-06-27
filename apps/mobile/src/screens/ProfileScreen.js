@@ -13,7 +13,8 @@ import { MobileNotificationBadge } from '../components/MobileNotificationBadge.j
 // ID tokens.
 export function ProfileScreen({
   user, configured, localMode, profile, profileBusy, profileStatus,
-  notificationUnreadCount = 0, onOpenNotifications, onOpenDiagnostics, onSaveProfile, onSignOut,
+  notificationUnreadCount = 0, onOpenNotifications, onOpenDiagnostics, onOpenAdaptivePlanning,
+  onSaveProfile, onSignOut,
 }) {
   const merged = { ...(profile || {}), uid: user && user.uid, displayName: (profile && profile.displayName) || (user && user.displayName) || '' };
 
@@ -62,6 +63,16 @@ export function ProfileScreen({
             status={profileStatus}
             onSave={onSaveProfile}
           />
+        </AuroraCard>
+      ) : null}
+
+      {user ? (
+        <AuroraCard>
+          <View style={styles.headRow}>
+            <Text style={styles.title}>Adaptive planning</Text>
+          </View>
+          <Text style={styles.rowMuted}>Gentle, evidence-based suggestions for your upcoming days. Nothing is applied automatically.</Text>
+          <AuroraButton label="Adaptive planning" variant="secondary" onPress={onOpenAdaptivePlanning} />
         </AuroraCard>
       ) : null}
 

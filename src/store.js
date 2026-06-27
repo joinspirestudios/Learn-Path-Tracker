@@ -157,6 +157,11 @@ export const store = {
   notificationPreferences: null,
   webPushState:         'default', // default | granted | denied | unsupported
   webPushConfigured:    false,
+  // Phase 7.0 — rolling adaptive planning (user-owned drafts; never auto-applied).
+  adaptivePlanDraft:    null,
+  adaptivePlanReviewOpen: false,
+  adaptivePlanKey:      '',   // cache key (pathId:dayNumber) to avoid rebuild loops
+  adaptivePlanStatus:   '',   // transient UI status (e.g. "Applied")
   activeTab:       'week',
   currentWeek:     1,
   editMode:        false,

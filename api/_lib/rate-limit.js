@@ -17,6 +17,7 @@ const ROUTE_LIMITS = {
   syncPathMetrics:{ hourlyEnv:'RATE_LIMIT_SYNC_PATH_METRICS_PER_HOUR', burstEnv:'RATE_LIMIT_SYNC_PATH_METRICS_BURST_PER_10_MINUTES', hourly:120, burst:30 },
   notificationWrite:{ hourlyEnv:'RATE_LIMIT_NOTIFICATION_WRITE_PER_HOUR', burstEnv:'RATE_LIMIT_NOTIFICATION_WRITE_BURST_PER_10_MINUTES', hourly:200, burst:40 },
   notificationTest:{ hourlyEnv:'RATE_LIMIT_NOTIFICATION_TEST_PER_HOUR', burstEnv:'RATE_LIMIT_NOTIFICATION_TEST_BURST_PER_10_MINUTES', hourly:20, burst:5 },
+  adaptPath:{ hourlyEnv:'RATE_LIMIT_ADAPT_PATH_PER_HOUR', burstEnv:'RATE_LIMIT_ADAPT_PATH_BURST_PER_10_MINUTES', hourly:40, burst:8 },
 };
 
 function configuredLimit(name, fallback){

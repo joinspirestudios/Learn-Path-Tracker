@@ -39,6 +39,9 @@ import {
 import { notificationPublicSafeView } from './notification-model.js';
 import { browserSupportsPush, requestWebPushPermission, currentPushPermission } from './web-push-permissions.js';
 import { subscribeToWebPush, getExistingPushSubscription, unsubscribeFromWebPush } from './web-push-client.js';
+import { buildContextForPath, buildDeterministicPlan } from './adaptive-planning-context.js';
+import { buildAdaptationDraft } from './adaptive-planning-drafts.js';
+import { saveAdaptationDraft, dismissAdaptationDraft, applyAdaptationDraft } from './adaptive-planning-db.js';
 
 let preflightPromise = null;
 let platformSyncPromise = null;
@@ -331,6 +334,8 @@ async function onSignIn(){
   }
   // Load notifications in the background; never blocks the signed-in render.
   loadNotificationsForCurrentUser();
+  // Build a deterministic adaptive-planning draft in the background (advisory).
+  try{ refreshAdaptivePlan(); }catch(error){ /* advisory only */ }
 }
 
 function armAuthSoftTimeout(){
@@ -452,6 +457,69 @@ async function handleNotificationAction(action, id){
   }
 }
 
+/* ---- Phase 7.0 adaptive planning controller ---- */
+function activePathContext(){
+  const enrollments = (store.state && store.state.enrollments) || {};
+  const pathId = store.state.current
+    || (Object.values(enrollments).find(e => e && e.pathId && e.startDate) || {}).pathId
+    || null;
+  if(!pathId) return null;
+  const path = (store.state.userPaths && store.state.userPaths[pathId]) || { id:pathId };
+  const enrollment = Object.values(enrollments).find(e => e && e.pathId === pathId) || {};
+  return { pathId, path:{ ...path, id:pathId }, enrollment };
+}
+
+// Build a deterministic adaptation draft for the active path (cached by
+// path+day to avoid rebuilding every render). Never auto-applies.
+function refreshAdaptivePlan(){
+  const uid = notificationUid();
+  const active = activePathContext();
+  if(!uid || !active){ return; }
+  const context = buildContextForPath({
+    path:active.path,
+    enrollment:active.enrollment,
+    isOwner:!!(active.path && active.path.ownerId && active.path.ownerId === uid),
+  });
+  const key = active.pathId + ':' + (context.currentDayNumber || 0);
+  if(store.adaptivePlanKey === key && store.adaptivePlanDraft){ return; }
+  const { insights, recommendations } = buildDeterministicPlan({ context });
+  const draft = buildAdaptationDraft({
+    uid, pathId:active.pathId, currentDayNumber:context.currentDayNumber,
+    insights, recommendations, source:'deterministic',
+  });
+  store.adaptivePlanKey = key;
+  store.adaptivePlanDraft = draft;
+  // Persist best-effort (creating a draft is not applying it).
+  saveAdaptationDraft(uid, active.pathId, draft, {}).catch(() => {});
+  refreshVisibleRoute();
+}
+
+async function handleAdaptiveAction(action, draftId){
+  const uid = notificationUid();
+  const active = activePathContext();
+  if(!uid || !active) return;
+  if(action === 'review-adaptation'){ store.adaptivePlanReviewOpen = true; refreshVisibleRoute(); return; }
+  if(action === 'close-adaptation-overlay'){ store.adaptivePlanReviewOpen = false; refreshVisibleRoute(); return; }
+  if(action === 'dismiss-adaptation'){
+    store.adaptivePlanReviewOpen = false;
+    store.adaptivePlanDraft = null;
+    if(draftId) dismissAdaptationDraft(uid, active.pathId, draftId, {}).catch(() => {});
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'apply-adaptation' && draftId){
+    try{
+      const role = (active.path && active.path.ownerId === uid) ? 'owner' : 'participant';
+      await applyAdaptationDraft(uid, active.pathId, draftId, { path:active.path, userRole:role });
+      store.adaptivePlanStatus = 'Applied to your upcoming days.';
+      store.adaptivePlanReviewOpen = false;
+      store.adaptivePlanDraft = null;
+    }catch(error){ store.adaptivePlanStatus = 'Could not apply that yet.'; }
+    refreshVisibleRoute();
+    return;
+  }
+}
+
 /* ---- bootstrap ---- */
 async function init(){
   installFormAccessibility();
@@ -475,6 +543,12 @@ async function init(){
       if(NOTIFICATION_ACTIONS.includes(action)){
         e.preventDefault();
         handleNotificationAction(action, notify.getAttribute('data-notification-id') || '');
+      }
+      const ADAPTIVE_ACTIONS = ['review-adaptation', 'close-adaptation-overlay', 'dismiss-adaptation', 'apply-adaptation'];
+      if(action === 'close-adaptation-overlay' && e.target !== notify) return;
+      if(ADAPTIVE_ACTIONS.includes(action)){
+        e.preventDefault();
+        handleAdaptiveAction(action, notify.getAttribute('data-draft-id') || '');
       }
     }
   });
