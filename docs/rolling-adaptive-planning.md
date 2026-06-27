@@ -122,13 +122,15 @@ overlay all remain intact, and `tests/phase-7.0-rolling-adaptive-planning.test.j
 still passes. Sign-out additionally clears adaptive transient state
 (`adaptivePlanDraft`, `adaptivePlanReviewOpen`, `adaptivePlanKey`).
 
-## Evidence Intelligence integration (Phase 8.0)
+## Evidence Intelligence integration (Phase 8.0 / 8.0.1)
 
 Phase 8.0 (Evidence Intelligence) can feed safe aggregate signals into adaptive
 planning via `evidenceSignalsForAdaptivePlanning()` — `proofCoverageRate`,
 `pendingProofUploadCount`, `proofGapCount`, `evidenceQualityTier` — never private
 proof, reflections, raw URLs, storage paths or localUri. Adaptive planning does
-not depend on Evidence Intelligence to function. See
+not depend on Evidence Intelligence to function. Phase 8.0.1 repaired the web
+proof source (nested `evidenceSubmissions` are now flattened/collected per path)
+without changing this integration. See
 [evidence-intelligence.md](evidence-intelligence.md).
 
 ## Rollout after this phase

@@ -13,7 +13,7 @@ import {
 // Compact evidence intelligence card: coverage summary + top recommendations +
 // disclaimer. Review/dismiss only on mobile (no publish). Never renders private
 // proof, evidence URLs or storage paths (server-sanitized) and never says
-// "verified".
+// that an activity happened.
 export function MobileEvidenceInsightCard({ draft, onDismiss, onReviewOnWeb }) {
   const d = normalizeMobileEvidenceDraft(draft || {});
   if (!d.insights.length && !d.recommendations.length) return null;

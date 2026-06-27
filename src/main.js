@@ -43,7 +43,7 @@ import { subscribeToWebPush, getExistingPushSubscription, unsubscribeFromWebPush
 import { buildContextForPath, buildDeterministicPlan } from './adaptive-planning-context.js';
 import { buildAdaptationDraft } from './adaptive-planning-drafts.js';
 import { saveAdaptationDraft, dismissAdaptationDraft, applyAdaptationDraft } from './adaptive-planning-db.js';
-import { buildEvidenceContextForPath, buildDeterministicEvidencePlan } from './evidence-intelligence-context.js';
+import { buildEvidenceContextForPath, buildDeterministicEvidencePlan, collectEvidenceSubmissionsForPath } from './evidence-intelligence-context.js';
 import { buildEvidenceInsightDraft } from './evidence-intelligence-drafts.js';
 import { saveEvidenceInsightDraft, dismissEvidenceInsight, markEvidenceInsightReviewed } from './evidence-intelligence-db.js';
 
@@ -608,8 +608,14 @@ function refreshEvidenceInsight(){
   const uid = notificationUid();
   const active = activePathContext();
   if(!uid || !active){ return; }
-  const proofSubmissions = Object.values((store.state && store.state.evidenceSubmissions) || store.evidenceSubmissions || {})
-    .filter(p => p && p.pathId === active.pathId);
+  // Proof is cached nested by enrollment: evidenceSubmissions[enrollmentId][id].
+  // Flatten + collect for the active path (also handles flat/array shapes) so
+  // Evidence Intelligence sees real submitted proof, not the enrollment buckets.
+  const proofSubmissions = collectEvidenceSubmissionsForPath({
+    evidenceSubmissions: (store.state && store.state.evidenceSubmissions) || store.evidenceSubmissions || {},
+    enrollments: (store.state && store.state.enrollments) || store.enrollments || {},
+    pathId: active.pathId,
+  });
   const context = buildEvidenceContextForPath({
     path:active.path, enrollment:active.enrollment, proofSubmissions,
     isOwner:!!(active.path && active.path.ownerId === uid),
@@ -634,6 +640,14 @@ async function handleEvidenceAction(action, insightId){
   const uid = notificationUid();
   const active = activePathContext();
   if(!uid || !active) return;
+  if(action === 'refresh-evidence-insight'){
+    // Rebuild the deterministic insight from current local proof state (no AI).
+    store.evidenceInsightKey = '';
+    try{ refreshEvidenceInsight(); }catch(error){ /* advisory only */ }
+    store.evidenceInsightStatus = 'Updated from your latest proof.';
+    refreshVisibleRoute();
+    return;
+  }
   if(action === 'review-evidence-insight'){ store.evidenceInsightReviewOpen = true; refreshVisibleRoute(); return; }
   if(action === 'close-evidence-overlay'){ store.evidenceInsightReviewOpen = false; refreshVisibleRoute(); return; }
   if(action === 'mark-evidence-insight-reviewed' && insightId){
@@ -706,7 +720,7 @@ async function init(){
         e.preventDefault();
         handleAdaptiveAction(action, notify.getAttribute('data-draft-id') || '');
       }
-      const EVIDENCE_ACTIONS = ['review-evidence-insight', 'close-evidence-overlay', 'dismiss-evidence-insight', 'mark-evidence-insight-reviewed'];
+      const EVIDENCE_ACTIONS = ['review-evidence-insight', 'close-evidence-overlay', 'dismiss-evidence-insight', 'mark-evidence-insight-reviewed', 'refresh-evidence-insight'];
       if(action === 'close-evidence-overlay' && e.target !== notify) return;
       if(EVIDENCE_ACTIONS.includes(action)){
         e.preventDefault();

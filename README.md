@@ -790,6 +790,15 @@ paths. Optional AI augmentation runs through `POST /api/ai?route=analyze-evidenc
 shows a compact card (review/dismiss; review on web). Phase 7.0 adaptive planning
 is preserved. See [`docs/evidence-intelligence.md`](docs/evidence-intelligence.md).
 
+**Phase 8.0.1 — evidence proof-source repair:** the web evidence cache is nested
+by enrollment (`evidenceSubmissions[enrollmentId][submissionId]`); Evidence
+Intelligence now flattens/collects it correctly (`collectEvidenceSubmissionsForPath`),
+so real submitted web proof is no longer missed. The server `analyze-evidence`
+source order is mobile day logs → the user's own `state/main` web proof →
+sanitized client context (never returning raw state/URLs/paths). A small **Refresh**
+button rebuilds the deterministic insight from current proof. Still advisory —
+never "verified". See [`docs/evidence-intelligence.md`](docs/evidence-intelligence.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

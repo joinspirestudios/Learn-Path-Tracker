@@ -115,6 +115,43 @@ function.
 Optional "evidence insight ready" in-app notifications can reuse the existing
 system later; not wired in 8.0 to avoid noise.
 
+## Phase 8.0.1 — runtime proof-source repair
+
+Phase 8.0 read the web evidence cache incorrectly: proof is cached **nested by
+enrollment** (`store.state.evidenceSubmissions[enrollmentId][submissionId]`), but
+`refreshEvidenceInsight()` filtered the outer enrollment buckets
+(`Object.values(...).filter(p => p.pathId === ...)`), so `p` was a bucket (no
+`pathId`) and real submitted web proof was missed.
+
+8.0.1 adds pure collectors in `src/evidence-intelligence-context.js`:
+
+- `flattenEvidenceSubmissionBuckets(evidenceSubmissions)` — handles the **nested**
+  `{ [enrollmentId]: { [submissionId]: submission } }`, **flat**
+  `{ [submissionId]: submission }`, and **array** shapes; de-duplicates by id.
+- `collectEvidenceSubmissionsForEnrollment({ evidenceSubmissions, enrollmentId })`.
+- `collectEvidenceSubmissionsForPath({ evidenceSubmissions, enrollments, pathId })`
+  — matches by the enrollment(s) targeting the path **and** any submission
+  carrying the `pathId`; never returns another path's proof.
+
+`refreshEvidenceInsight()` now uses `collectEvidenceSubmissionsForPath`, so
+Evidence Intelligence sees real proof; pending stays pending, failed stays
+failed, submitted counts as submitted, and nothing is fabricated. A small
+**Refresh** affordance on the panel rebuilds the deterministic insight from the
+current local proof state (no AI, no publish).
+
+### Server proof-source order
+
+`server/evidence-intelligence-service.js` now builds context from, in order:
+
+1. the user's mobile day logs (`users/{uid}/mobileDayLogs`),
+2. the user's web proof nested in `users/{uid}/state/main`
+   (`evidenceSubmissions` + `enrollments`, via the shared collector),
+3. sanitized client context as a fallback.
+
+It reads **only the authenticated user's** own state, extracts **only** the
+active path's submissions, and **never returns raw state**, raw evidence URLs,
+download URLs, storage paths or localUri.
+
 ## What remains deferred
 
 - AI augmentation is conservative/optional.
@@ -124,6 +161,9 @@ system later; not wired in 8.0 to avoid noise.
 
 ## Rollout after this phase
 
+- **Phase 8.1 — Evidence Intelligence QA + Public-Safe Evidence Review**
+- **Phase 8.2 — Vision-Based Evidence Understanding**
+- **Phase 8.3 — Evidence-to-Adaptive Planning Integration**
 - **Phase 9.0 — Research and Resource Intelligence**
 - **Phase 9.5 — Full Product UI/UX + Brand/Naming System Review**
 - **Phase 10.0 — Launch, Growth, Beta Ops and Distribution**

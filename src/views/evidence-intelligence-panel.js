@@ -2,8 +2,8 @@
 // Pure HTML render for the Evidence Intelligence card (Progress / Proof archive /
 // Roadmap). Shows coverage, gaps, pending uploads, anchor coverage, strengths and
 // recommendations — with the required disclaimer. Never renders private proof
-// bodies, raw evidence URLs, storage paths or localUri, and never calls evidence
-// "verified".
+// bodies, raw evidence URLs, storage paths or localUri, and never asserts that an
+// activity happened.
 
 import { esc } from '../helpers.js';
 import { evidenceIntelligenceDisclaimer } from '../evidence-intelligence-policy.js';
@@ -79,6 +79,7 @@ export function renderEvidenceIntelligencePanel({ draft = null, pathId = '' } = 
       : '')
     + '<div class="aurora-evidence-actions">'
     + '<button type="button" class="aurora-evidence-review" data-action="review-evidence-insight" data-insight-id="' + esc(draft.id) + '">Review</button>'
+    + '<button type="button" class="aurora-evidence-refresh" data-action="refresh-evidence-insight">Refresh</button>'
     + '<button type="button" class="aurora-evidence-dismiss" data-action="dismiss-evidence-insight" data-insight-id="' + esc(draft.id) + '">Dismiss</button>'
     + '</div>'
     + '<p class="aurora-evidence-disclaimer">' + esc(evidenceIntelligenceDisclaimer()) + '</p>'
