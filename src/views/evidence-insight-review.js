@@ -2,7 +2,7 @@
 // Pure HTML render for the Evidence Intelligence review surface. Shows each
 // insight + the reason, the recommendations, the public-safe summary, the
 // required disclaimer, and explicit review/dismiss actions. No private proof,
-// raw URLs, or storage paths; never claims "verified".
+// raw URLs, or storage paths; never asserts an activity happened.
 
 import { esc } from '../helpers.js';
 import { evidenceIntelligenceDisclaimer } from '../evidence-intelligence-policy.js';

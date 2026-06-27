@@ -163,7 +163,9 @@ Profile → Evidence intelligence shows a compact `MobileEvidenceInsightCard`
 suggestions + the disclaimer. It is **advisory only** — it never claims proof is
 "verified", never scores truth/fraud, and never reads image content. Mobile is
 **review/dismiss only** (publishing/review is on web), Daily Focus is untouched,
-and the request sends only structured, non-private context. See
+and the request sends only structured, non-private context. Phase 8.0.1 repaired
+the web/server proof source so real submitted proof is reflected; mobile context
+remains safe-fields-only. See
 [`docs/evidence-intelligence.md`](../../docs/evidence-intelligence.md).
 
 ## Store readiness & beta QA (Phase 6.18)

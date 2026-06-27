@@ -9,7 +9,7 @@ import { MobileEvidenceInsightCard } from '../components/MobileEvidenceInsightCa
 
 // Evidence insights screen (Profile → Evidence intelligence). Shows the latest
 // evidence insight draft; review/dismiss only — publishing is on web. Does not
-// touch Daily Focus and never claims "verified".
+// touch Daily Focus and never asserts an activity happened.
 export function EvidenceInsightsScreen({
   draft, loading, onRefresh, onDismiss, onReviewOnWeb, onBack,
 }) {
