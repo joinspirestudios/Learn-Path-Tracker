@@ -16,8 +16,9 @@ import {
   loadLocalState, dbLoadPlatformPaths, checkFirestoreConnection, cloudAvailable,
 } from './db.js';
 import {
-  initFirebase, setSignInHandler, setSignOutHandler,
+  initFirebase, setSignInHandler, setSignOutHandler, doSignOut,
 } from './auth.js';
+import { authFetch } from './api.js';
 import {
   skillDef, ensureSkill, curState, isUserPath,
 } from './plan.js';
@@ -354,8 +355,8 @@ setSignInHandler(onSignIn);
 setSignOutHandler(() => {
   reconciledUserId = null;
   platformSyncKey = null;
-  store.notifications = []; store.notificationUnreadCount = 0;
-  store.notificationsOpen = false; store.notificationPreferences = null;
+  // Clear notification + adaptive transient state so nothing leaks across users.
+  clearSignedInTransientState();
   applyHeader();
   if(store.state.current == null){
     if(hasPendingPathRoute() || parsePathRoute({ hash:location.hash, pathname:location.pathname, search:location.search })) handleHashRoute();
@@ -371,6 +372,17 @@ function notificationUid(){
   return store.currentUser && store.currentUser.uid;
 }
 
+// Best-effort: reflect whether this browser currently holds a PushSubscription.
+// 'active' | 'missing' | 'unknown'. Never reads/stores endpoint or keys.
+async function refreshWebPushSubscriptionState(){
+  if(!browserSupportsPush()){ store.webPushSubscriptionState = 'unknown'; return; }
+  try{
+    const existing = await getExistingPushSubscription();
+    store.webPushSubscriptionState = existing ? 'active' : 'missing';
+  }catch(error){ store.webPushSubscriptionState = 'unknown'; }
+  refreshVisibleRoute();
+}
+
 async function loadNotificationsForCurrentUser(){
   const uid = notificationUid();
   if(!uid || !fb.firestoreReady){
@@ -379,6 +391,7 @@ async function loadNotificationsForCurrentUser(){
   }
   store.webPushConfigured = browserSupportsPush() && !!WEB_PUSH_PUBLIC_VAPID_KEY;
   store.webPushState = browserSupportsPush() ? currentPushPermission() : 'unsupported';
+  refreshWebPushSubscriptionState();
   try{
     const [items, unread, prefs] = await Promise.all([
       listNotifications(uid, {}),
@@ -448,13 +461,76 @@ async function handleNotificationAction(action, id){
   if(action === 'archive-notification' && id){ await archiveNotification(uid, id, {}); await loadNotificationsForCurrentUser(); return; }
   if(action === 'enable-web-push'){ await enableWebPushFromClick(); return; }
   if(action === 'disable-web-push'){ await disableWebPushFromClick(); return; }
-  if(action === 'save-notification-preferences'){
+  if(action === 'save-notification-preferences'){ await saveNotificationPreferencesFromForm(); return; }
+  if(action === 'send-test-notification'){ await sendTestNotificationFromClick(); return; }
+}
+
+// Persist preferences with VISIBLE saving/saved/error status. Prefers the
+// consolidated community API (consistent auth + rate-limit); falls back to a
+// direct owner-only Firestore write if the API is unavailable in dev.
+async function saveNotificationPreferencesFromForm(){
+  const uid = notificationUid();
+  if(!uid) return;
+  const prefsInput = readPreferenceForm();
+  store.notificationPreferenceStatus = 'saving';
+  store.notificationPreferenceMessage = 'Saving preferences…';
+  refreshVisibleRoute();
+  try{
+    let saved = null;
     try{
-      const prefs = await saveNotificationPreferences(uid, readPreferenceForm(), {});
-      store.notificationPreferences = prefs;
-    }catch(error){ /* best effort */ }
-    return;
+      const res = await authFetch('/api/community?route=notification-preferences', {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({ preferences:prefsInput }),
+      });
+      if(res && res.ok){
+        const data = await res.json().catch(() => null);
+        saved = (data && data.preferences) || null;
+      }
+    }catch(apiError){ /* fall through to direct Firestore */ }
+    if(!saved){
+      // Safe fallback: write the user's OWN preferences doc directly.
+      saved = await saveNotificationPreferences(uid, prefsInput, {});
+    }
+    store.notificationPreferences = saved;
+    store.notificationPreferenceStatus = 'saved';
+    store.notificationPreferenceMessage = 'Preferences saved.';
+    store.notificationPreferenceSavedAt = Date.now();
+  }catch(error){
+    store.notificationPreferenceStatus = 'error';
+    store.notificationPreferenceMessage = 'Could not save preferences. Check your connection and try again.';
   }
+  refreshVisibleRoute();
+}
+
+// Send a safe test notification (current user only) and surface the result.
+async function sendTestNotificationFromClick(){
+  const uid = notificationUid();
+  if(!uid) return;
+  store.notificationTestStatus = 'sending';
+  store.notificationTestResult = null;
+  refreshVisibleRoute();
+  try{
+    const res = await authFetch('/api/community?route=send-test-notification', {
+      method:'POST', headers:{ 'Content-Type':'application/json' }, body:'{}',
+    });
+    const data = res ? await res.json().catch(() => null) : null;
+    if(res && res.ok && data){
+      store.notificationTestStatus = 'done';
+      store.notificationTestResult = {
+        pushAttempted:!!data.pushAttempted,
+        pushSent:Number(data.pushSent) || 0,
+        pushDisabledReason:data.pushDisabledReason || null,
+      };
+      // The server reports whether server-side VAPID is configured.
+      if(typeof data.webPushConfigured === 'boolean') store.serverWebPushConfigured = data.webPushConfigured;
+      await loadNotificationsForCurrentUser();
+    }else{
+      store.notificationTestStatus = 'error';
+    }
+  }catch(error){
+    store.notificationTestStatus = 'error';
+  }
+  refreshVisibleRoute();
 }
 
 /* ---- Phase 7.0 adaptive planning controller ---- */
@@ -520,6 +596,25 @@ async function handleAdaptiveAction(action, draftId){
   }
 }
 
+// Clear all notification + adaptive transient state (called on sign-out).
+function clearSignedInTransientState(){
+  store.notifications = []; store.notificationUnreadCount = 0;
+  store.notificationsOpen = false; store.notificationPreferences = null;
+  store.notificationPreferenceStatus = 'idle'; store.notificationPreferenceMessage = '';
+  store.notificationTestStatus = 'idle'; store.notificationTestResult = null;
+  store.webPushSubscriptionState = 'unknown'; store.serverWebPushConfigured = null;
+  // Phase 7.0 adaptive planning transient state.
+  store.adaptivePlanDraft = null; store.adaptivePlanReviewOpen = false;
+  store.adaptivePlanKey = ''; store.adaptivePlanStatus = '';
+}
+
+// Visible sign-out from the Aurora shell. Delegates to the existing auth
+// doSignOut(); the setSignOutHandler below clears state + re-renders.
+async function handleSignOutClick(){
+  clearSignedInTransientState();
+  try{ await doSignOut(); }catch(error){ /* auth module already logs */ }
+}
+
 /* ---- bootstrap ---- */
 async function init(){
   installFormAccessibility();
@@ -534,9 +629,12 @@ async function init(){
     const notify = e.target.closest('[data-action]');
     if(notify){
       const action = notify.getAttribute('data-action');
+      // Visible sign-out from the Aurora shell / Profile account card.
+      if(action === 'sign-out'){ e.preventDefault(); handleSignOutClick(); return; }
       const NOTIFICATION_ACTIONS = [
         'open-notifications', 'close-notifications-overlay', 'mark-read', 'mark-all-read',
         'archive-notification', 'enable-web-push', 'disable-web-push', 'save-notification-preferences',
+        'send-test-notification',
       ];
       // Ignore overlay backdrop clicks that bubble from inner controls.
       if(action === 'close-notifications-overlay' && e.target !== notify) return;

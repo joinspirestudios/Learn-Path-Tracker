@@ -156,7 +156,15 @@ export const store = {
   notificationsOpen:    false,
   notificationPreferences: null,
   webPushState:         'default', // default | granted | denied | unsupported
-  webPushConfigured:    false,
+  webPushConfigured:    false,      // client can subscribe (browser + client VAPID key)
+  serverWebPushConfigured: null,    // server VAPID present (from last test); null = unknown
+  webPushSubscriptionState: 'unknown', // active | missing | unknown
+  // Phase 6.18.1 — notification preference save + test UX.
+  notificationPreferenceStatus:  'idle',   // idle | saving | saved | error
+  notificationPreferenceMessage: '',
+  notificationPreferenceSavedAt: 0,
+  notificationTestStatus:        'idle',   // idle | sending | done | error
+  notificationTestResult:        null,
   // Phase 7.0 — rolling adaptive planning (user-owned drafts; never auto-applied).
   adaptivePlanDraft:    null,
   adaptivePlanReviewOpen: false,

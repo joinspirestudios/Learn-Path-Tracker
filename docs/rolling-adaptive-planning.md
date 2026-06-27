@@ -113,6 +113,15 @@ notification system later; not wired in 7.0 to avoid noise.
 - Notification triggers for new drafts.
 - Evidence Intelligence (Phase 8.0) and Research/Resource Intelligence (9.0).
 
+## Preserved through Phase 6.18.1
+
+The web notifications/sign-out repair (Phase 6.18.1) did not change adaptive
+planning: `api/ai.js?route=adapt-path`, the sanitizer, the deterministic model,
+draft-not-auto-applied behavior, immutable past days, and the user-specific
+overlay all remain intact, and `tests/phase-7.0-rolling-adaptive-planning.test.js`
+still passes. Sign-out additionally clears adaptive transient state
+(`adaptivePlanDraft`, `adaptivePlanReviewOpen`, `adaptivePlanKey`).
+
 ## Rollout after this phase
 
 - **Phase 8.0 — Evidence Intelligence**

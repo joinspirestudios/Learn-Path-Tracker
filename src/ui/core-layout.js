@@ -36,7 +36,11 @@ function navUserBlockHTML({ userLabel = '', displayName = '', username = '', ava
     + '<span class="aurora-side-nav-user-text">'
     + '<span class="aurora-side-nav-user-name">' + esc(name || 'Your account') + '</span>'
     + (username ? '<span class="aurora-side-nav-user-handle">@' + esc(username) + '</span>' : '')
-    + '</span></div>';
+    + '</span>'
+    // Visible sign-out for the signed-in Aurora shell (the old top header is
+    // hidden in shell mode). Wired in main.js via data-action="sign-out".
+    + '<button type="button" class="aurora-side-nav-signout" data-action="sign-out" aria-label="Sign out">Sign out</button>'
+    + '</div>';
 }
 
 export function renderShellNav({ active = 'today', compact = false, userLabel = '', user = null } = {}){
