@@ -172,6 +172,14 @@ never publishing, never changing visibility, never rendering private fields. See
 [`docs/evidence-intelligence.md`](../../docs/evidence-intelligence.md) and
 [`docs/evidence-intelligence-qa.md`](../../docs/evidence-intelligence-qa.md).
 
+Phase 8.2 added an opt-in `MobileEvidenceVisionCard`: it shows whether Gemini
+Vision is available, requires explicit **consent** before analysis, and calls the
+**server** route with the user's ID token (never Gemini directly, never the API
+key, never localUri/base64/storage paths). It shows a private "appears to show"
+observation + suggested caption, never publishes, and never auto-analyzes after
+upload. See
+[`docs/gemini-vision-evidence-understanding.md`](../../docs/gemini-vision-evidence-understanding.md).
+
 ## Store readiness & beta QA (Phase 6.18)
 
 Production-minded Expo config (stable name/slug, `learnpathtracker` scheme, iOS

@@ -32,8 +32,9 @@ under a dedicated web-polish phase before public launch:
   readiness + beta QA), 7.0 (rolling adaptive planning foundation) and 6.18.1
   (web notifications + sign-out repair: visible sign-out, save status, test
   notification, push diagnostics), 8.0 (evidence intelligence panel/review
-  surfaces), 8.0.1 (evidence proof-source repair + Refresh affordance) and 8.1
-  (evidence review panel + public-safe summary surfaces). The full Proof Ledger
-  visual redesign remains parked for Phase 6.9.12.
+  surfaces), 8.0.1 (evidence proof-source repair + Refresh affordance), 8.1
+  (evidence review panel + public-safe summary surfaces) and 8.2 (Gemini Vision
+  consent/insight panel surfaces). The full Proof Ledger visual redesign remains
+  parked for Phase 6.9.12.
 - When the web-polish phase begins, convert each item above into concrete,
   testable changes with before/after references.

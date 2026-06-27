@@ -803,6 +803,19 @@ Consistency / Privacy). Evidence insight drafts are private and never become
 public progress automatically; nothing is ever called "verified". See
 [`docs/evidence-intelligence-qa.md`](docs/evidence-intelligence-qa.md).
 
+**Phase 8.2 — Gemini Vision evidence understanding:** an **opt-in** vision layer
+that describes what a proof image *appears to show* and whether it needs more
+context. It is explicitly triggered with consent (never automatic), runs through
+`POST /api/ai?route=analyze-evidence-image` (server-only `GEMINI_API_KEY`; no new
+Vercel function), and only sends safe structured context about the selected image
+— never tokens, emails, reflections, push subscriptions, raw user state, storage
+paths or localUri. The output is sanitized to remove identity/sensitive-trait/
+verification/fraud claims; observations never verify an activity, never identify
+people, never auto-publish, and never change proof visibility. Insights are
+private, owner-only drafts that reuse the Phase 8.1 review workflow. The feature
+degrades safely when `GEMINI_VISION_ENABLED`/`GEMINI_API_KEY` are absent. See
+[`docs/gemini-vision-evidence-understanding.md`](docs/gemini-vision-evidence-understanding.md).
+
 **Phase 8.0.1 — evidence proof-source repair:** the web evidence cache is nested
 by enrollment (`evidenceSubmissions[enrollmentId][submissionId]`); Evidence
 Intelligence now flattens/collects it correctly (`collectEvidenceSubmissionsForPath`),

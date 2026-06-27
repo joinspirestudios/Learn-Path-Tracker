@@ -116,13 +116,39 @@ import { renderAdaptivePlanningReview } from './views/adaptive-planning-review.j
 import { renderEvidenceIntelligencePanel } from './views/evidence-intelligence-panel.js';
 import { renderEvidenceInsightReview } from './views/evidence-insight-review.js';
 import { renderEvidencePublicReviewPanel } from './views/evidence-public-review-panel.js';
+import { renderEvidenceVisionTrigger, renderEvidenceVisionPanel } from './views/evidence-vision-panel.js';
+import { renderEvidenceVisionConsent } from './views/evidence-vision-consent.js';
 
 // Phase 8.0 — evidence intelligence surfaces. The panel renders on Progress when
 // a draft exists; the review overlay opens on explicit user action. Never
 // auto-publishes and never shows private proof.
 function evidenceIntelligencePanelHTML(pathId = ''){
-  if(!store.evidenceInsightDraft) return '';
-  return renderEvidenceIntelligencePanel({ draft:store.evidenceInsightDraft, pathId });
+  const panel = store.evidenceInsightDraft
+    ? renderEvidenceIntelligencePanel({ draft:store.evidenceInsightDraft, pathId })
+    : '';
+  // Phase 8.2 — Gemini Vision trigger (image proof only) + result/consent.
+  const trigger = store.evidenceHasImageProof
+    ? '<div class="aurora-vision-trigger-row">'
+      + renderEvidenceVisionTrigger({ evidenceId:store.evidenceFirstImageId, isImageProof:true })
+      + '</div>'
+    : '';
+  const visionState = (store.visionStatus && store.visionStatus !== 'idle') || store.visionDraft
+    ? renderEvidenceVisionPanel({
+        status:store.visionStatus === 'loading' ? 'loading' : (store.visionDisabledReason ? 'disabled' : 'idle'),
+        draft:store.visionDraft,
+        disabledReason:store.visionDisabledReason,
+      })
+    : '';
+  if(!panel && !trigger && !visionState) return '';
+  return panel + trigger + visionState;
+}
+// Phase 8.2 — consent dialog overlay (opened by "Analyze image with AI").
+function evidenceVisionConsentOverlayHTML(){
+  if(!store.visionConsentOpen) return '';
+  return '<div class="aurora-vision-overlay" data-action="cancel-vision-analysis">'
+    + '<div class="aurora-vision-overlay-panel" role="dialog" aria-label="Analyze image with AI">'
+    + renderEvidenceVisionConsent({ evidenceId:store.visionConsentEvidenceId })
+    + '</div></div>';
 }
 function evidenceInsightReviewOverlayHTML(){
   if(!store.evidenceInsightReviewOpen || !store.evidenceInsightDraft) return '';
@@ -474,7 +500,7 @@ function appShellHTML(active, body, { title = '', rightRail = '', className = ''
     return renderAuroraShell({
       active, title, body, rightRail, className, userLabel:label, user,
       showBell:true, unreadCount:store.notificationUnreadCount || 0,
-    }) + notificationOverlayHTML() + adaptivePlanningReviewOverlayHTML() + evidenceInsightReviewOverlayHTML();
+    }) + notificationOverlayHTML() + adaptivePlanningReviewOverlayHTML() + evidenceInsightReviewOverlayHTML() + evidenceVisionConsentOverlayHTML();
   }
   document.body.classList.remove('aurora-shell-mode');
   if(active === 'discover'){

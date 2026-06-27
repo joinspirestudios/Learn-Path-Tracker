@@ -121,6 +121,10 @@ const requiredFiles = [
   // Phase 8.1 — evidence review.
   'src/core/mobileEvidenceReview.js',
   'src/components/MobileEvidenceReviewCard.js',
+  // Phase 8.2 — Gemini Vision evidence understanding.
+  'src/core/mobileEvidenceVision.js',
+  'src/services/mobileEvidenceVisionRepository.js',
+  'src/components/MobileEvidenceVisionCard.js',
 ];
 
 const problems = [];

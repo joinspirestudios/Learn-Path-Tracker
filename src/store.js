@@ -175,6 +175,14 @@ export const store = {
   evidenceInsightReviewOpen: false,
   evidenceInsightKey:      '',
   evidenceInsightStatus:   '',
+  // Phase 8.2 — Gemini Vision (opt-in; private; server-gated).
+  evidenceHasImageProof:   false,
+  evidenceFirstImageId:    '',
+  visionConsentOpen:       false,
+  visionConsentEvidenceId: '',
+  visionStatus:            'idle', // idle | loading | done | disabled
+  visionDraft:             null,
+  visionDisabledReason:    '',
   activeTab:       'week',
   currentWeek:     1,
   editMode:        false,
