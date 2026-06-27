@@ -614,6 +614,7 @@ export function MobileApp() {
           <EvidenceInsightsScreen
             draft={evidenceDraft}
             loading={evidenceLoading}
+            pendingProofCount={pendingProofCount}
             onRefresh={loadEvidenceInsight}
             onDismiss={handleDismissEvidenceDraft}
             onReviewOnWeb={handleDismissEvidenceDraft}

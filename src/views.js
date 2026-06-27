@@ -115,6 +115,7 @@ import { renderAdaptivePlanningPanel } from './views/adaptive-planning-panel.js'
 import { renderAdaptivePlanningReview } from './views/adaptive-planning-review.js';
 import { renderEvidenceIntelligencePanel } from './views/evidence-intelligence-panel.js';
 import { renderEvidenceInsightReview } from './views/evidence-insight-review.js';
+import { renderEvidencePublicReviewPanel } from './views/evidence-public-review-panel.js';
 
 // Phase 8.0 — evidence intelligence surfaces. The panel renders on Progress when
 // a draft exists; the review overlay opens on explicit user action. Never
@@ -125,11 +126,16 @@ function evidenceIntelligencePanelHTML(pathId = ''){
 }
 function evidenceInsightReviewOverlayHTML(){
   if(!store.evidenceInsightReviewOpen || !store.evidenceInsightDraft) return '';
+  // Phase 8.1 — the deeper review surface (grouped insights, public-safe vs
+  // private, review status + actions). renderEvidenceInsightReview remains the
+  // lighter inline review.
   return '<div class="aurora-evidence-overlay" data-action="close-evidence-overlay">'
     + '<div class="aurora-evidence-overlay-panel" role="dialog" aria-label="Review evidence insight">'
-    + renderEvidenceInsightReview({ draft:store.evidenceInsightDraft })
+    + renderEvidencePublicReviewPanel({ draft:store.evidenceInsightDraft })
     + '</div></div>';
 }
+// Keep the lighter inline review render available (used by tests / fallback).
+void renderEvidenceInsightReview;
 
 // Phase 7.0 — adaptive planning surfaces. The panel renders inside Today/Roadmap
 // when a draft exists; the review overlay opens on explicit user action. Never

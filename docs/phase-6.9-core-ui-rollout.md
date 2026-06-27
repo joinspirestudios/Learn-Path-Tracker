@@ -169,9 +169,14 @@ pre-launch web polish:
 - **Phase 6.18 — Mobile Store Readiness and Beta QA**: production Expo config, permission copy, deep links, in-app diagnostics, error boundary, store-readiness gates, EAS readiness docs + beta QA matrix (no store submission). See [mobile-store-readiness-beta-qa.md](mobile-store-readiness-beta-qa.md).
 - **Phase 7.0 — Rolling Adaptive Planning** (foundation): deterministic, explainable adaptive insights + drafts; review/approve only; future-day overlays; AI optional + sanitized. See [rolling-adaptive-planning.md](rolling-adaptive-planning.md).
 - **Phase 8.0 — Evidence Intelligence** (foundation): deterministic proof coverage/gap/quality insights + private drafts; advisory only (never "verified"); AI optional + sanitized. See [evidence-intelligence.md](evidence-intelligence.md).
-- **Phase 9.0 — Research and Resource Intelligence** — **next**
+- **Phase 8.1 — Evidence Intelligence QA + Public-Safe Review**: review workflow, public-safety module, insight-quality grouping, QA fixtures; never publishes/changes visibility. See [evidence-intelligence-qa.md](evidence-intelligence-qa.md).
+- **Phase 8.2 — Gemini Vision-Based Evidence Understanding** — **next**
+- **Phase 8.3 — Evidence-to-Adaptive Planning Integration**
+- **Phase 9.0 — Perplexity-Powered Research and Resource Intelligence**
+- **Phase 9.1 — Resource-to-Path Adaptation**
 - **Phase 9.5 — Full Product UI/UX + Brand/Naming System Review**
 - **Phase 6.9.12 — Aurora / Proof Ledger Visual System Decision and Web UI Final Polish** (parked web visual feedback; see [aurora-ui-feedback-backlog.md](aurora-ui-feedback-backlog.md))
 - **Phase 10.0 — Launch, Growth, Beta Ops and Distribution**
+- **Phase 11.0 — Community, Followers, Creator Marketplace and Monetization Layer**
 
 Remaining web UI feedback is parked in the web-polish backlog, not mixed into the mobile foundation.

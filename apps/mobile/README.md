@@ -165,8 +165,12 @@ suggestions + the disclaimer. It is **advisory only** — it never claims proof 
 **review/dismiss only** (publishing/review is on web), Daily Focus is untouched,
 and the request sends only structured, non-private context. Phase 8.0.1 repaired
 the web/server proof source so real submitted proof is reflected; mobile context
-remains safe-fields-only. See
-[`docs/evidence-intelligence.md`](../../docs/evidence-intelligence.md).
+remains safe-fields-only. Phase 8.1 added a compact `MobileEvidenceReviewCard`
+showing review status (new/needs-review/reviewed) and an explicit **Private
+insight** vs **Public-safe summary** label, with refresh/dismiss/review-on-web —
+never publishing, never changing visibility, never rendering private fields. See
+[`docs/evidence-intelligence.md`](../../docs/evidence-intelligence.md) and
+[`docs/evidence-intelligence-qa.md`](../../docs/evidence-intelligence-qa.md).
 
 ## Store readiness & beta QA (Phase 6.18)
 

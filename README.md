@@ -790,6 +790,19 @@ paths. Optional AI augmentation runs through `POST /api/ai?route=analyze-evidenc
 shows a compact card (review/dismiss; review on web). Phase 7.0 adaptive planning
 is preserved. See [`docs/evidence-intelligence.md`](docs/evidence-intelligence.md).
 
+**Phase 8.1 — evidence review & public-safe summaries:** a review workflow
+(`new / needs_review / reviewed / dismissed / archived`) where users can **mark
+reviewed, dismiss, archive, refresh, or copy a public-safe summary** — none of
+which publish anything, delete proof, or change visibility. A public-safety
+module strips private proof bodies, reflections, raw evidence URLs, download URLs,
+storage paths, localUri, base64, tokens and emails before any summary is shown,
+and the server returns a `safetyReport` + `publicSafeSummary` + `reviewRequired`.
+An insight-quality model ranks recommendations and groups insights by severity
+(Coverage / Anchor proof / Pending uploads / Weak context / Public story /
+Consistency / Privacy). Evidence insight drafts are private and never become
+public progress automatically; nothing is ever called "verified". See
+[`docs/evidence-intelligence-qa.md`](docs/evidence-intelligence-qa.md).
+
 **Phase 8.0.1 — evidence proof-source repair:** the web evidence cache is nested
 by enrollment (`evidenceSubmissions[enrollmentId][submissionId]`); Evidence
 Intelligence now flattens/collects it correctly (`collectEvidenceSubmissionsForPath`),
