@@ -7,6 +7,7 @@ import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraLoadingState } from '../components/AuroraLoadingState.js';
 import { MobileEvidenceInsightCard } from '../components/MobileEvidenceInsightCard.js';
 import { MobileEvidenceReviewCard } from '../components/MobileEvidenceReviewCard.js';
+import { MobileEvidenceVisionCard } from '../components/MobileEvidenceVisionCard.js';
 
 // Evidence insights screen (Profile → Evidence intelligence). Shows the latest
 // evidence insight draft + a compact review state (status, private/public-safe);
@@ -14,6 +15,9 @@ import { MobileEvidenceReviewCard } from '../components/MobileEvidenceReviewCard
 // never asserts an activity happened.
 export function EvidenceInsightsScreen({
   draft, loading, pendingProofCount = 0, onRefresh, onDismiss, onReviewOnWeb, onBack,
+  // Phase 8.2 — Gemini Vision (opt-in; server-gated).
+  visionAvailable = false, visionDraft = null, visionLoading = false, visionDisabledReason = '',
+  onAnalyzeImage, onDismissVision,
 }) {
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -32,6 +36,14 @@ export function EvidenceInsightsScreen({
             onReviewOnWeb={onReviewOnWeb}
           />
           <MobileEvidenceInsightCard draft={draft} onDismiss={onDismiss} onReviewOnWeb={onReviewOnWeb} />
+          <MobileEvidenceVisionCard
+            available={visionAvailable}
+            draft={visionDraft}
+            loading={visionLoading}
+            disabledReason={visionDisabledReason}
+            onAnalyze={onAnalyzeImage}
+            onDismiss={onDismissVision}
+          />
         </>
       ) : (
         <AuroraCard>

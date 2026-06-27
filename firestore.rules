@@ -124,6 +124,13 @@ service cloud.firestore {
     // users/{uid}/adaptivePlans/{pathId}/drafts/{draftId}    (Phase 7.0 drafts)
     // users/{uid}/adaptivePlans/{pathId}/activeOverlay/main  (Phase 7.0 overlay)
     // users/{uid}/evidenceInsights/{pathId}/drafts/{insightId} (Phase 8.0 evidence)
+    // users/{uid}/evidenceVisionInsights/{pathId}/drafts/{visionId} (Phase 8.2 vision)
+    //
+    // Evidence vision insight drafts are private and owner-only (no public read/
+    // write). Gemini Vision analysis is opt-in/explicit; observations describe what
+    // an image "appears to show", never verify an activity, never identify people,
+    // never auto-publish, and never change proof visibility. They carry no raw
+    // image URL/storage path/localUri.
     //
     // Evidence insight drafts are private and owner-only (no public read/write).
     // They are advisory, never verification, are not public progress entries, and

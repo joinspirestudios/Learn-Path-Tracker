@@ -163,6 +163,15 @@ fields and produces public-safe summaries; the server returns a `safetyReport`,
 group + ranking) lives in `src/evidence-insight-quality.js`. Full detail +
 manual QA matrix: [evidence-intelligence-qa.md](evidence-intelligence-qa.md).
 
+## Phase 8.2 — Gemini Vision (opt-in)
+
+An opt-in, consent-gated vision layer describes what a proof image *appears to
+show* via `POST /api/ai?route=analyze-evidence-image` (server-only key). It never
+verifies an activity, identifies people, infers sensitive traits, auto-publishes,
+or changes visibility; insights are private drafts that reuse the 8.1 review
+workflow. See
+[gemini-vision-evidence-understanding.md](gemini-vision-evidence-understanding.md).
+
 ## What remains deferred
 
 - AI augmentation is conservative/optional.

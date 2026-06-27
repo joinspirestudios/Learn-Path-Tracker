@@ -38,6 +38,7 @@ import { createMobileLocalNotificationService } from '../services/mobileLocalNot
 import { createMobileRuntimeDiagnostics } from '../services/mobileRuntimeDiagnostics.js';
 import { createMobileAdaptivePlanningRepository } from '../services/mobileAdaptivePlanningRepository.js';
 import { createMobileEvidenceIntelligenceRepository } from '../services/mobileEvidenceIntelligenceRepository.js';
+import { createMobileEvidenceVisionRepository } from '../services/mobileEvidenceVisionRepository.js';
 import { createMobileProofStorageRepository } from '../services/mobileProofStorageRepository.js';
 import { createMobileMediaProofRepository } from '../services/mobileMediaProofRepository.js';
 import { createMobileOfflineDraftRepository } from '../services/mobileOfflineDraftRepository.js';
@@ -76,6 +77,7 @@ export function MobileApp() {
   const runtimeDiagnostics = useMemo(() => createMobileRuntimeDiagnostics({ platform: Platform.OS }), []);
   const adaptiveRepo = useMemo(() => createMobileAdaptivePlanningRepository({ apiClient }), [apiClient]);
   const evidenceRepo = useMemo(() => createMobileEvidenceIntelligenceRepository({ apiClient }), [apiClient]);
+  const visionRepo = useMemo(() => createMobileEvidenceVisionRepository({ apiClient }), [apiClient]);
   const storageGateway = useMemo(() => client.createStorageGateway(), [client]);
   const proofStorageRepo = useMemo(() => createMobileProofStorageRepository({ storageGateway }), [storageGateway]);
   const mediaProofRepo = useMemo(() => createMobileMediaProofRepository({ storageRepo: proofStorageRepo }), [proofStorageRepo]);
@@ -143,6 +145,11 @@ export function MobileApp() {
   // Evidence intelligence (Phase 8.0) — review/dismiss only on mobile.
   const [evidenceDraft, setEvidenceDraft] = useState(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
+
+  // Gemini Vision (Phase 8.2) — opt-in; server-gated; review/dismiss only.
+  const [visionDraft, setVisionDraft] = useState(null);
+  const [visionLoading, setVisionLoading] = useState(false);
+  const [visionDisabledReason, setVisionDisabledReason] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -307,6 +314,24 @@ export function MobileApp() {
     }
   }
   function handleDismissEvidenceDraft() { setEvidenceDraft(null); }
+
+  // Gemini Vision: explicit consent already collected by the card before this runs.
+  async function handleAnalyzeEvidenceImage() {
+    if (!authUser) return;
+    setVisionLoading(true); setVisionDisabledReason('');
+    try {
+      const pid = (selectedPath && selectedPath.id) || loopState.path.id;
+      const taskId = loopState.session && loopState.session.activeTaskId;
+      const res = await visionRepo.analyzeImage({ pathId: pid, evidenceId: taskId || 'proof', taskId, consent: true });
+      if (res.ok) { setVisionDraft(res.draft); }
+      else { setVisionDraft(null); setVisionDisabledReason(res.disabledReason || 'provider_error'); }
+    } catch {
+      setVisionDisabledReason('provider_error');
+    } finally {
+      setVisionLoading(false);
+    }
+  }
+  function handleDismissVision() { setVisionDraft(null); setVisionDisabledReason(''); }
 
   // ── Auth handlers ──
   async function handleSignIn(email, password) {
@@ -619,6 +644,12 @@ export function MobileApp() {
             onDismiss={handleDismissEvidenceDraft}
             onReviewOnWeb={handleDismissEvidenceDraft}
             onBack={() => setProfileView('main')}
+            visionAvailable
+            visionDraft={visionDraft}
+            visionLoading={visionLoading}
+            visionDisabledReason={visionDisabledReason}
+            onAnalyzeImage={handleAnalyzeEvidenceImage}
+            onDismissVision={handleDismissVision}
           />
         );
       }

@@ -620,6 +620,11 @@ function refreshEvidenceInsight(){
     path:active.path, enrollment:active.enrollment, proofSubmissions,
     isOwner:!!(active.path && active.path.ownerId === uid),
   });
+  // Phase 8.2 — note whether the path has uploaded image proof (for the Vision
+  // trigger). Uses the evidence model's classification, never raw URLs/paths.
+  const firstImage = (context.uploadedEvidence || []).find(r => r && r.kind === 'image');
+  store.evidenceHasImageProof = !!firstImage;
+  store.evidenceFirstImageId = firstImage ? String(firstImage.id || firstImage.taskId || '') : '';
   const key = active.pathId + ':' + (context.currentDayNumber || 0) + ':' + proofSubmissions.length;
   if(store.evidenceInsightKey === key && store.evidenceInsightDraft){ return; }
   const { insights, recommendations } = buildDeterministicEvidencePlan({ context });
@@ -688,6 +693,56 @@ async function handleEvidenceAction(action, insightId){
   }
 }
 
+// Phase 8.2 — Gemini Vision actions. Consent is always explicit; analysis runs on
+// the server (never client→Gemini). Never publishes, never changes visibility.
+async function handleVisionAction(action, evidenceId){
+  const uid = notificationUid();
+  const active = activePathContext();
+  if(!uid || !active) return;
+  if(action === 'open-vision-consent'){
+    store.visionConsentOpen = true;
+    store.visionConsentEvidenceId = evidenceId || store.evidenceFirstImageId || '';
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'cancel-vision-analysis'){ store.visionConsentOpen = false; refreshVisibleRoute(); return; }
+  if(action === 'confirm-vision-analysis'){
+    store.visionConsentOpen = false;
+    store.visionStatus = 'loading';
+    store.visionDraft = null;
+    store.visionDisabledReason = '';
+    refreshVisibleRoute();
+    try{
+      const res = await authFetch('/api/ai?route=analyze-evidence-image', {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({ pathId:active.pathId, evidenceId:evidenceId || store.visionConsentEvidenceId || store.evidenceFirstImageId, consentToVisionAnalysis:true }),
+      });
+      const data = res ? await res.json().catch(() => null) : null;
+      if(data && data.ok && data.draft){
+        store.visionStatus = 'done'; store.visionDraft = data.draft;
+      }else{
+        store.visionStatus = 'disabled'; store.visionDisabledReason = (data && data.disabledReason) || 'provider_error';
+      }
+    }catch(error){
+      store.visionStatus = 'disabled'; store.visionDisabledReason = 'provider_error';
+    }
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'mark-vision-reviewed' && evidenceId){
+    if(store.visionDraft && store.visionDraft.id === evidenceId){
+      store.visionDraft = { ...store.visionDraft, status:'reviewed' };
+    }
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'dismiss-vision-insight'){
+    store.visionDraft = null; store.visionStatus = 'idle'; store.visionDisabledReason = '';
+    refreshVisibleRoute();
+    return;
+  }
+}
+
 // Clear all notification + adaptive transient state (called on sign-out).
 function clearSignedInTransientState(){
   store.notifications = []; store.notificationUnreadCount = 0;
@@ -701,6 +756,10 @@ function clearSignedInTransientState(){
   // Phase 8.0 evidence intelligence transient state.
   store.evidenceInsightDraft = null; store.evidenceInsightReviewOpen = false;
   store.evidenceInsightKey = ''; store.evidenceInsightStatus = '';
+  // Phase 8.2 vision transient state.
+  store.evidenceHasImageProof = false; store.evidenceFirstImageId = '';
+  store.visionConsentOpen = false; store.visionConsentEvidenceId = '';
+  store.visionStatus = 'idle'; store.visionDraft = null; store.visionDisabledReason = '';
 }
 
 // Visible sign-out from the Aurora shell. Delegates to the existing auth
@@ -748,6 +807,12 @@ async function init(){
       if(EVIDENCE_ACTIONS.includes(action)){
         e.preventDefault();
         handleEvidenceAction(action, notify.getAttribute('data-insight-id') || '');
+      }
+      const VISION_ACTIONS = ['open-vision-consent', 'cancel-vision-analysis', 'confirm-vision-analysis', 'mark-vision-reviewed', 'dismiss-vision-insight'];
+      if(action === 'cancel-vision-analysis' && e.target !== notify) return;
+      if(VISION_ACTIONS.includes(action)){
+        e.preventDefault();
+        handleVisionAction(action, notify.getAttribute('data-evidence-id') || notify.getAttribute('data-vision-id') || '');
       }
     }
   });

@@ -2,6 +2,7 @@ import generatePathHandler from '../server/api-handlers/generate-path.js';
 import interpretGoalHandler from '../server/api-handlers/interpret-goal.js';
 import adaptPathHandler from '../server/api-handlers/adapt-path.js';
 import analyzeEvidenceHandler from '../server/api-handlers/analyze-evidence.js';
+import analyzeEvidenceImageHandler from '../server/api-handlers/analyze-evidence-image.js';
 import { apiError, createRequestId, sendApiError, setPrivateNoStore } from './_lib/errors.js';
 
 const handlers = {
@@ -11,6 +12,8 @@ const handlers = {
   'adapt-path':adaptPathHandler,
   // Phase 8.0 — evidence intelligence (deterministic insight draft; AI optional).
   'analyze-evidence':analyzeEvidenceHandler,
+  // Phase 8.2 — Gemini Vision evidence understanding (opt-in; private draft).
+  'analyze-evidence-image':analyzeEvidenceImageHandler,
 };
 
 function routeNameFromRequest(req){

@@ -85,6 +85,12 @@ export const MOBILE_PRIVACY_RULES = [
   'Public-safe summaries exclude private proof bodies, private reflections, raw evidence URLs, download URLs, Storage paths, localUri, tokens and emails/passwords.',
   'Reviewing or dismissing an evidence insight never publishes it, deletes proof, or changes proof visibility.',
   'Evidence insight drafts are not public progress entries.',
+  // Phase 8.2 — Gemini Vision evidence understanding:
+  'Gemini Vision analysis is opt-in and requires explicit consent; it is never automatic after upload.',
+  'Mobile never calls Gemini directly and never holds the Gemini API key; analysis runs on the server only.',
+  'Mobile never sends localUri, base64, downloadURL or Storage paths for vision analysis.',
+  'Vision observations describe what an image appears to show; they never verify an activity, identify people, or infer sensitive traits.',
+  'Vision insight drafts are private, owner-only, never auto-published, and never change proof visibility.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

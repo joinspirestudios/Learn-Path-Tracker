@@ -211,9 +211,12 @@ test('Phase 8.0.1 prior phase tests remain registered; admin pinned; functions <
 
 /* ── 8. No forbidden behavior ── */
 
-test('Phase 8.0.1 no OCR/vision/Gemini/fraud/social/economy/analytics added', () => {
+test('Phase 8.0.1 no OCR/fraud/social/economy/analytics added in evidence-intelligence modules', () => {
+  // The 8.0.x evidence-intelligence modules add no vision. (Gemini Vision is a
+  // separate, opt-in Phase 8.2 layer — see tests/phase-8.2; main.js hosts that
+  // controller, so it is not scanned for the word "vision" here.)
   const files = [
-    'src/evidence-intelligence-context.js', 'src/main.js',
+    'src/evidence-intelligence-context.js',
     'server/evidence-intelligence-service.js', 'server/api-handlers/analyze-evidence.js',
     'src/views/evidence-intelligence-panel.js',
   ];

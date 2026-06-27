@@ -170,8 +170,8 @@ pre-launch web polish:
 - **Phase 7.0 — Rolling Adaptive Planning** (foundation): deterministic, explainable adaptive insights + drafts; review/approve only; future-day overlays; AI optional + sanitized. See [rolling-adaptive-planning.md](rolling-adaptive-planning.md).
 - **Phase 8.0 — Evidence Intelligence** (foundation): deterministic proof coverage/gap/quality insights + private drafts; advisory only (never "verified"); AI optional + sanitized. See [evidence-intelligence.md](evidence-intelligence.md).
 - **Phase 8.1 — Evidence Intelligence QA + Public-Safe Review**: review workflow, public-safety module, insight-quality grouping, QA fixtures; never publishes/changes visibility. See [evidence-intelligence-qa.md](evidence-intelligence-qa.md).
-- **Phase 8.2 — Gemini Vision-Based Evidence Understanding** — **next**
-- **Phase 8.3 — Evidence-to-Adaptive Planning Integration**
+- **Phase 8.2 — Gemini Vision-Based Evidence Understanding**: opt-in, consent-gated image observation ("appears to show"); server-only key; sanitized; private drafts; never verifies/identifies/auto-publishes. See [gemini-vision-evidence-understanding.md](gemini-vision-evidence-understanding.md).
+- **Phase 8.3 — Evidence-to-Adaptive Planning Integration** — **next**
 - **Phase 9.0 — Perplexity-Powered Research and Resource Intelligence**
 - **Phase 9.1 — Resource-to-Path Adaptation**
 - **Phase 9.5 — Full Product UI/UX + Brand/Naming System Review**

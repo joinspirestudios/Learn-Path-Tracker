@@ -18,6 +18,7 @@ export const CURRENT_SCHEMA_VERSIONS = {
   adaptivePlanDraft: 1,
   adaptivePlanOverlay: 1,
   evidenceInsightDraft: 1,
+  evidenceVisionInsightDraft: 1,
 };
 
 export function normalizeSchemaVersion(value, fallback = 0){

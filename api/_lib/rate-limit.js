@@ -19,6 +19,7 @@ const ROUTE_LIMITS = {
   notificationTest:{ hourlyEnv:'RATE_LIMIT_NOTIFICATION_TEST_PER_HOUR', burstEnv:'RATE_LIMIT_NOTIFICATION_TEST_BURST_PER_10_MINUTES', hourly:20, burst:5 },
   adaptPath:{ hourlyEnv:'RATE_LIMIT_ADAPT_PATH_PER_HOUR', burstEnv:'RATE_LIMIT_ADAPT_PATH_BURST_PER_10_MINUTES', hourly:40, burst:8 },
   analyzeEvidence:{ hourlyEnv:'RATE_LIMIT_ANALYZE_EVIDENCE_PER_HOUR', burstEnv:'RATE_LIMIT_ANALYZE_EVIDENCE_BURST_PER_10_MINUTES', hourly:40, burst:8 },
+  analyzeEvidenceImage:{ hourlyEnv:'GEMINI_VISION_RATE_LIMIT_PER_HOUR', burstEnv:'RATE_LIMIT_ANALYZE_EVIDENCE_IMAGE_BURST_PER_10_MINUTES', hourly:20, burst:5 },
 };
 
 function configuredLimit(name, fallback){
