@@ -152,6 +152,17 @@ It reads **only the authenticated user's** own state, extracts **only** the
 active path's submissions, and **never returns raw state**, raw evidence URLs,
 download URLs, storage paths or localUri.
 
+## Phase 8.1 — review + public-safe summaries
+
+A review workflow and public-safety layer were added: drafts move through
+`new → needs_review → reviewed / dismissed / archived`; users can mark reviewed,
+dismiss, archive, refresh, or copy a public-safe summary — none of which publish,
+delete proof, or change visibility. `src/evidence-public-safety.js` strips unsafe
+fields and produces public-safe summaries; the server returns a `safetyReport`,
+`publicSafeSummary` and `reviewRequired`. Insight quality (severity + display
+group + ranking) lives in `src/evidence-insight-quality.js`. Full detail +
+manual QA matrix: [evidence-intelligence-qa.md](evidence-intelligence-qa.md).
+
 ## What remains deferred
 
 - AI augmentation is conservative/optional.

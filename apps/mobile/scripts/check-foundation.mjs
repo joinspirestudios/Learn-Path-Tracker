@@ -118,6 +118,9 @@ const requiredFiles = [
   'src/services/mobileEvidenceIntelligenceRepository.js',
   'src/components/MobileEvidenceInsightCard.js',
   'src/screens/EvidenceInsightsScreen.js',
+  // Phase 8.1 — evidence review.
+  'src/core/mobileEvidenceReview.js',
+  'src/components/MobileEvidenceReviewCard.js',
 ];
 
 const problems = [];

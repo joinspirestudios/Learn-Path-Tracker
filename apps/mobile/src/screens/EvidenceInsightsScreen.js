@@ -6,12 +6,14 @@ import { AuroraCard } from '../components/AuroraCard.js';
 import { AuroraButton } from '../components/AuroraButton.js';
 import { AuroraLoadingState } from '../components/AuroraLoadingState.js';
 import { MobileEvidenceInsightCard } from '../components/MobileEvidenceInsightCard.js';
+import { MobileEvidenceReviewCard } from '../components/MobileEvidenceReviewCard.js';
 
 // Evidence insights screen (Profile → Evidence intelligence). Shows the latest
-// evidence insight draft; review/dismiss only — publishing is on web. Does not
-// touch Daily Focus and never asserts an activity happened.
+// evidence insight draft + a compact review state (status, private/public-safe);
+// review/dismiss only — publishing is on web. Does not touch Daily Focus and
+// never asserts an activity happened.
 export function EvidenceInsightsScreen({
-  draft, loading, onRefresh, onDismiss, onReviewOnWeb, onBack,
+  draft, loading, pendingProofCount = 0, onRefresh, onDismiss, onReviewOnWeb, onBack,
 }) {
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -21,7 +23,16 @@ export function EvidenceInsightsScreen({
       {loading ? (
         <AuroraLoadingState message="Looking at your proof…" />
       ) : draft && ((draft.insights && draft.insights.length) || (draft.recommendations && draft.recommendations.length)) ? (
-        <MobileEvidenceInsightCard draft={draft} onDismiss={onDismiss} onReviewOnWeb={onReviewOnWeb} />
+        <>
+          <MobileEvidenceReviewCard
+            draft={draft}
+            pendingProofCount={pendingProofCount}
+            onRefresh={onRefresh}
+            onDismiss={onDismiss}
+            onReviewOnWeb={onReviewOnWeb}
+          />
+          <MobileEvidenceInsightCard draft={draft} onDismiss={onDismiss} onReviewOnWeb={onReviewOnWeb} />
+        </>
       ) : (
         <AuroraCard>
           <Text style={styles.emptyTitle}>No evidence insights yet</Text>

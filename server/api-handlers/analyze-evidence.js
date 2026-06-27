@@ -48,6 +48,9 @@ export function createAnalyzeEvidenceHandler({
       return sendPrivateJson(res, 200, {
         ok: true,
         draft: result.draft,        // a DRAFT only — never published/applied
+        safetyReport: result.safetyReport,
+        publicSafeSummary: result.publicSafeSummary,
+        reviewRequired: result.reviewRequired,
         source: result.source,
         aiAvailable: result.aiAvailable,
         aiUsed: result.aiUsed,

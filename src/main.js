@@ -651,12 +651,35 @@ async function handleEvidenceAction(action, insightId){
   if(action === 'review-evidence-insight'){ store.evidenceInsightReviewOpen = true; refreshVisibleRoute(); return; }
   if(action === 'close-evidence-overlay'){ store.evidenceInsightReviewOpen = false; refreshVisibleRoute(); return; }
   if(action === 'mark-evidence-insight-reviewed' && insightId){
-    store.evidenceInsightStatus = 'Reviewed.';
-    if(insightId) markEvidenceInsightReviewed(uid, active.pathId, insightId, {}).catch(() => {});
+    // Marking reviewed never publishes — it only updates the draft status.
+    if(store.evidenceInsightDraft && store.evidenceInsightDraft.id === insightId){
+      store.evidenceInsightDraft = { ...store.evidenceInsightDraft, status:'reviewed', reviewedAt:Date.now() };
+    }
+    store.evidenceInsightStatus = 'Reviewed. Nothing was published.';
+    markEvidenceInsightReviewed(uid, active.pathId, insightId, {}).catch(() => {});
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'archive-evidence-insight' && insightId){
+    // Archiving never changes proof visibility; it just resolves the draft.
+    store.evidenceInsightReviewOpen = false;
+    store.evidenceInsightDraft = null;
+    store.evidenceInsightStatus = 'Archived.';
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'copy-public-safe-summary'){
+    // Copy the already-public-safe summary to the clipboard (no publish).
+    const summary = store.evidenceInsightDraft && store.evidenceInsightDraft.publicSafeSummary;
+    if(summary && navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(String(summary)).catch(() => {});
+    }
+    store.evidenceInsightStatus = 'Public-safe summary copied.';
     refreshVisibleRoute();
     return;
   }
   if(action === 'dismiss-evidence-insight'){
+    // Dismiss resolves the draft; it never deletes the underlying proof.
     store.evidenceInsightReviewOpen = false;
     store.evidenceInsightDraft = null;
     if(insightId) dismissEvidenceInsight(uid, active.pathId, insightId, {}).catch(() => {});
@@ -720,7 +743,7 @@ async function init(){
         e.preventDefault();
         handleAdaptiveAction(action, notify.getAttribute('data-draft-id') || '');
       }
-      const EVIDENCE_ACTIONS = ['review-evidence-insight', 'close-evidence-overlay', 'dismiss-evidence-insight', 'mark-evidence-insight-reviewed', 'refresh-evidence-insight'];
+      const EVIDENCE_ACTIONS = ['review-evidence-insight', 'close-evidence-overlay', 'dismiss-evidence-insight', 'mark-evidence-insight-reviewed', 'refresh-evidence-insight', 'archive-evidence-insight', 'copy-public-safe-summary'];
       if(action === 'close-evidence-overlay' && e.target !== notify) return;
       if(EVIDENCE_ACTIONS.includes(action)){
         e.preventDefault();

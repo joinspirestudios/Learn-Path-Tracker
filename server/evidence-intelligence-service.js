@@ -10,6 +10,7 @@ import {
 } from '../src/evidence-intelligence-model.js';
 import { buildEvidenceInsightDraft } from '../src/evidence-intelligence-drafts.js';
 import { collectEvidenceSubmissionsForPath } from '../src/evidence-intelligence-context.js';
+import { evidenceSummarySafetyReport, evidenceContainsUnsafePublicData } from '../src/evidence-public-safety.js';
 import { sanitizeEvidenceContextForModel, containsForbiddenContent } from './evidence-intelligence-sanitizer.js';
 
 function num(value, fallback = null) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
@@ -144,7 +145,22 @@ export async function buildEvidenceInsightDraftForUser({
     } catch { /* persistence is best-effort */ }
   }
 
-  return { draft, aiAvailable: !!(env && env.ANTHROPIC_API_KEY), aiUsed, source };
+  // Public-safety report + public-safe summary. The draft is already scrubbed, so
+  // the summary is defensively re-checked before being surfaced.
+  const safetyReport = evidenceSummarySafetyReport(draft);
+  const publicSafeSummary = !evidenceContainsUnsafePublicData(draft.publicSafeSummary)
+    ? String(draft.publicSafeSummary || '')
+    : '';
+
+  return {
+    draft,
+    safetyReport,
+    publicSafeSummary,
+    reviewRequired: true, // public sharing always requires explicit review
+    aiAvailable: !!(env && env.ANTHROPIC_API_KEY),
+    aiUsed,
+    source,
+  };
 }
 
 export default { buildEvidenceInsightDraftForUser };

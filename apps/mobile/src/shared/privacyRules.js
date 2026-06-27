@@ -79,6 +79,12 @@ export const MOBILE_PRIVACY_RULES = [
   'Pending/failed uploads never count as uploaded evidence.',
   'Evidence insight drafts are private, owner-only, and never auto-published.',
   'No image content is read; no OCR/computer vision is used.',
+  // Phase 8.1 — evidence review + public-safe summaries:
+  'Evidence insight drafts are private by default and are never auto-published.',
+  'A public-safe summary is a draft that requires explicit user review before any sharing.',
+  'Public-safe summaries exclude private proof bodies, private reflections, raw evidence URLs, download URLs, Storage paths, localUri, tokens and emails/passwords.',
+  'Reviewing or dismissing an evidence insight never publishes it, deletes proof, or changes proof visibility.',
+  'Evidence insight drafts are not public progress entries.',
 ];
 
 export default MOBILE_PRIVACY_RULES;
