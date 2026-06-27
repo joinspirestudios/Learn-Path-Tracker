@@ -107,6 +107,13 @@ disclaimer is rendered on every surface.
 Reading image content, captioning images automatically, or any computer-vision
 understanding of proof is **out of scope** here and deferred to Phase 8.2.
 
+## Phase 8.1.1 note
+
+The Today screen state/hierarchy repair (Phase 8.1.1) did not change Evidence
+Intelligence or the public-safe review workflow; it only fixed Today-day state
+coherence (CTAs, adaptive copy, Proof Journey rows, right-rail status, bell
+placement). Evidence Intelligence panels/review surfaces are unchanged.
+
 ## Rollout after this phase
 
 - **Phase 8.2 — Gemini Vision-Based Evidence Understanding**

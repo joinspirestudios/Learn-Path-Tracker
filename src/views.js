@@ -118,6 +118,10 @@ import { renderEvidenceInsightReview } from './views/evidence-insight-review.js'
 import { renderEvidencePublicReviewPanel } from './views/evidence-public-review-panel.js';
 import { renderEvidenceVisionTrigger, renderEvidenceVisionPanel } from './views/evidence-vision-panel.js';
 import { renderEvidenceVisionConsent } from './views/evidence-vision-consent.js';
+import {
+  normalizeTodayState, todayPrimaryAction, todayStatusCopy, todayRecoveryCopy,
+  todayProofStatusCopy, proofJourneyItemCopy, rightRailTodayContext,
+} from './today-state-model.js';
 
 // Phase 8.0 — evidence intelligence surfaces. The panel renders on Progress when
 // a draft exists; the review overlay opens on explicit user action. Never
@@ -166,9 +170,11 @@ void renderEvidenceInsightReview;
 // Phase 7.0 — adaptive planning surfaces. The panel renders inside Today/Roadmap
 // when a draft exists; the review overlay opens on explicit user action. Never
 // auto-applies and never shows private proof.
-function adaptivePlanningPanelHTML(pathId = ''){
+function adaptivePlanningPanelHTML(pathId = '', todayState = null){
   if(!store.adaptivePlanDraft) return '';
-  return renderAdaptivePlanningPanel({ draft:store.adaptivePlanDraft, pathId });
+  // Phase 8.1.1 — pass the Today state so the summary copy is missed/recovery
+  // aware (never plain "steady" while the visible day is missed).
+  return renderAdaptivePlanningPanel({ draft:store.adaptivePlanDraft, pathId, todayState });
 }
 function adaptivePlanningReviewOverlayHTML(){
   if(!store.adaptivePlanReviewOpen || !store.adaptivePlanDraft) return '';
@@ -4109,13 +4115,20 @@ function roadmapHTML(id, def){
     const log = logs[day] || logs[String(day)] || {};
     const tier = log.completionTier || log.tier || '';
     const proofSubmitted = Number(log.evidenceCount || 0) > 0 || (log.verifiedTaskIds || []).length > 0;
+    const firstTask = tasksReady ? getTasksForDay(def, day)[0] : null;
+    const proofRequired = tasksReady ? getTasksForDay(def, day).some(t => t.evidenceRequired) : false;
+    // Phase 8.1.1 — state-aware, non-repetitive copy.
+    const copy = proofJourneyItemCopy({
+      dayNumber:day, state:status, taskCount, proofRequired, tasksReady,
+      taskTitle:(open && firstTask) ? (firstTask.title || firstTask.text || '') : '',
+    });
     h += auroraRoadmapDayItemHTML({
       day,
       status,
       label:statusLabel(status),
       date:date ? date.slice(5) : '',
-      title:status === 'active' ? "Today's proof session" : status === 'completed' ? 'Completed proof day' : 'Scheduled proof day',
-      taskSummary:tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks',
+      title:copy.title,
+      taskSummary:copy.summary,
       tier,
       proofSubmitted,
       open,
@@ -5101,13 +5114,20 @@ function compactRoadmapHTML(id, def, windowSize){
     const log = logs[day] || logs[String(day)] || {};
     const tier = log.completionTier || log.tier || '';
     const proofSubmitted = Number(log.evidenceCount || 0) > 0 || (log.verifiedTaskIds || []).length > 0;
+    const firstTask = tasksReady ? getTasksForDay(def, day)[0] : null;
+    const proofRequired = tasksReady ? getTasksForDay(def, day).some(t => t.evidenceRequired) : false;
+    // Phase 8.1.1 — state-aware, non-repetitive copy (no "Scheduled proof day").
+    const copy = proofJourneyItemCopy({
+      dayNumber:day, state:status, taskCount, proofRequired, tasksReady,
+      taskTitle:(open && firstTask) ? (firstTask.title || firstTask.text || '') : '',
+    });
     h += auroraRoadmapDayItemHTML({
       day,
       status,
       label:statusLabel(status),
       date:date ? date.slice(5) : '',
-      title:status === 'active' ? "Today's proof session" : status === 'completed' ? 'Completed proof day' : 'Scheduled proof day',
-      taskSummary:tasksReady ? (open ? (taskCount + ' task' + (taskCount === 1 ? '' : 's')) : 'Unlocks later') : 'Loading tasks',
+      title:copy.title,
+      taskSummary:copy.summary,
       tier,
       proofSubmitted,
       open,
@@ -5120,6 +5140,34 @@ function compactRoadmapHTML(id, def, windowSize){
   }
   h += '</section>';
   return h;
+}
+
+// Phase 8.1.1 — build a single coherent Today state for the visible day, so the
+// focus card / rail / adaptive copy all agree. Pure-model driven.
+function platformTodayState(id, def){
+  const enrollment = currentEnrollmentForPath(id);
+  const tasksReady = pathTasksReady(def);
+  if(!enrollment?.startDate){
+    return normalizeTodayState({ pathId:id, pathTitle:def.title, pathStarted:false, status:'not_started', tasksReady });
+  }
+  const today = localDateString();
+  const activeDay = journeyDayForDate(enrollment.startDate, today);
+  const day = Math.min(Number(enrollment.currentDay || 1), activeDay);
+  const rawStatus = getDayStatus(day, enrollment, enrollment.dayLogs || {}, today);
+  const dayTasks = tasksReady ? getTasksForDay(def, day) : [];
+  const log = dayLogFor(enrollment, day) || {};
+  const completedCount = dayTasks.filter(task => taskIsDone(task, log)).length;
+  const proofRequiredCount = dayTasks.filter(t => t.evidenceRequired).length;
+  return normalizeTodayState({
+    pathId:id, pathTitle:def.title, pathStarted:true,
+    dayNumber:day, activeCalendarDay:activeDay, currentEnrollmentDay:Number(enrollment.currentDay || 1),
+    rawStatus, totalDays:getMaxRoadmapDay(def, enrollment),
+    date:dateForJourneyDay(enrollment.startDate, day) || '',
+    taskCount:dayTasks.length, completedTaskCount:completedCount,
+    proofRequiredCount, proofSubmittedCount:evidenceCountFor(enrollment.id, day),
+    sessionStarted:!!log.sessionStartedAt, freezeCount:Number(enrollment.freezeCount || 0),
+    tasksReady,
+  });
 }
 
 function platformDailyFocusHTML(id, def){
@@ -5145,9 +5193,11 @@ function platformDailyFocusHTML(id, def){
   const evidenceCount = evidenceCountFor(enrollment.id, day);
   const date = dateForJourneyDay(enrollment.startDate, day);
   const sessionStarted = !!log.sessionStartedAt;
-  const ctaLabel = status === 'completed' ? 'Review Day ' + day : (sessionStarted ? 'Continue day' : 'Start day');
+  // Phase 8.1.1 — coherent state + CTA from the pure model (no "Missed + Start day").
+  const todayState = platformTodayState(id, def);
+  const cta = todayPrimaryAction(todayState);
   const proofNeeded = dayTasks.some(t => t.evidenceRequired);
-  let h = '<section class="panel card aurora-daily-focus" aria-label="Daily focus">';
+  let h = '<section class="panel card aurora-daily-focus aurora-today-state" data-today-state="' + esc(todayState.state) + '" aria-label="Daily focus">';
   h += '<span class="aurora-section-kicker">Daily focus</span>';
   h += '<div class="aurora-daily-focus-meta">'
     + '<span>Day ' + day + ' of ' + totalDays + '</span>'
@@ -5155,6 +5205,13 @@ function platformDailyFocusHTML(id, def){
     + '<span class="aurora-chip">' + esc(statusLabel(status)) + '</span>'
     + '</div>';
   h += '<h2>' + esc(def.title || 'Day ' + day) + '</h2>';
+  // State-specific description + recovery note + proof status.
+  h += '<p class="aurora-today-state-copy">' + esc(todayStatusCopy(todayState)) + '</p>';
+  const recoveryCopy = todayRecoveryCopy(todayState);
+  if(recoveryCopy && (todayState.state === 'missed' || todayState.state === 'recoverable' || todayState.state === 'locked' || todayState.state === 'upcoming')){
+    h += '<p class="aurora-today-recovery-note">' + esc(recoveryCopy) + '</p>';
+  }
+  h += '<p class="aurora-today-proof-status">' + esc(todayProofStatusCopy(todayState)) + '</p>';
   if(dayTasks.length){
     h += '<div class="aurora-daily-tasks">';
     dayTasks.forEach(task => {
@@ -5189,9 +5246,16 @@ function platformDailyFocusHTML(id, def){
     });
     h += compactDayProofPreviewHTML(docEntry, { title:"Today's proof" });
   }
-  if(proofNeeded) h += '<div class="aurora-daily-proof-note">This day requires proof before completion.</div>';
-  if(status !== 'completed' && status !== 'locked'){
-    h += '<button class="btn gold lpt-button lpt-button-primary open-focus-session" type="button" data-focus-day="' + esc(day) + '">' + esc(ctaLabel) + '</button>';
+  if(proofNeeded && (todayState.state === 'active' || todayState.state === 'in_progress')) h += '<div class="aurora-daily-proof-note">This day requires proof before completion.</div>';
+  // Phase 8.1.1 — one state-correct primary action. Only active/in_progress days
+  // open the focus session; missed/recoverable/completed route to read-only day
+  // review; locked days show a disabled "Locked until later".
+  if(cta.action === 'start_today' || cta.action === 'continue_day'){
+    h += '<button class="btn gold lpt-button lpt-button-primary open-focus-session aurora-today-primary-action" type="button" data-focus-day="' + esc(day) + '">' + esc(cta.label) + '</button>';
+  } else if(cta.action === 'review_missed' || cta.action === 'recover_day' || cta.action === 'review_completed' || cta.action === 'view_details' || cta.action === 'view_archive'){
+    h += '<button class="btn lpt-button lpt-button-secondary aurora-today-primary-action aurora-today-review" type="button" data-review-day="' + esc(day) + '" data-review-action="' + esc(cta.action) + '">' + esc(cta.label) + '</button>';
+  } else if(cta.disabled){
+    h += '<button class="btn lpt-button lpt-button-secondary aurora-today-primary-action" type="button" disabled>' + esc(cta.label) + '</button>';
   }
   h += '</section>';
   return h;
@@ -5245,7 +5309,18 @@ function platformRightRailHTML(id, def){
   const proofs = stats.proofSubmissionCount || 0;
   const completed = stats.completedCount || 0;
   const hasPathTrust = !!(joined || proofs || completed);
-  let h = '<article class="aurora-workspace-rail-card proof-consistency-card ' + (hasConsistency ? 'has-data' : 'is-empty') + '">'
+  // Phase 8.1.1 — a current-day status card so the rail supports the live state.
+  let h = '';
+  if(enrollment?.startDate){
+    const ctx = rightRailTodayContext(platformTodayState(id, def));
+    h += '<article class="aurora-workspace-rail-card aurora-right-rail-status" data-today-state="' + esc(ctx.state) + '">'
+      + '<span>Current status</span>'
+      + '<b>' + esc(ctx.statusLabel) + '</b>'
+      + '<p>Proof: ' + esc(ctx.proof) + '</p>'
+      + '<p class="muted" style="font-size:12px">Next step: ' + esc(ctx.nextStep) + '</p>'
+      + '</article>';
+  }
+  h += '<article class="aurora-workspace-rail-card proof-consistency-card ' + (hasConsistency ? 'has-data' : 'is-empty') + '">'
     + '<span>Your consistency</span>'
     + '<b>' + esc(hasConsistency ? (streak + ' day streak') : 'Not enough data yet') + '</b>'
     + '<p>' + esc(hasConsistency ? (completedDays + ' of ' + totalDays + ' days completed from real progress.') : 'Complete a few sessions to see your consistency.') + '</p></article>';
@@ -5342,14 +5417,25 @@ export function renderToday(){
 }
 
 function renderPlatformToday(id, def){
+  const todayState = platformTodayState(id, def);
   const body = '<div class="aurora-unified-core">'
-    + adaptivePlanningPanelHTML(id)
+    // Daily Focus is the main action card; Adaptive Planning is secondary context.
     + platformDailyFocusHTML(id, def)
+    + adaptivePlanningPanelHTML(id, todayState)
     + compactRoadmapHTML(id, def, 2)
     + '</div>';
   $('content').innerHTML = appShellHTML('today', body, { title:'Today', rightRail:platformRightRailHTML(id, def), className:'aurora-today-route' });
   wireJourneyControls(id, def);
   wireProofGalleryNav();
+  // Phase 8.1.1 — read-only day review for missed/recoverable/completed days.
+  // Routes to the roadmap (never the active focus session).
+  $('content').querySelectorAll('.aurora-today-review').forEach(btn => {
+    btn.addEventListener('click', () => {
+      store.state.current = id;
+      store.editMode = false;
+      renderPlan();
+    });
+  });
   const fullRoadmap = $('viewFullRoadmap');
   if(fullRoadmap) fullRoadmap.onclick = () => {
     store.state.current = id;

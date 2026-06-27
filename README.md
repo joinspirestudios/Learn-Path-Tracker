@@ -816,6 +816,22 @@ private, owner-only drafts that reuse the Phase 8.1 review workflow. The feature
 degrades safely when `GEMINI_VISION_ENABLED`/`GEMINI_API_KEY` are absent. See
 [`docs/gemini-vision-evidence-understanding.md`](docs/gemini-vision-evidence-understanding.md).
 
+**Phase 8.1.1 — Today state, hierarchy & recovery UX repair:** a pure
+`src/today-state-model.js` gives the Today screen one coherent state
+(`not_started/active/in_progress/completed/missed/recoverable/locked/upcoming/
+synced/review_only`) so it never shows contradictions like **Missed + "Start
+day"**. The Daily Focus card now drives its single primary action from the model
+(missed → "Review missed day", recoverable → "Recover this day", completed →
+"Review completed day", active → "Start today"/"Continue day", locked → disabled
+"Locked until later"); missed/recoverable/completed route to read-only review,
+never the active focus session. Adaptive Planning copy is now missed/recovery/
+proof-aware (no plain "steady" while the day is missed); the Proof Journey shows
+state-aware, non-repetitive rows (no more identical "Scheduled proof day /
+Unlocks later"); the right rail adds a current-status / proof / next-step card;
+and the notification bell is anchored in a stable top-right shell header. No full
+redesign; Phase 8.2 Gemini Vision is preserved (its image-byte Storage loader
+remains a future Phase 8.2.1 repair).
+
 **Phase 8.0.1 — evidence proof-source repair:** the web evidence cache is nested
 by enrollment (`evidenceSubmissions[enrollmentId][submissionId]`); Evidence
 Intelligence now flattens/collects it correctly (`collectEvidenceSubmissionsForPath`),

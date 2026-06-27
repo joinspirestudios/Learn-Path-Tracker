@@ -122,8 +122,11 @@ plans based on vision, and never raises/lowers scores from vision.
 ## What remains deferred
 
 - Downloading image bytes from owner-only Storage via the Admin SDK is a
-  deployment follow-up; until wired the service returns a safe `missing_image`
-  reason (the loader is injectable and unit-tested).
+  deployment follow-up; until wired, `server/evidence-vision-service.js`'s
+  `defaultLoadImage()` returns `null` so the service returns a safe `missing_image`
+  reason (the loader is injectable and unit-tested). **This is scheduled as
+  Phase 8.2.1 (Gemini Vision Storage Image Loader + Production QA Repair) and was
+  intentionally NOT fixed in Phase 8.1.1 (Today UX repair).**
 - Evidence-to-Adaptive-Planning integration is **Phase 8.3**.
 - No video/audio/PDF/document analysis, no OCR product, no face/biometric, no
   Perplexity/Research Intelligence.
