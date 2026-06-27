@@ -128,6 +128,52 @@ VAPID configured, and quiet hours allow it. Gone/expired subscriptions (404/410)
 are pruned from `users/{uid}/pushSubscriptions`. In-app notifications work even
 when push is unavailable.
 
+### Phase 6.18.1 — web UI repair
+
+The web notification preferences panel (Profile → Notifications) now exposes:
+
+- **Sign out** — a visible "Sign out" button in the Aurora sidebar user block and
+  the Profile → Account card (the old top header is hidden in shell mode). It
+  calls the existing `doSignOut()` and clears notification + adaptive-planning
+  transient state.
+- **Save preferences** with visible status: "Saving preferences…" → "Preferences
+  saved." or "Could not save preferences. Check your connection and try again."
+  Saving prefers `POST /api/community?route=notification-preferences` (consistent
+  auth/rate-limit) and falls back to a direct owner-only Firestore write in dev.
+  Errors are never swallowed silently.
+- **Send test notification** — a button (signed-in only) that calls
+  `POST /api/community?route=send-test-notification` and shows whether browser
+  push was attempted/sent, or the safe disabled reason. The notification list +
+  unread count refresh afterwards. Raw subscription endpoints/keys are never shown.
+- **Browser push status** diagnostics: browser support, permission
+  (not requested / granted / denied), client VAPID key (configured / missing),
+  server push (configured / missing / unknown), subscription (active / missing /
+  unknown), and last test push result.
+
+**Disabled-reason copy** (`pushDisabledReason` → message):
+
+```
+web_push_disabled     → Browser push is off in your preferences.
+not_configured        → Browser push is not configured on the server.
+no_subscription       → This browser is not subscribed yet. Turn browser push off and on again.
+quiet_hours           → Quiet hours are currently suppressing push notifications.
+preference_off        → This notification type is disabled.
+web_push_not_installed→ Push delivery package is not available.
+error                 → Push could not be sent.
+```
+
+### Troubleshooting
+
+- "Browser push is not configured yet" → check the exact spelling of
+  `VITE_WEB_PUSH_PUBLIC_VAPID_KEY` (build-time) and **redeploy**.
+- Permission granted but no push arrives → click **Send test notification** and
+  read the returned disabled reason.
+- `no_subscription` → turn browser push off and on again to re-subscribe.
+- `not_configured` → verify server `WEB_PUSH_PUBLIC_VAPID_KEY` /
+  `WEB_PUSH_PRIVATE_VAPID_KEY` / `WEB_PUSH_SUBJECT` and redeploy.
+- Browser permission never appears automatically — it is only requested on the
+  explicit "Enable browser push" click.
+
 Subscriptions are stored under `users/{uid}/pushSubscriptions/{id}` (endpoint +
 public keys only — never a token or password). On a gone/expired endpoint
 (404/410) the server reports the subscription for pruning.

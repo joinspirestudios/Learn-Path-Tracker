@@ -2150,3 +2150,24 @@ select option,
 .aurora-adapt-overlay-panel{ width:min(560px,100%); background:var(--panel,#15131c); border:1px solid var(--line, rgba(255,255,255,.12)); border-radius:var(--lpt-radius-xl); padding:18px; }
 .aurora-adapt-why h3{ font-size:13px; margin:0 0 6px; color:var(--muted,#b6ada0); }
 .aurora-adapt-insight{ font-size:13px; color:var(--muted,#b6ada0); border-left:2px solid var(--gold,#d8b15a); padding-left:10px; }
+
+/* ── Phase 6.18.1 — sign-out + notification save/test/diagnostics ──────────── */
+.aurora-side-nav-signout{ margin-top:8px; width:100%; background:transparent; border:1px solid var(--line, rgba(255,255,255,.16));
+  color:var(--cream,#f4efe7); border-radius:var(--lpt-radius-medium); padding:8px 10px; font-size:13px; font-weight:700; cursor:pointer; }
+.aurora-side-nav-signout:hover{ border-color:var(--gold,#d8b15a); }
+.aurora-account-signout{ margin-top:10px; }
+.aurora-pref-save-status{ margin:8px 0 0; font-size:13px; font-weight:600; }
+.aurora-pref-save-status[data-tone="ok"]{ color:var(--gold,#d8b15a); }
+.aurora-pref-save-status[data-tone="error"]{ color:#e8896b; }
+.aurora-pref-save-status[data-tone="pending"]{ color:var(--muted,#b6ada0); }
+.aurora-pref-test{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+.aurora-pref-test-btn{ align-self:flex-start; background:var(--gold,#d8b15a); color:#1a1410; border:none;
+  border-radius:var(--lpt-radius-medium); padding:8px 12px; font-size:13px; font-weight:800; cursor:pointer; }
+.aurora-pref-test-status{ font-size:13px; color:var(--muted,#b6ada0); margin:0; }
+.aurora-pref-test-status[data-tone="ok"]{ color:var(--cream,#f4efe7); }
+.aurora-pref-test-status[data-tone="error"]{ color:#e8896b; }
+.aurora-pref-diagnostics{ margin-top:12px; border:1px solid var(--line, rgba(255,255,255,.08)); border-radius:var(--lpt-radius-medium); padding:10px 12px; }
+.aurora-pref-diag-title{ font-size:12px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:var(--muted,#b6ada0); margin:0 0 6px; }
+.aurora-pref-diag-row{ display:flex; justify-content:space-between; gap:12px; font-size:13px; padding:3px 0; }
+.aurora-pref-diag-row b{ color:var(--cream,#f4efe7); font-weight:700; }
+.aurora-pref-diag-hint, .aurora-pref-scheduler-note{ font-size:12px; color:var(--muted,#8a8278); line-height:1.5; margin:8px 0 0; }

@@ -3180,13 +3180,21 @@ export function renderProfile(){
   const profile = (user && store.userProfile) ? store.userProfile : (user ? { uid:user.uid, displayName:user.displayName || '', publicProfileEnabled:true } : {});
   const body = '<div class="aurora-profile-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Profile</span><h2>' + esc(name) + '</h2><p>' + esc(user ? 'Account details and workspace identity.' : 'Sign in to manage a synced learning workspace.') + '</p></div></header>'
     + (user
-      ? '<section class="panel card"><h3>Account</h3><p class="muted">' + esc(user.email || user.uid || 'Signed-in user') + '</p></section>'
+      ? '<section class="panel card"><h3>Account</h3><p class="muted">' + esc(user.email || user.uid || 'Signed-in user') + '</p>'
+        + '<button type="button" class="btn lpt-button lpt-button-secondary aurora-account-signout" data-action="sign-out">Sign out</button></section>'
         + profileSectionHTML(profile)
         + '<section class="panel card aurora-notification-prefs-card">'
         + renderNotificationPreferences({
             preferences:store.notificationPreferences || {},
             pushState:store.webPushState || 'default',
             pushConfigured:!!store.webPushConfigured,
+            signedIn:!!store.currentUser,
+            serverPushConfigured:store.serverWebPushConfigured,
+            subscriptionState:store.webPushSubscriptionState || 'unknown',
+            saveStatus:store.notificationPreferenceStatus || 'idle',
+            saveMessage:store.notificationPreferenceMessage || '',
+            testStatus:store.notificationTestStatus || 'idle',
+            testResult:store.notificationTestResult || null,
           })
         + '</section>'
       : '<section class="panel card"><h3>Sign in required</h3><p class="muted">Profile tools are available after signing in.</p><button class="btn gold" id="signinCard" type="button">Sign in</button></section>')

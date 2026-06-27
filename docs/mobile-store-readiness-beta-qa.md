@@ -90,7 +90,12 @@ environment setup.
 ## 18. Browser push (web) QA
 
 - On the web app: Profile → Notifications → Enable browser push (HTTPS), accept
-  permission, send a test notification. Push is never requested automatically.
+  permission, **Save preferences** (confirm "Preferences saved."), then **Send
+  test notification** and read the result (sent, or a safe disabled reason). Push
+  is never requested automatically. The signed-in shell shows a visible **Sign
+  out** (sidebar + Account card). See
+  [cross-platform-notification-system.md](cross-platform-notification-system.md)
+  (Phase 6.18.1 web repair).
 
 ## 19. Mobile local notification QA
 

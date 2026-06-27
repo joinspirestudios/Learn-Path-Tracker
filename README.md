@@ -766,6 +766,18 @@ context — never proof bodies, reflections, evidence URLs or storage paths. Mob
 shows the draft (review/dismiss; apply on web). See
 [`docs/rolling-adaptive-planning.md`](docs/rolling-adaptive-planning.md).
 
+**Phase 6.18.1 — web notifications & sign-out repair:** the signed-in Aurora
+shell now has a visible **Sign out** (sidebar user block + Profile → Account;
+clears notification + adaptive state). Notification preferences show explicit
+**Saving / Preferences saved / error** status (persisted via
+`POST /api/community?route=notification-preferences` with a safe Firestore
+fallback), a **Send test notification** button (shows whether browser push was
+attempted/sent or the safe disabled reason), and a **browser-push diagnostics**
+block (support / permission / client `VITE_WEB_PUSH_PUBLIC_VAPID_KEY` / server /
+subscription / last test). Daily reminders are clearly labelled as requiring the
+scheduler/cron. Phase 7.0 adaptive planning is preserved. See
+[`docs/cross-platform-notification-system.md`](docs/cross-platform-notification-system.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash
