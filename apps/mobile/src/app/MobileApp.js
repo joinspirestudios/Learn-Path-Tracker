@@ -37,6 +37,7 @@ import { createMobileNotificationRepository } from '../services/mobileNotificati
 import { createMobileLocalNotificationService } from '../services/mobileLocalNotificationService.js';
 import { createMobileRuntimeDiagnostics } from '../services/mobileRuntimeDiagnostics.js';
 import { createMobileAdaptivePlanningRepository } from '../services/mobileAdaptivePlanningRepository.js';
+import { createMobileEvidenceIntelligenceRepository } from '../services/mobileEvidenceIntelligenceRepository.js';
 import { createMobileProofStorageRepository } from '../services/mobileProofStorageRepository.js';
 import { createMobileMediaProofRepository } from '../services/mobileMediaProofRepository.js';
 import { createMobileOfflineDraftRepository } from '../services/mobileOfflineDraftRepository.js';
@@ -55,6 +56,7 @@ import { ProfileScreen } from '../screens/ProfileScreen.js';
 import { NotificationsScreen } from '../screens/NotificationsScreen.js';
 import { MobileDiagnosticsScreen } from '../screens/MobileDiagnosticsScreen.js';
 import { AdaptivePlanningScreen } from '../screens/AdaptivePlanningScreen.js';
+import { EvidenceInsightsScreen } from '../screens/EvidenceInsightsScreen.js';
 import { PublicPathPreviewScreen } from '../screens/PublicPathPreviewScreen.js';
 import { AuroraLoadingState } from '../components/AuroraLoadingState.js';
 
@@ -73,6 +75,7 @@ export function MobileApp() {
   const localNotificationService = useMemo(() => createMobileLocalNotificationService({}), []);
   const runtimeDiagnostics = useMemo(() => createMobileRuntimeDiagnostics({ platform: Platform.OS }), []);
   const adaptiveRepo = useMemo(() => createMobileAdaptivePlanningRepository({ apiClient }), [apiClient]);
+  const evidenceRepo = useMemo(() => createMobileEvidenceIntelligenceRepository({ apiClient }), [apiClient]);
   const storageGateway = useMemo(() => client.createStorageGateway(), [client]);
   const proofStorageRepo = useMemo(() => createMobileProofStorageRepository({ storageGateway }), [storageGateway]);
   const mediaProofRepo = useMemo(() => createMobileMediaProofRepository({ storageRepo: proofStorageRepo }), [proofStorageRepo]);
@@ -131,11 +134,15 @@ export function MobileApp() {
   const [notifPrefs, setNotifPrefs] = useState(null);
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [prefsStatus, setPrefsStatus] = useState('');
-  const [profileView, setProfileView] = useState('main'); // main | notifications | diagnostics | adaptive
+  const [profileView, setProfileView] = useState('main'); // main | notifications | diagnostics | adaptive | evidence
 
   // Adaptive planning (Phase 7.0) — review/dismiss only on mobile.
   const [adaptiveDraft, setAdaptiveDraft] = useState(null);
   const [adaptiveLoading, setAdaptiveLoading] = useState(false);
+
+  // Evidence intelligence (Phase 8.0) — review/dismiss only on mobile.
+  const [evidenceDraft, setEvidenceDraft] = useState(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -277,6 +284,29 @@ export function MobileApp() {
     }
   }
   function handleDismissAdaptiveDraft() { setAdaptiveDraft(null); }
+
+  // ── Evidence intelligence handlers (Phase 8.0) ──
+  async function loadEvidenceInsight() {
+    if (!authUser) { setEvidenceDraft(null); return; }
+    setEvidenceLoading(true);
+    try {
+      const pid = (selectedPath && selectedPath.id) || loopState.path.id;
+      const draft = await evidenceRepo.fetchInsight({
+        pathId: pid,
+        context: {
+          pathTitle: (selectedPath && selectedPath.title) || loopState.path.title,
+          currentDayNumber: loopState.path.dayNumber,
+          pendingProofUploadCount: pendingProofCount,
+        },
+      });
+      setEvidenceDraft(draft);
+    } catch {
+      setEvidenceDraft(null);
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }
+  function handleDismissEvidenceDraft() { setEvidenceDraft(null); }
 
   // ── Auth handlers ──
   async function handleSignIn(email, password) {
@@ -579,6 +609,18 @@ export function MobileApp() {
     }
     if (activeTab === 'progress') return <ProgressScreen />;
     if (activeTab === 'profile') {
+      if (profileView === 'evidence') {
+        return (
+          <EvidenceInsightsScreen
+            draft={evidenceDraft}
+            loading={evidenceLoading}
+            onRefresh={loadEvidenceInsight}
+            onDismiss={handleDismissEvidenceDraft}
+            onReviewOnWeb={handleDismissEvidenceDraft}
+            onBack={() => setProfileView('main')}
+          />
+        );
+      }
       if (profileView === 'adaptive') {
         return (
           <AdaptivePlanningScreen
@@ -631,6 +673,7 @@ export function MobileApp() {
           onOpenNotifications={() => setProfileView('notifications')}
           onOpenDiagnostics={() => setProfileView('diagnostics')}
           onOpenAdaptivePlanning={() => { setProfileView('adaptive'); loadAdaptiveDraft(); }}
+          onOpenEvidenceInsights={() => { setProfileView('evidence'); loadEvidenceInsight(); }}
           onSaveProfile={handleSaveProfile}
           onSignOut={handleSignOut}
         />

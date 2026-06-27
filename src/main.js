@@ -43,6 +43,9 @@ import { subscribeToWebPush, getExistingPushSubscription, unsubscribeFromWebPush
 import { buildContextForPath, buildDeterministicPlan } from './adaptive-planning-context.js';
 import { buildAdaptationDraft } from './adaptive-planning-drafts.js';
 import { saveAdaptationDraft, dismissAdaptationDraft, applyAdaptationDraft } from './adaptive-planning-db.js';
+import { buildEvidenceContextForPath, buildDeterministicEvidencePlan } from './evidence-intelligence-context.js';
+import { buildEvidenceInsightDraft } from './evidence-intelligence-drafts.js';
+import { saveEvidenceInsightDraft, dismissEvidenceInsight, markEvidenceInsightReviewed } from './evidence-intelligence-db.js';
 
 let preflightPromise = null;
 let platformSyncPromise = null;
@@ -335,8 +338,10 @@ async function onSignIn(){
   }
   // Load notifications in the background; never blocks the signed-in render.
   loadNotificationsForCurrentUser();
-  // Build a deterministic adaptive-planning draft in the background (advisory).
+  // Build deterministic adaptive-planning + evidence-intelligence drafts in the
+  // background (both advisory; never auto-applied/published).
   try{ refreshAdaptivePlan(); }catch(error){ /* advisory only */ }
+  try{ refreshEvidenceInsight(); }catch(error){ /* advisory only */ }
 }
 
 function armAuthSoftTimeout(){
@@ -596,6 +601,56 @@ async function handleAdaptiveAction(action, draftId){
   }
 }
 
+/* ---- Phase 8.0 evidence intelligence controller ---- */
+// Build a deterministic evidence insight draft for the active path (cached by
+// path+day). Advisory only — never publishes, never claims "verified".
+function refreshEvidenceInsight(){
+  const uid = notificationUid();
+  const active = activePathContext();
+  if(!uid || !active){ return; }
+  const proofSubmissions = Object.values((store.state && store.state.evidenceSubmissions) || store.evidenceSubmissions || {})
+    .filter(p => p && p.pathId === active.pathId);
+  const context = buildEvidenceContextForPath({
+    path:active.path, enrollment:active.enrollment, proofSubmissions,
+    isOwner:!!(active.path && active.path.ownerId === uid),
+  });
+  const key = active.pathId + ':' + (context.currentDayNumber || 0) + ':' + proofSubmissions.length;
+  if(store.evidenceInsightKey === key && store.evidenceInsightDraft){ return; }
+  const { insights, recommendations } = buildDeterministicEvidencePlan({ context });
+  // Only surface a draft when there is something useful to say.
+  if(!insights.length && (!recommendations.length || (recommendations.length === 1 && recommendations[0].type === 'improve_tomorrow_proof_prompt'))){
+    store.evidenceInsightKey = key; store.evidenceInsightDraft = null; return;
+  }
+  const draft = buildEvidenceInsightDraft({
+    uid, pathId:active.pathId, currentDayNumber:context.currentDayNumber, insights, recommendations, source:'deterministic',
+  });
+  store.evidenceInsightKey = key;
+  store.evidenceInsightDraft = draft;
+  saveEvidenceInsightDraft(uid, active.pathId, draft, {}).catch(() => {});
+  refreshVisibleRoute();
+}
+
+async function handleEvidenceAction(action, insightId){
+  const uid = notificationUid();
+  const active = activePathContext();
+  if(!uid || !active) return;
+  if(action === 'review-evidence-insight'){ store.evidenceInsightReviewOpen = true; refreshVisibleRoute(); return; }
+  if(action === 'close-evidence-overlay'){ store.evidenceInsightReviewOpen = false; refreshVisibleRoute(); return; }
+  if(action === 'mark-evidence-insight-reviewed' && insightId){
+    store.evidenceInsightStatus = 'Reviewed.';
+    if(insightId) markEvidenceInsightReviewed(uid, active.pathId, insightId, {}).catch(() => {});
+    refreshVisibleRoute();
+    return;
+  }
+  if(action === 'dismiss-evidence-insight'){
+    store.evidenceInsightReviewOpen = false;
+    store.evidenceInsightDraft = null;
+    if(insightId) dismissEvidenceInsight(uid, active.pathId, insightId, {}).catch(() => {});
+    refreshVisibleRoute();
+    return;
+  }
+}
+
 // Clear all notification + adaptive transient state (called on sign-out).
 function clearSignedInTransientState(){
   store.notifications = []; store.notificationUnreadCount = 0;
@@ -606,6 +661,9 @@ function clearSignedInTransientState(){
   // Phase 7.0 adaptive planning transient state.
   store.adaptivePlanDraft = null; store.adaptivePlanReviewOpen = false;
   store.adaptivePlanKey = ''; store.adaptivePlanStatus = '';
+  // Phase 8.0 evidence intelligence transient state.
+  store.evidenceInsightDraft = null; store.evidenceInsightReviewOpen = false;
+  store.evidenceInsightKey = ''; store.evidenceInsightStatus = '';
 }
 
 // Visible sign-out from the Aurora shell. Delegates to the existing auth
@@ -647,6 +705,12 @@ async function init(){
       if(ADAPTIVE_ACTIONS.includes(action)){
         e.preventDefault();
         handleAdaptiveAction(action, notify.getAttribute('data-draft-id') || '');
+      }
+      const EVIDENCE_ACTIONS = ['review-evidence-insight', 'close-evidence-overlay', 'dismiss-evidence-insight', 'mark-evidence-insight-reviewed'];
+      if(action === 'close-evidence-overlay' && e.target !== notify) return;
+      if(EVIDENCE_ACTIONS.includes(action)){
+        e.preventDefault();
+        handleEvidenceAction(action, notify.getAttribute('data-insight-id') || '');
       }
     }
   });

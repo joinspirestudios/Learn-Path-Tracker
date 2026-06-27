@@ -113,6 +113,11 @@ const requiredFiles = [
   'src/services/mobileAdaptivePlanningRepository.js',
   'src/components/MobileAdaptivePlanningCard.js',
   'src/screens/AdaptivePlanningScreen.js',
+  // Phase 8.0 — evidence intelligence.
+  'src/core/mobileEvidenceIntelligence.js',
+  'src/services/mobileEvidenceIntelligenceRepository.js',
+  'src/components/MobileEvidenceInsightCard.js',
+  'src/screens/EvidenceInsightsScreen.js',
 ];
 
 const problems = [];

@@ -778,6 +778,18 @@ subscription / last test). Daily reminders are clearly labelled as requiring the
 scheduler/cron. Phase 7.0 adaptive planning is preserved. See
 [`docs/cross-platform-notification-system.md`](docs/cross-platform-notification-system.md).
 
+**Phase 8.0 — Evidence Intelligence (foundation):** analyzes a user's submitted
+proof to surface **coverage, gaps, pending/failed uploads, weak vs strong
+documentation, anchor proof coverage and public-story readiness**, with
+deterministic, explainable suggestions for better proof. It is **advisory only**
+— it never claims proof is "verified", never scores truth/fraud, and never reads
+image content. Insight drafts are private/user-owned and never auto-published;
+public-safe summaries never include private proof, raw evidence URLs or storage
+paths. Optional AI augmentation runs through `POST /api/ai?route=analyze-evidence`
+(no new Vercel function) over server-sanitized, value-free context only. Mobile
+shows a compact card (review/dismiss; review on web). Phase 7.0 adaptive planning
+is preserved. See [`docs/evidence-intelligence.md`](docs/evidence-intelligence.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

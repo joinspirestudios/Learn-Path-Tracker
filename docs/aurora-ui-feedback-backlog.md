@@ -31,7 +31,8 @@ under a dedicated web-polish phase before public launch:
   (cross-platform notifications + browser push delivery), 6.18 (mobile store
   readiness + beta QA), 7.0 (rolling adaptive planning foundation) and 6.18.1
   (web notifications + sign-out repair: visible sign-out, save status, test
-  notification, push diagnostics). The full Proof Ledger visual redesign remains
-  parked for Phase 6.9.12.
+  notification, push diagnostics) and 8.0 (evidence intelligence panel/review
+  surfaces). The full Proof Ledger visual redesign remains parked for
+  Phase 6.9.12.
 - When the web-polish phase begins, convert each item above into concrete,
   testable changes with before/after references.

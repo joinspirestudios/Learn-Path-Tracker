@@ -170,6 +170,11 @@ export const store = {
   adaptivePlanReviewOpen: false,
   adaptivePlanKey:      '',   // cache key (pathId:dayNumber) to avoid rebuild loops
   adaptivePlanStatus:   '',   // transient UI status (e.g. "Applied")
+  // Phase 8.0 — evidence intelligence (private, user-owned drafts; advisory only).
+  evidenceInsightDraft:    null,
+  evidenceInsightReviewOpen: false,
+  evidenceInsightKey:      '',
+  evidenceInsightStatus:   '',
   activeTab:       'week',
   currentWeek:     1,
   editMode:        false,

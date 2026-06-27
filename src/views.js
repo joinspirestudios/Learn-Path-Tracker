@@ -113,6 +113,23 @@ import { renderNotificationCenter } from './views/notification-center.js';
 import { renderNotificationPreferences } from './views/notification-preferences.js';
 import { renderAdaptivePlanningPanel } from './views/adaptive-planning-panel.js';
 import { renderAdaptivePlanningReview } from './views/adaptive-planning-review.js';
+import { renderEvidenceIntelligencePanel } from './views/evidence-intelligence-panel.js';
+import { renderEvidenceInsightReview } from './views/evidence-insight-review.js';
+
+// Phase 8.0 — evidence intelligence surfaces. The panel renders on Progress when
+// a draft exists; the review overlay opens on explicit user action. Never
+// auto-publishes and never shows private proof.
+function evidenceIntelligencePanelHTML(pathId = ''){
+  if(!store.evidenceInsightDraft) return '';
+  return renderEvidenceIntelligencePanel({ draft:store.evidenceInsightDraft, pathId });
+}
+function evidenceInsightReviewOverlayHTML(){
+  if(!store.evidenceInsightReviewOpen || !store.evidenceInsightDraft) return '';
+  return '<div class="aurora-evidence-overlay" data-action="close-evidence-overlay">'
+    + '<div class="aurora-evidence-overlay-panel" role="dialog" aria-label="Review evidence insight">'
+    + renderEvidenceInsightReview({ draft:store.evidenceInsightDraft })
+    + '</div></div>';
+}
 
 // Phase 7.0 — adaptive planning surfaces. The panel renders inside Today/Roadmap
 // when a draft exists; the review overlay opens on explicit user action. Never
@@ -451,7 +468,7 @@ function appShellHTML(active, body, { title = '', rightRail = '', className = ''
     return renderAuroraShell({
       active, title, body, rightRail, className, userLabel:label, user,
       showBell:true, unreadCount:store.notificationUnreadCount || 0,
-    }) + notificationOverlayHTML() + adaptivePlanningReviewOverlayHTML();
+    }) + notificationOverlayHTML() + adaptivePlanningReviewOverlayHTML() + evidenceInsightReviewOverlayHTML();
   }
   document.body.classList.remove('aurora-shell-mode');
   if(active === 'discover'){
@@ -3158,6 +3175,7 @@ export function renderProgress(){
   store.state.current = null;
   store.editMode = false;
   const body = '<div class="aurora-progress-page"><header class="aurora-workspace-header"><div><span class="aurora-section-kicker">Progress</span><h2>Your proof and public updates</h2><p>No rankings, follower counts, or estimated activity. Your daily documentation is visible only to you; public proof updates use already-loaded public data.</p></div></header>'
+    + evidenceIntelligencePanelHTML()
     + privateDailyDocumentationFeedHTML()
     + '<details class="aurora-progress-gallery"><summary>View all proof</summary>' + privateProofArchiveHTML() + '</details>'
     + '<section class="aurora-progress-public" aria-label="Public proof updates"><h3>Public proof updates</h3>'
