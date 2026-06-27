@@ -123,6 +123,12 @@ service cloud.firestore {
     // users/{uid}/pushSubscriptions/{subId}       (Phase 6.17 web push)
     // users/{uid}/adaptivePlans/{pathId}/drafts/{draftId}    (Phase 7.0 drafts)
     // users/{uid}/adaptivePlans/{pathId}/activeOverlay/main  (Phase 7.0 overlay)
+    // users/{uid}/evidenceInsights/{pathId}/drafts/{insightId} (Phase 8.0 evidence)
+    //
+    // Evidence insight drafts are private and owner-only (no public read/write).
+    // They are advisory, never verification, are not public progress entries, and
+    // never contain private proof bodies/evidence URLs/storage paths in their
+    // public-safe summary (see evidence-intelligence sanitizer/policy).
     //
     // Adaptive planning drafts/overlays are private and owner-only (no public
     // read/write). Drafts are never applied automatically; applying writes only a

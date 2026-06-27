@@ -38,6 +38,12 @@ Phase 6.5 planning document. No mobile app is built yet.
 > implemented. No camera/audio. See
 > [docs/mobile-media-proof-offline-drafts.md](mobile-media-proof-offline-drafts.md).
 >
+> **Phase 8.0 update:** Evidence Intelligence (foundation). Mobile shows a compact
+> evidence insight card (Profile → Evidence intelligence): coverage + suggestions
+> + disclaimer; review/dismiss only, publish on web. Advisory only — never
+> "verified", never reads image content. See
+> [docs/evidence-intelligence.md](evidence-intelligence.md).
+>
 > **Phase 7.0 update:** rolling adaptive planning (foundation). Mobile shows the
 > deterministic adaptation draft (Profile → Adaptive planning) with review/dismiss;
 > applying is on web. Nothing is auto-applied and the past is never rewritten. See

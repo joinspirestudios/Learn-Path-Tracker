@@ -72,6 +72,13 @@ export const MOBILE_PRIVACY_RULES = [
   'Adaptive recommendations are drafts only; nothing is applied automatically.',
   'Completed and missed days are never rewritten; public/canonical paths are never mutated for participants.',
   'AI-assisted recommendations only ever receive server-sanitized, value-free context.',
+  // Phase 8.0 — evidence intelligence:
+  'Evidence Intelligence is advisory; it never verifies that an activity happened and never scores truth/fraud.',
+  'Evidence analysis uses only structured proof metadata (type/status/counts/coverage), never proof bodies, reflections, raw evidence URLs, storage paths or localUri.',
+  'Public-safe evidence summaries never contain private proof, raw URLs or storage paths.',
+  'Pending/failed uploads never count as uploaded evidence.',
+  'Evidence insight drafts are private, owner-only, and never auto-published.',
+  'No image content is read; no OCR/computer vision is used.',
 ];
 
 export default MOBILE_PRIVACY_RULES;

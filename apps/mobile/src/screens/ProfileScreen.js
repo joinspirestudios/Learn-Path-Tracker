@@ -14,7 +14,7 @@ import { MobileNotificationBadge } from '../components/MobileNotificationBadge.j
 export function ProfileScreen({
   user, configured, localMode, profile, profileBusy, profileStatus,
   notificationUnreadCount = 0, onOpenNotifications, onOpenDiagnostics, onOpenAdaptivePlanning,
-  onSaveProfile, onSignOut,
+  onOpenEvidenceInsights, onSaveProfile, onSignOut,
 }) {
   const merged = { ...(profile || {}), uid: user && user.uid, displayName: (profile && profile.displayName) || (user && user.displayName) || '' };
 
@@ -73,6 +73,16 @@ export function ProfileScreen({
           </View>
           <Text style={styles.rowMuted}>Gentle, evidence-based suggestions for your upcoming days. Nothing is applied automatically.</Text>
           <AuroraButton label="Adaptive planning" variant="secondary" onPress={onOpenAdaptivePlanning} />
+        </AuroraCard>
+      ) : null}
+
+      {user ? (
+        <AuroraCard>
+          <View style={styles.headRow}>
+            <Text style={styles.title}>Evidence intelligence</Text>
+          </View>
+          <Text style={styles.rowMuted}>Understand your proof coverage and how to document better. It never verifies that an activity happened.</Text>
+          <AuroraButton label="Evidence intelligence" variant="secondary" onPress={onOpenEvidenceInsights} />
         </AuroraCard>
       ) : null}
 
