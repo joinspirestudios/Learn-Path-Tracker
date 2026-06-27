@@ -111,6 +111,23 @@ import {
 import { isProofPublicVisible, normalizeProofSubmissions } from './proof-archive-model.js';
 import { renderNotificationCenter } from './views/notification-center.js';
 import { renderNotificationPreferences } from './views/notification-preferences.js';
+import { renderAdaptivePlanningPanel } from './views/adaptive-planning-panel.js';
+import { renderAdaptivePlanningReview } from './views/adaptive-planning-review.js';
+
+// Phase 7.0 — adaptive planning surfaces. The panel renders inside Today/Roadmap
+// when a draft exists; the review overlay opens on explicit user action. Never
+// auto-applies and never shows private proof.
+function adaptivePlanningPanelHTML(pathId = ''){
+  if(!store.adaptivePlanDraft) return '';
+  return renderAdaptivePlanningPanel({ draft:store.adaptivePlanDraft, pathId });
+}
+function adaptivePlanningReviewOverlayHTML(){
+  if(!store.adaptivePlanReviewOpen || !store.adaptivePlanDraft) return '';
+  return '<div class="aurora-adapt-overlay" data-action="close-adaptation-overlay">'
+    + '<div class="aurora-adapt-overlay-panel" role="dialog" aria-label="Review adaptive plan">'
+    + renderAdaptivePlanningReview({ draft:store.adaptivePlanDraft })
+    + '</div></div>';
+}
 import { buildDailyDocumentationEntries, buildDailyDocumentationEntry } from './daily-documentation-model.js';
 import {
   dailyDocumentationFeedHTML, publicDailyDocumentationFeedHTML, compactDayProofPreviewHTML,
@@ -434,7 +451,7 @@ function appShellHTML(active, body, { title = '', rightRail = '', className = ''
     return renderAuroraShell({
       active, title, body, rightRail, className, userLabel:label, user,
       showBell:true, unreadCount:store.notificationUnreadCount || 0,
-    }) + notificationOverlayHTML();
+    }) + notificationOverlayHTML() + adaptivePlanningReviewOverlayHTML();
   }
   document.body.classList.remove('aurora-shell-mode');
   if(active === 'discover'){
@@ -5233,6 +5250,7 @@ export function renderToday(){
     ? 'Shipping day: save or publish one proof piece when finished.'
     : 'No required proof today; save a note if useful.';
   let h = '<div class="aurora-unified-core">';
+  h += adaptivePlanningPanelHTML(store.state.current);
   h += '<div class="panel card aurora-daily-focus">';
   h += '<span class="aurora-section-kicker">Today</span>';
   h += '<div class="aurora-daily-focus-meta"><span>' + esc(pathTitle(store.state.current)) + '</span><span>' + esc(dayNames[tk] || 'Today') + ' · Week ' + tdPos + ' of ' + tdTotal + '</span><span>' + esc(todayDate) + '</span></div>';
@@ -5267,6 +5285,7 @@ export function renderToday(){
 
 function renderPlatformToday(id, def){
   const body = '<div class="aurora-unified-core">'
+    + adaptivePlanningPanelHTML(id)
     + platformDailyFocusHTML(id, def)
     + compactRoadmapHTML(id, def, 2)
     + '</div>';

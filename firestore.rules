@@ -121,6 +121,13 @@ service cloud.firestore {
     // users/{uid}/notifications/{notificationId}  (Phase 6.17 notifications)
     // users/{uid}/notificationPreferences/main    (Phase 6.17 preferences)
     // users/{uid}/pushSubscriptions/{subId}       (Phase 6.17 web push)
+    // users/{uid}/adaptivePlans/{pathId}/drafts/{draftId}    (Phase 7.0 drafts)
+    // users/{uid}/adaptivePlans/{pathId}/activeOverlay/main  (Phase 7.0 overlay)
+    //
+    // Adaptive planning drafts/overlays are private and owner-only (no public
+    // read/write). Drafts are never applied automatically; applying writes only a
+    // user-specific future-day overlay and never mutates the canonical path or
+    // day logs. Drafts never contain private proof (see adaptive-planning model).
     //
     // Owner-only read/write: another user can never read or write these docs and
     // signed-out access is denied. Event notifications are created server-side

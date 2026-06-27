@@ -1,10 +1,13 @@
 import generatePathHandler from '../server/api-handlers/generate-path.js';
 import interpretGoalHandler from '../server/api-handlers/interpret-goal.js';
+import adaptPathHandler from '../server/api-handlers/adapt-path.js';
 import { apiError, createRequestId, sendApiError, setPrivateNoStore } from './_lib/errors.js';
 
 const handlers = {
   'generate-path':generatePathHandler,
   'interpret-goal':interpretGoalHandler,
+  // Phase 7.0 — rolling adaptive planning (deterministic draft; AI optional).
+  'adapt-path':adaptPathHandler,
 };
 
 function routeNameFromRequest(req){

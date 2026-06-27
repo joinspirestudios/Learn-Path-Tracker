@@ -108,6 +108,11 @@ const requiredFiles = [
   'src/core/mobileStoreReadinessGates.js',
   'src/services/mobileRuntimeDiagnostics.js',
   'src/navigation/mobileDeepLinks.js',
+  // Phase 7.0 — rolling adaptive planning.
+  'src/core/mobileAdaptivePlanning.js',
+  'src/services/mobileAdaptivePlanningRepository.js',
+  'src/components/MobileAdaptivePlanningCard.js',
+  'src/screens/AdaptivePlanningScreen.js',
 ];
 
 const problems = [];

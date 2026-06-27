@@ -15,6 +15,8 @@ export const CURRENT_SCHEMA_VERSIONS = {
   userProfile: 1,
   username: 1,
   pathPersonalization: 1,
+  adaptivePlanDraft: 1,
+  adaptivePlanOverlay: 1,
 };
 
 export function normalizeSchemaVersion(value, fallback = 0){

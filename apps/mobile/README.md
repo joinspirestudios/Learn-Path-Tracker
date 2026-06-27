@@ -146,6 +146,16 @@ evidence URLs, Storage paths or tokens. See
 Phase 6.17.1 added **web** browser-push delivery (`web-push` on the server) — it
 does not touch the mobile app. Remote **mobile** push remains deferred.
 
+## Adaptive planning (Phase 7.0)
+
+Profile → Adaptive planning shows a deterministic, explainable adaptation draft
+(`MobileAdaptivePlanningCard` / `AdaptivePlanningScreen`) for the active path:
+why it was suggested + the suggested adjustments. Mobile is **review/dismiss
+only** — applying is done on web ("Review on web"). Nothing is applied
+automatically, completed/missed days are never rewritten, and the request sends
+only structured, non-private context. See
+[`docs/rolling-adaptive-planning.md`](../../docs/rolling-adaptive-planning.md).
+
 ## Store readiness & beta QA (Phase 6.18)
 
 Production-minded Expo config (stable name/slug, `learnpathtracker` scheme, iOS

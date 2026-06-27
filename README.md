@@ -753,6 +753,19 @@ No store submission, no credentials/keystores committed. See
 [`docs/mobile-store-readiness-beta-qa.md`](docs/mobile-store-readiness-beta-qa.md)
 and [`apps/mobile/eas-readiness.md`](apps/mobile/eas-readiness.md).
 
+**Phase 7.0 — rolling adaptive planning (foundation):** the app analyzes a
+user's recent path activity and produces **deterministic, explainable**
+adaptive-planning insights and recommendations (missed days, low completion,
+anchor slips, proof gaps, overload, streak risk, strong consistency). It creates
+a private adaptation **draft** the user reviews and approves — nothing is applied
+automatically, completed/missed days are never rewritten, and a participant's
+adaptation never mutates the canonical/public path (a private future-day overlay
+is used). An optional AI augmentation runs through `POST /api/ai?route=adapt-path`
+(no new Vercel function) and only ever receives server-sanitized, value-free
+context — never proof bodies, reflections, evidence URLs or storage paths. Mobile
+shows the draft (review/dismiss; apply on web). See
+[`docs/rolling-adaptive-planning.md`](docs/rolling-adaptive-planning.md).
+
 > **Deploy Firebase rules separately — Vercel does not.** After profile/
 > personalization changes run:
 > ```bash

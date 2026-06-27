@@ -38,6 +38,11 @@ Phase 6.5 planning document. No mobile app is built yet.
 > implemented. No camera/audio. See
 > [docs/mobile-media-proof-offline-drafts.md](mobile-media-proof-offline-drafts.md).
 >
+> **Phase 7.0 update:** rolling adaptive planning (foundation). Mobile shows the
+> deterministic adaptation draft (Profile → Adaptive planning) with review/dismiss;
+> applying is on web. Nothing is auto-applied and the past is never rewritten. See
+> [docs/rolling-adaptive-planning.md](rolling-adaptive-planning.md).
+>
 > **Phase 6.18 update:** mobile store-readiness + beta QA — production Expo config
 > (scheme/bundle id/package, permission copy), safe deep links, in-app App
 > diagnostics (status labels only), an app-level error boundary, store-readiness
